@@ -40,7 +40,7 @@ let frames = 0;
 adapter.onVu((frame) => {
   frames++;
   for (const [key, vu] of frame.channels) peaks.set(key, Math.max(peaks.get(key) ?? -80, vu.pre));
-  for (const [aux, db] of frame.auxOut) auxPeaks.set(aux, Math.max(auxPeaks.get(aux) ?? -80, db));
+  for (const [aux, db] of frame.busOut) auxPeaks.set(aux, Math.max(auxPeaks.get(aux) ?? -80, db));
 });
 
 console.log(`Ouvindo a mesa por ${LISTEN_SEC} s…`);
@@ -52,16 +52,19 @@ console.log(`\nVU: ${frames} leituras em ${LISTEN_SEC} s (${(frames / LISTEN_SEC
 if (frames === 0) console.log('  ⚠ Nenhuma leitura de VU chegou. Me avise: precisamos investigar.');
 
 console.log('\n== AUXES ==');
+const buses = adapter.listBuses();
 for (let aux = 1; aux <= info.auxCount; aux++) {
+  const bus = buses.find((b) => b.id === aux);
+  const extra = bus?.isMatrix ? ' [MATRIZ]' : bus?.linkedWith ? ` [estéreo com AUX ${bus.linkedWith}]` : '';
   const routed = channels.filter((ch) => {
     const s = sends.get(`${aux}:${ch.key}`);
     return s && !s.muted && Number.isFinite(s.db) && s.db > -60;
   });
   const pre = routed.filter((ch) => !sends.get(`${aux}:${ch.key}`)!.postFader).length;
   console.log(
-    `AUX ${String(aux).padStart(2)}  "${adapter.auxName(aux)}"`.padEnd(30) +
+    `AUX ${String(aux).padStart(2)}  "${adapter.busName(aux)}"`.padEnd(30) +
       `canais enviando: ${String(routed.length).padStart(2)}  (pré-fader: ${pre}, pós-fader: ${routed.length - pre})` +
-      `  pico saída: ${fmt(auxPeaks.get(aux))} dB`,
+      `  pico saída: ${fmt(auxPeaks.get(aux))} dB${extra}`,
   );
 }
 
@@ -75,8 +78,7 @@ for (const ch of channels) {
   console.log(`${ch.key.padEnd(4)}${ch.name.slice(0, 17).padEnd(18)}${fmt(peaks.get(ch.key))}  ${cells.join(' ')}`);
 }
 console.log('\nLegenda: M = envio mutado, P = pós-fader, p = pré-fader. Canais sem envio para esses auxes foram omitidos.');
-console.log('Dica: se dois auxes vizinhos mostram exatamente os mesmos valores, eles estão em link estéreo.');
-console.log('      Nesse caso coloque só o primeiro (ímpar) em "streamAuxes" no config/config.json.');
+console.log('Dica: no painel, um par estéreo (ex.: AUX 7+8) aparece como uma opção só; o software mexe nos dois juntos.');
 
 await adapter.disconnect();
 process.exit(0);

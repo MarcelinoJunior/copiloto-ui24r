@@ -65,7 +65,7 @@ export class FxFollower {
   private lastTickT?: number;
 
   constructor(
-    readonly aux: number,
+    readonly bus: number,
     private readonly cfg: LevelerConfig,
   ) {}
 
@@ -217,7 +217,7 @@ export class FxFollower {
       const maxStep = this.cfg.fxRateDBps * dt;
       const step = clamp(remaining, -maxStep, maxStep);
       if (Math.abs(step) >= 0.05) {
-        actions.push({ aux: this.aux, key: fx.key, fromDB: send.db, toDB: round1(send.db + step), reason: 'efeito' });
+        actions.push({ bus: this.bus, key: fx.key, fromDB: send.db, toDB: round1(send.db + step), reason: 'efeito' });
       }
     }
     return this.mode === 'automatico' ? actions : [];

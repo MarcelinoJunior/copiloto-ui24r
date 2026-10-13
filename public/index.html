@@ -16,6 +16,11 @@
   </header>
 
   <section class="controls">
+    <div class="row buses">
+      <strong>Controlando</strong>
+      <div id="bus-list" class="bus-list"></div>
+      <span class="muted hint">Clique para ligar/desligar. Par estéreo aparece junto (ex.: AUX 7+8) e é ajustado nos dois lados.</span>
+    </div>
     <div class="row">
       <div class="seg modes" role="radiogroup" aria-label="Modo">
         <button data-mode="desligado">Desligado</button>
@@ -38,6 +43,7 @@
       <button id="preset-new" title="Salva a mixagem atual da live (envios, efeitos e alvos) como um novo preset">+ Salvar novo</button>
       <button id="preset-update" title="Sobrescreve o preset ativo com a mixagem atual">Atualizar ativo</button>
       <button id="preset-delete" class="ghost" title="Apaga o preset ativo">Apagar ativo</button>
+      <label class="toggle"><input type="checkbox" id="show-fx" checked> envios de efeito por canal</label>
       <label class="toggle"><input type="checkbox" id="show-all"> mostrar canais sem envio</label>
     </div>
   </section>
@@ -53,6 +59,7 @@
   </section>
 
   <main id="auxes"></main>
+  <p id="no-bus" class="empty-state" hidden>Nenhuma saída selecionada. Escolha em <strong>Controlando</strong>, lá em cima (ex.: AUX 7+8 da live).</p>
 
   <section class="events">
     <h2>Acontecimentos</h2>
@@ -62,7 +69,10 @@
   <template id="aux-tpl">
     <article class="aux">
       <header>
-        <h2 class="aux-title"></h2>
+        <div>
+          <h2 class="aux-title"></h2>
+          <p class="aux-help"></p>
+        </div>
         <span class="muted legend">
           <i class="lg lg-fill"></i> agora
           <i class="lg lg-avg"></i> média

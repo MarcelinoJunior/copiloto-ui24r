@@ -18,7 +18,7 @@ export type ChannelStatus =
   | 'no-limite'; // precisa de mais correção do que o permitido
 
 export interface SendAction {
-  aux: number;
+  bus: number;
   key: string;
   fromDB: number;
   toDB: number;
@@ -105,10 +105,10 @@ export class AuxLeveler {
   private readonly channels = new Map<string, ChannelState>();
   private mode: Mode = 'observar';
   private lastTickT?: number;
-  auxOutDB?: number;
+  outDB?: number;
 
   constructor(
-    readonly aux: number,
+    readonly bus: number,
     private readonly cfg: LevelerConfig,
   ) {}
 
@@ -277,7 +277,7 @@ export class AuxLeveler {
     const step = clamp(remaining, -maxStep, maxStep);
     if (Math.abs(step) < MIN_STEP_DB) return undefined;
 
-    return { aux: this.aux, key: ch.key, fromDB: send.db, toDB: round1(send.db + step), reason: 'correcao' };
+    return { bus: this.bus, key: ch.key, fromDB: send.db, toDB: round1(send.db + step), reason: 'correcao' };
   }
 
   /**
@@ -354,7 +354,7 @@ export class AuxLeveler {
       const base = ch.baseSendDB;
       if (!ch.send || base === undefined || !Number.isFinite(base) || !Number.isFinite(ch.send.db)) continue;
       if (Math.abs(ch.send.db - base) < MIN_STEP_DB) continue;
-      actions.push({ aux: this.aux, key: ch.key, fromDB: ch.send.db, toDB: base, reason: 'restaurar' });
+      actions.push({ bus: this.bus, key: ch.key, fromDB: ch.send.db, toDB: base, reason: 'restaurar' });
     }
     return actions;
   }

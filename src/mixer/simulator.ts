@@ -1,13 +1,17 @@
 import { clamp, dbToPow, FLOOR_DB, powToDb, sumDb } from '../util/db.js';
 import {
+  type BusInfo,
   type ChannelInfo,
   type ChannelVu,
   type ConnectionState,
   type MixerAdapter,
   type MixerInfo,
   type SendInfo,
+  type Unsubscribe,
   type VuFrame,
+  MASTER_BUS,
   channelKey,
+  tapForSend,
 } from './types.js';
 
 /**
@@ -15,8 +19,8 @@ import {
  *
  * Simula uma banda de igreja com momentos diferentes (louvor, pregação, avisos),
  * cada canal com um comportamento (voz falada com pausas, instrumentos contínuos),
- * 4 efeitos (com cauda de reverb) e o master de cada aux.
- * Pelo painel dá para simular um músico aumentando o volume ou o operador mexendo num envio.
+ * 4 efeitos (com cauda de reverb), master, retornos e a live nos auxes 7+8 em link estéreo.
+ * O FX 4 é um reverb só da live (não vai para o salão), para testar envios de efeito por canal.
  */
 
 export type Scene = 'louvor' | 'pregacao' | 'avisos';
@@ -53,16 +57,26 @@ const BAND: [string, Behavior, number, Scene[], (number | null)[]][] = [
   ['Avisos', 'fala', -20, ['avisos'], [-14, null, null, null]],
 ];
 
-const FX_NAMES = ['Reverb Voz', 'Delay', 'Reverb Bateria', 'Room'];
+const FX_NAMES = ['Reverb Voz', 'Delay', 'Reverb Bateria', 'Reverb Live'];
 /** Quanto o efeito "devolve" em relação ao que entra, e quanto tempo a cauda dura. */
 const FX_RETURN_GAIN_DB = -2;
-const FX_TAIL_SEC = [1.8, 0.8, 1.2, 0.6];
+const FX_TAIL_SEC = [1.8, 0.8, 1.2, 2.2];
 
-/** Envios iniciais do aux da live (propositalmente desequilibrados). */
-const INITIAL_SENDS = [-3, 0, -6, -6, -4, -2, -5, -8, -6, -6, -10, -4];
-const INITIAL_FX_SENDS = [-4, -10, -8, Number.NEGATIVE_INFINITY];
+const AUX_NAMES = ['Retorno Ministro', 'Retorno Banda', 'Retorno Bateria', 'Fone Teclado', 'AUX 5', 'AUX 6', 'LIVE', 'LIVE', 'AUX 9', 'AUX 10'];
+const LINKED: [number, number][] = [[7, 8]];
+
+const NEG = Number.NEGATIVE_INFINITY;
+/** Valores iniciais dos envios, por bus. 0 = master (fader do canal). */
+const INITIAL: Record<number, { ch: number[]; fx: number[] }> = {
+  [MASTER_BUS]: { ch: [0, 0, -3, -3, -2, -4, -2, -3, -1, -2, -6, 0], fx: [-2, -6, -4, NEG] },
+  1: { ch: [NEG, 0, -6, -6, -8, NEG, -10, -6], fx: [-10, NEG, NEG, NEG] },
+  2: { ch: [NEG, -4, NEG, NEG, -4, 0, -2, -4, -6, -6], fx: [NEG, NEG, NEG, NEG] },
+  // live (7+8): propositalmente desequilibrada
+  7: { ch: [-3, 0, -6, -6, -4, -2, -5, -8, -6, -6, -10, -4], fx: [-4, -10, -8, -6] },
+};
 
 const INPUTS = 24;
+const AUXES = 10;
 const VU_INTERVAL_MS = 50;
 
 export class SimulatorAdapter implements MixerAdapter {
@@ -71,16 +85,15 @@ export class SimulatorAdapter implements MixerAdapter {
   /** envio canal -> efeito: `${fx}:${key}` */
   private readonly fxSends = new Map<string, number>();
   private readonly fxPow = [0, 0, 0, 0];
+  /** envio canal -> bus: `${bus}:${key}` */
   private readonly sends = new Map<string, SendInfo>();
-  private readonly sendWatchers = new Map<string, ((info: SendInfo) => void)[]>();
-  private readonly auxMaster = new Map<number, number>();
-  private readonly auxMasterWatchers = new Map<number, ((db: number) => void)[]>();
+  private readonly busMaster = new Map<number, number>();
+  private readonly watchers = new Map<string, Set<(v: never) => void>>();
   private vuCb?: (frame: VuFrame) => void;
   private statusCb?: (state: ConnectionState) => void;
   private timer?: NodeJS.Timeout;
   private lastT = Date.now();
   scene: Scene = 'louvor';
-  readonly auxCount = 10;
 
   constructor() {
     for (let n = 1; n <= INPUTS; n++) {
@@ -112,7 +125,7 @@ export class SimulatorAdapter implements MixerAdapter {
   async connect(): Promise<MixerInfo> {
     this.statusCb?.('conectado');
     this.timer = setInterval(() => this.step(), VU_INTERVAL_MS);
-    return { kind: 'simulador', address: 'simulador', model: 'ui24 (simulada)', firmware: '-', auxCount: this.auxCount };
+    return { kind: 'simulador', address: 'simulador', model: 'ui24 (simulada)', firmware: '-', auxCount: AUXES };
   }
 
   async disconnect(): Promise<void> {
@@ -128,43 +141,59 @@ export class SimulatorAdapter implements MixerAdapter {
     return this.fx;
   }
 
-  auxName(aux: number): string {
-    return aux === 7 || aux === 8 ? `LIVE ${aux === 7 ? 'L' : 'R'}` : `AUX ${aux}`;
+  listBuses(): BusInfo[] {
+    const buses: BusInfo[] = [{ id: MASTER_BUS, name: 'Master (salão)', isMatrix: false }];
+    for (let aux = 1; aux <= AUXES; aux++) {
+      buses.push({ id: aux, name: AUX_NAMES[aux - 1], linkedWith: this.linkedWith(aux), isMatrix: false });
+    }
+    return buses;
+  }
+
+  busName(bus: number): string {
+    return bus === MASTER_BUS ? 'Master (salão)' : AUX_NAMES[bus - 1] ?? `AUX ${bus}`;
   }
 
   onVu(cb: (frame: VuFrame) => void): void {
     this.vuCb = cb;
   }
 
-  watchSend(aux: number, key: string, cb: (info: SendInfo) => void): void {
-    const id = `${aux}:${key}`;
-    if (!this.sends.has(id)) this.sends.set(id, this.initialSend(key));
-    this.sendWatchers.set(id, [...(this.sendWatchers.get(id) ?? []), cb]);
-    cb(this.sends.get(id)!);
+  watchSend(bus: number, key: string, cb: (info: SendInfo) => void): Unsubscribe {
+    const id = `send:${bus}:${key}`;
+    cb(this.getSend(bus, key));
+    return this.watch(id, cb);
   }
 
-  setSendDB(aux: number, key: string, db: number): void {
-    const id = `${aux}:${key}`;
-    const current = this.sends.get(id) ?? this.initialSend(key);
-    // A mesa real arredonda pela posição do fader; simulamos com passos de 0,1 dB.
-    const next = { ...current, db: quantize(db) };
-    this.sends.set(id, next);
-    for (const cb of this.sendWatchers.get(id) ?? []) cb(next);
+  setSendDB(bus: number, key: string, db: number): void {
+    // Aux em link estéreo: a mesa espelha o envio no aux par.
+    for (const b of [bus, this.linkedWith(bus)].filter((x): x is number => x !== undefined)) {
+      const next = { ...this.getSend(b, key), db: quantize(db) };
+      this.sends.set(`${b}:${key}`, next);
+      this.emit(`send:${b}:${key}`, next);
+    }
   }
 
-  watchFxSend(fx: number, key: string, cb: (db: number) => void): void {
-    cb(this.fxSends.get(`${fx}:${key}`) ?? Number.NEGATIVE_INFINITY);
+  watchFxSend(fx: number, key: string, cb: (db: number) => void): Unsubscribe {
+    cb(this.fxSends.get(`${fx}:${key}`) ?? NEG);
+    return this.watch(`fx:${fx}:${key}`, cb);
   }
 
-  watchAuxMaster(aux: number, cb: (db: number) => void): void {
-    this.auxMasterWatchers.set(aux, [...(this.auxMasterWatchers.get(aux) ?? []), cb]);
-    cb(this.auxMaster.get(aux) ?? 0);
-  }
-
-  setAuxMasterDB(aux: number, db: number): void {
+  setFxSendDB(fx: number, key: string, db: number): void {
     const value = quantize(db);
-    this.auxMaster.set(aux, value);
-    for (const cb of this.auxMasterWatchers.get(aux) ?? []) cb(value);
+    this.fxSends.set(`${fx}:${key}`, value);
+    this.emit(`fx:${fx}:${key}`, value);
+  }
+
+  watchBusMaster(bus: number, cb: (db: number) => void): Unsubscribe {
+    cb(this.busMaster.get(bus) ?? 0);
+    return this.watch(`master:${bus}`, cb);
+  }
+
+  setBusMasterDB(bus: number, db: number): void {
+    for (const b of [bus, this.linkedWith(bus)].filter((x): x is number => x !== undefined)) {
+      const value = quantize(db);
+      this.busMaster.set(b, value);
+      this.emit(`master:${b}`, value);
+    }
   }
 
   // ---- controles do painel (só existem no simulador) ----
@@ -189,10 +218,37 @@ export class SimulatorAdapter implements MixerAdapter {
     return { scene: this.scene, offsets };
   }
 
-  private initialSend(key: string): SendInfo {
+  // ---- internos ----
+
+  private linkedWith(bus: number): number | undefined {
+    for (const [a, b] of LINKED) {
+      if (bus === a) return b;
+      if (bus === b) return a;
+    }
+    return undefined;
+  }
+
+  private watch(id: string, cb: (v: never) => void): Unsubscribe {
+    const set = this.watchers.get(id) ?? new Set();
+    set.add(cb);
+    this.watchers.set(id, set);
+    return () => set.delete(cb);
+  }
+
+  private emit(id: string, value: unknown): void {
+    for (const cb of this.watchers.get(id) ?? []) (cb as (v: unknown) => void)(value);
+  }
+
+  private getSend(bus: number, key: string): SendInfo {
+    const existing = this.sends.get(`${bus}:${key}`);
+    if (existing) return existing;
+    const source = INITIAL[bus] ?? INITIAL[this.linkedWith(bus) ?? -1];
     const idx = Number(key.slice(1)) - 1;
-    const db = (key.startsWith('f') ? INITIAL_FX_SENDS[idx] : INITIAL_SENDS[idx]) ?? Number.NEGATIVE_INFINITY;
-    return { db, muted: false, postFader: false, postProc: true };
+    const db = (key.startsWith('f') ? source?.fx[idx] : source?.ch[idx]) ?? NEG;
+    // master: o "envio" é o fader (VU pós-processamento); auxes de retorno pós-fader; live pré-fader
+    const info: SendInfo = { db, muted: false, postFader: bus !== MASTER_BUS && bus < 7, postProc: true };
+    this.sends.set(`${bus}:${key}`, info);
+    return info;
   }
 
   private step(): void {
@@ -205,7 +261,9 @@ export class SimulatorAdapter implements MixerAdapter {
       const pre = this.levelFor(ch, now, dt);
       // processamento (compressor) segura um pouco os picos
       const post = pre > -20 ? -20 + (pre + 20) * 0.6 - 1 : pre - 1;
-      channels.set(ch.info.key, { pre, post, postFader: post });
+      const fader = this.getSend(MASTER_BUS, ch.info.key);
+      const postFader = fader.muted || !Number.isFinite(fader.db) ? FLOOR_DB : clamp(post + fader.db, FLOOR_DB, 0);
+      channels.set(ch.info.key, { pre, post, postFader });
     }
 
     // efeitos: soma do que entra, com uma cauda que decai devagar (o "reverb")
@@ -213,7 +271,7 @@ export class SimulatorAdapter implements MixerAdapter {
       const inputs = this.sim
         .map((ch) => {
           const send = this.fxSends.get(`${fx.number}:${ch.info.key}`);
-          return send === undefined ? undefined : channels.get(ch.info.key)!.post + send;
+          return send === undefined || !Number.isFinite(send) ? undefined : channels.get(ch.info.key)!.postFader + send;
         })
         .filter((v): v is number => v !== undefined);
       const input = inputs.length ? dbToPow(sumDb(inputs) + FX_RETURN_GAIN_DB) : 0;
@@ -224,18 +282,18 @@ export class SimulatorAdapter implements MixerAdapter {
       channels.set(fx.key, { pre: level, post: level, postFader: level });
     }
 
-    const auxOut = new Map<number, number>();
-    for (let aux = 1; aux <= this.auxCount; aux++) {
+    const busOut = new Map<number, number>();
+    for (let bus = MASTER_BUS; bus <= AUXES; bus++) {
       const contributions: number[] = [];
       for (const [key, vu] of channels) {
-        const send = this.sends.get(`${aux}:${key}`);
-        if (send && !send.muted && Number.isFinite(send.db)) contributions.push(vu.post + send.db);
+        const send = this.getSend(bus, key);
+        if (!send.muted && Number.isFinite(send.db)) contributions.push(tapForSend(vu, send) + send.db);
       }
-      const master = this.auxMaster.get(aux) ?? 0;
-      auxOut.set(aux, contributions.length ? clamp(sumDb(contributions) + master, FLOOR_DB, 0) : FLOOR_DB);
+      const master = this.busMaster.get(bus) ?? 0;
+      busOut.set(bus, contributions.length ? clamp(sumDb(contributions) + master, FLOOR_DB, 0) : FLOOR_DB);
     }
 
-    this.vuCb?.({ t: now, channels, auxOut });
+    this.vuCb?.({ t: now, channels, busOut });
   }
 
   private levelFor(ch: SimChannel, now: number, dt: number): number {

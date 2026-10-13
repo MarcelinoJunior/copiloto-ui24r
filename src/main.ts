@@ -25,7 +25,7 @@ await app.start();
 console.log('');
 console.log('  Copiloto Ui24R');
 console.log(`  Mesa:   ${useSim ? 'SIMULADOR' : cfg.mixer.ip}`);
-console.log(`  Auxes:  ${cfg.streamAuxes.join(', ')}`);
+console.log(`  Saídas: escolha no painel (padrão inicial: aux ${cfg.streamAuxes.join(', ')})`);
 console.log(`  Modo:   ${cfg.initialMode}`);
 console.log(`  Painel: http://${cfg.server.host === '0.0.0.0' ? 'localhost' : cfg.server.host}:${cfg.server.port}`);
 console.log(`  Log:    ${log.file}`);

@@ -3,10 +3,10 @@ import {
   ConnectionStatus,
   SoundcraftUI,
   vuValueToDB,
-  type AuxChannel,
   type InputChannelVuData,
 } from 'soundcraft-ui-connection';
 import {
+  type BusInfo,
   type ChannelInfo,
   type ChannelKind,
   type ChannelVu,
@@ -14,7 +14,9 @@ import {
   type MixerAdapter,
   type MixerInfo,
   type SendInfo,
+  type Unsubscribe,
   type VuFrame,
+  MASTER_BUS,
   channelKey,
   parseChannelKey,
 } from './types.js';
@@ -31,11 +33,19 @@ const STATUS_MAP: Record<ConnectionStatus, ConnectionState> = {
   [ConnectionStatus.Reconnecting]: 'reconectando',
 };
 
+/** O que todo "fader" da biblioteca tem em comum (canal no master, envio de aux, envio de FX...). */
+interface Fader {
+  faderLevelDB$: Observable<number>;
+  mute$: Observable<boolean>;
+  setFaderLevelDB(db: number): void;
+  setFaderLevel(value: number): void;
+}
+
 export class SoundcraftAdapter implements MixerAdapter {
   private readonly ui: SoundcraftUI;
   private channels: ChannelInfo[] = [];
   private fxReturns: ChannelInfo[] = [];
-  private readonly auxNames = new Map<number, string>();
+  private buses: BusInfo[] = [];
   private statusCb?: (state: ConnectionState, detail?: string) => void;
   private nameCb?: (key: string, name: string) => void;
 
@@ -72,7 +82,6 @@ export class SoundcraftAdapter implements MixerAdapter {
         return { key: channelKey(kind, number), kind, number, name: defaultName(kind, number) };
       }),
     );
-
     this.fxReturns = Array.from({ length: caps.fx }, (_, idx) => ({
       key: channelKey('f', idx + 1),
       kind: 'f' as const,
@@ -87,9 +96,22 @@ export class SoundcraftAdapter implements MixerAdapter {
         this.nameCb?.(ch.key, name);
       });
     }
+
+    this.buses = [{ id: MASTER_BUS, name: 'Master (salão)', isMatrix: false }];
     for (let aux = 1; aux <= caps.aux; aux++) {
-      this.ui.master.aux(aux).name$.subscribe((name) => this.auxNames.set(aux, name || `AUX ${aux}`));
+      const bus: BusInfo = { id: aux, name: `AUX ${aux}`, isMatrix: false };
+      this.buses.push(bus);
+      this.ui.master.aux(aux).name$.subscribe((name) => (bus.name = name || `AUX ${aux}`));
+      this.ui.aux(aux).isMatrix$.subscribe((m) => (bus.isMatrix = m));
     }
+    // Link estéreo: a mesa guarda "a.<n-1>.stereoIndex" (0 = primeiro do par, 1 = segundo, -1 = mono).
+    this.ui.store.state$.subscribe((state) => {
+      for (const bus of this.buses) {
+        if (bus.id === MASTER_BUS) continue;
+        const idx = Number(state[`a.${bus.id - 1}.stereoIndex`] ?? -1);
+        bus.linkedWith = idx === 0 ? bus.id + 1 : idx === 1 ? bus.id - 1 : undefined;
+      }
+    });
 
     return { kind: 'mesa', address: this.ip, model: caps.model, firmware, auxCount: caps.aux };
   }
@@ -106,8 +128,12 @@ export class SoundcraftAdapter implements MixerAdapter {
     return this.fxReturns;
   }
 
-  auxName(aux: number): string {
-    return this.auxNames.get(aux) ?? `AUX ${aux}`;
+  listBuses(): BusInfo[] {
+    return this.buses.map((b) => ({ ...b }));
+  }
+
+  busName(bus: number): string {
+    return this.buses.find((b) => b.id === bus)?.name ?? (bus === MASTER_BUS ? 'Master' : `AUX ${bus}`);
   }
 
   onVu(cb: (frame: VuFrame) => void): void {
@@ -125,61 +151,86 @@ export class SoundcraftAdapter implements MixerAdapter {
         channels.set(channelKey('f', idx + 1), { pre: post, post, postFader });
       });
 
-      const auxOut = new Map<number, number>();
-      data.aux.forEach((vu, idx) => auxOut.set(idx + 1, vuValueToDB(vu.vuPostFader)));
+      const busOut = new Map<number, number>();
+      data.aux.forEach((vu, idx) => busOut.set(idx + 1, vuValueToDB(vu.vuPostFader)));
+      if (data.master.length) busOut.set(MASTER_BUS, vuValueToDB(Math.max(...data.master.map((m) => m.vuPostFader))));
 
-      cb({ t: Date.now(), channels, auxOut });
+      cb({ t: Date.now(), channels, busOut });
     });
   }
 
-  watchSend(aux: number, key: string, cb: (info: SendInfo) => void): void {
-    const send = this.auxChannel(aux, key);
-    combineLatest([send.faderLevelDB$, send.mute$, send.post$, send.postProc$]).subscribe(
+  watchSend(bus: number, key: string, cb: (info: SendInfo) => void): Unsubscribe {
+    const { kind, number } = parseChannelKey(key);
+    if (bus === MASTER_BUS) {
+      // No master, o "envio" é o próprio fader do canal: o VU antes dele é o pós-processamento.
+      const fader = this.masterChannel(kind, number);
+      const sub = combineLatest([fader.faderLevelDB$, fader.mute$]).subscribe(([db, muted]) =>
+        cb({ db, muted, postFader: false, postProc: true }),
+      );
+      return () => sub.unsubscribe();
+    }
+    const send = this.auxChannel(bus, kind, number);
+    const sub = combineLatest([send.faderLevelDB$, send.mute$, send.post$, send.postProc$]).subscribe(
       ([db, muted, postFader, postProc]) => cb({ db, muted, postFader, postProc }),
     );
+    return () => sub.unsubscribe();
   }
 
-  setSendDB(aux: number, key: string, db: number): void {
-    // Num aux em link estéreo, a biblioteca já replica o valor no aux vizinho.
-    const send = this.auxChannel(aux, key);
-    if (Number.isFinite(db)) send.setFaderLevelDB(db);
-    else send.setFaderLevel(0); // -∞: fader todo para baixo
-  }
-
-  watchFxSend(fx: number, key: string, cb: (db: number) => void): void {
+  setSendDB(bus: number, key: string, db: number): void {
     const { kind, number } = parseChannelKey(key);
-    const bus = this.ui.fx(fx);
-    const send = kind === 'l' ? bus.line(number) : kind === 'p' ? bus.player(number) : bus.input(number);
-    combineLatest([send.faderLevelDB$, send.mute$]).subscribe(([db, muted]) =>
+    // Num aux em link estéreo, a biblioteca já replica o valor no aux par.
+    setFader(bus === MASTER_BUS ? this.masterChannel(kind, number) : this.auxChannel(bus, kind, number), db);
+  }
+
+  watchFxSend(fx: number, key: string, cb: (db: number) => void): Unsubscribe {
+    const send = this.fxChannel(fx, key);
+    const sub = combineLatest([send.faderLevelDB$, send.mute$]).subscribe(([db, muted]) =>
       cb(muted ? Number.NEGATIVE_INFINITY : db),
     );
+    return () => sub.unsubscribe();
   }
 
-  watchAuxMaster(aux: number, cb: (db: number) => void): void {
-    this.ui.master.aux(aux).faderLevelDB$.subscribe(cb);
+  setFxSendDB(fx: number, key: string, db: number): void {
+    setFader(this.fxChannel(fx, key), db);
   }
 
-  setAuxMasterDB(aux: number, db: number): void {
-    const master = this.ui.master.aux(aux);
-    if (Number.isFinite(db)) master.setFaderLevelDB(db);
-    else master.setFaderLevel(0);
+  watchBusMaster(bus: number, cb: (db: number) => void): Unsubscribe {
+    const fader = bus === MASTER_BUS ? this.ui.master : this.ui.master.aux(bus);
+    const sub = fader.faderLevelDB$.subscribe(cb);
+    return () => sub.unsubscribe();
   }
 
-  private auxChannel(aux: number, key: string): AuxChannel {
+  setBusMasterDB(bus: number, db: number): void {
+    const fader = bus === MASTER_BUS ? this.ui.master : this.ui.master.aux(bus);
+    if (Number.isFinite(db)) fader.setFaderLevelDB(db);
+    else fader.setFaderLevel(0);
+  }
+
+  private auxChannel(bus: number, kind: ChannelKind, number: number) {
+    const aux = this.ui.aux(bus);
+    if (kind === 'l') return aux.line(number);
+    if (kind === 'p') return aux.player(number);
+    if (kind === 'f') return aux.fx(number);
+    return aux.input(number);
+  }
+
+  private fxChannel(fx: number, key: string) {
     const { kind, number } = parseChannelKey(key);
-    const bus = this.ui.aux(aux);
-    if (kind === 'l') return bus.line(number);
-    if (kind === 'p') return bus.player(number);
-    if (kind === 'f') return bus.fx(number);
-    return bus.input(number);
+    const bus = this.ui.fx(fx);
+    return kind === 'l' ? bus.line(number) : kind === 'p' ? bus.player(number) : bus.input(number);
   }
 
-  private masterChannel(kind: ChannelKind, number: number): { name$: Observable<string> } {
+  private masterChannel(kind: ChannelKind, number: number): Fader & { name$: Observable<string> } {
     if (kind === 'l') return this.ui.master.line(number);
     if (kind === 'p') return this.ui.master.player(number);
     if (kind === 'f') return this.ui.master.fx(number);
     return this.ui.master.input(number);
   }
+}
+
+function setFader(fader: Pick<Fader, 'setFaderLevelDB' | 'setFaderLevel'>, db: number): void {
+  if (Number.isFinite(db)) fader.setFaderLevelDB(db);
+  else fader.setFaderLevel(0); // -∞: fader todo para baixo
 }
 
 function toDbVu(vu: InputChannelVuData): ChannelVu {

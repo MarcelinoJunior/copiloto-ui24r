@@ -1,11 +1,20 @@
 import type { AppConfig } from './config.js';
 import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
-import type { ConnectionState, MixerAdapter, MixerInfo } from './mixer/types.js';
+import {
+  type BusInfo,
+  type ConnectionState,
+  type MixerAdapter,
+  type MixerInfo,
+  type Unsubscribe,
+  MASTER_BUS,
+  busLabel,
+  primaryBus,
+} from './mixer/types.js';
 import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
 import type { PresetStore } from './preset-store.js';
 import type { SessionLog } from './session-log.js';
-import type { StateStore } from './state-store.js';
+import type { PersistedState, StateStore } from './state-store.js';
 import { round1 } from './util/db.js';
 
 export interface EventEntry {
@@ -15,20 +24,37 @@ export interface EventEntry {
   mergeKey?: string;
 }
 
+export interface BusChoice {
+  id: number;
+  label: string;
+  name: string;
+  stereo: boolean;
+  selected: boolean;
+}
+
+export interface ControlledBus {
+  bus: number;
+  label: string;
+  name: string;
+  stereo: boolean;
+  outDB?: number;
+  masterDB?: number;
+  channels: ChannelSnapshot[];
+  fx: FxSnapshot[];
+}
+
 export interface AppSnapshot {
   connection: ConnectionState;
   connectionDetail?: string;
   mixer?: MixerInfo;
   mode: Mode;
   deadbandDB: number;
-  auxes: {
-    aux: number;
-    name: string;
-    outDB?: number;
-    masterDB?: number;
-    channels: ChannelSnapshot[];
-    fx: FxSnapshot[];
-  }[];
+  buses: BusChoice[];
+  controlled: ControlledBus[];
+  /** efeitos da mesa e se o retorno deles vai para o salão (master) */
+  fxInfo: { key: string; name: string; inRoom: boolean }[];
+  /** envio de cada canal para cada efeito: fxSends[canal][efeito] (null = -∞) */
+  fxSends: Record<string, Record<string, number | null>>;
   presets: { id: string; name: string; savedAt: number }[];
   activePresetId?: string;
   events: EventEntry[];
@@ -40,24 +66,33 @@ type WireDB = number | null;
 
 export type Command =
   | { type: 'setMode'; mode: Mode }
-  | { type: 'capture'; aux?: number }
+  | { type: 'setBuses'; buses: number[] }
+  | { type: 'capture'; bus?: number }
   | { type: 'restore' }
-  | { type: 'setEnabled'; aux: number; key: string; enabled: boolean }
-  | { type: 'nudgeTarget'; aux: number; key: string; delta: number }
-  | { type: 'clearTarget'; aux: number; key: string }
-  | { type: 'setSend'; aux: number; key: string; db: WireDB }
-  | { type: 'setAuxMaster'; aux: number; db: WireDB }
-  | { type: 'setFxFollow'; aux: number; key: string; follow: boolean }
+  | { type: 'setEnabled'; bus: number; key: string; enabled: boolean }
+  | { type: 'nudgeTarget'; bus: number; key: string; delta: number }
+  | { type: 'clearTarget'; bus: number; key: string }
+  | { type: 'setSend'; bus: number; key: string; db: WireDB }
+  | { type: 'setBusMaster'; bus: number; db: WireDB }
+  | { type: 'setFxSend'; fx: string; key: string; db: WireDB }
+  | { type: 'setFxFollow'; bus: number; key: string; follow: boolean }
   | { type: 'preset.save'; name: string; id?: string }
   | { type: 'preset.load'; id: string }
   | { type: 'preset.delete'; id: string }
   | { type: 'sim.scene'; scene: Scene }
   | { type: 'sim.source'; key: string; delta: number }
-  | { type: 'sim.reset' }
-  | { type: 'sim.operator'; aux: number; key: string; delta: number };
+  | { type: 'sim.reset' };
+
+interface BusController {
+  bus: number;
+  leveler: AuxLeveler;
+  follower: FxFollower;
+  unsubs: Unsubscribe[];
+  masterDB?: number;
+}
 
 interface Fade {
-  aux: number;
+  bus: number;
   key: string;
   fromDB: number;
   toDB: number;
@@ -71,18 +106,23 @@ const LEVEL_LOG_EVERY_MS = 2000;
 const CONNECT_TIMEOUT_MS = 10000;
 const RETRY_MS = 5000;
 const FADE_STEP_MS = 100;
+/** Retorno de efeito acima disso no master = o efeito toca no salão. */
+const IN_ROOM_THRESHOLD_DB = -60;
 
 /** Liga a mesa (real ou simulada), os niveladores, os efeitos, os presets e o log do culto. */
 export class App {
-  private readonly levelers: AuxLeveler[];
-  private readonly followers: FxFollower[];
-  private readonly auxMaster = new Map<number, number>();
+  private readonly controllers = new Map<number, BusController>();
+  private persisted: PersistedState = { auxes: {} };
   private mode: Mode;
   private connection: ConnectionState = 'conectando';
   private connectionDetail?: string;
   private mixer?: MixerInfo;
   private readonly events: EventEntry[] = [];
   private readonly fades = new Map<string, Fade>();
+  /** `${fxKey}:${channelKey}` -> dB */
+  private readonly fxSends = new Map<string, number>();
+  private readonly fxInRoom = new Map<string, boolean>();
+  private outLevels = new Map<number, number>();
   private activePresetId?: string;
   private wired = false;
   private dirty = false;
@@ -98,9 +138,6 @@ export class App {
     private readonly log: SessionLog,
   ) {
     this.mode = cfg.initialMode;
-    this.levelers = cfg.streamAuxes.map((aux) => new AuxLeveler(aux, cfg.leveler));
-    this.followers = cfg.streamAuxes.map((aux) => new FxFollower(aux, cfg.leveler));
-    this.setModeAll(this.mode);
     adapter.onStatus((state, detail) => {
       if (state !== this.connection) this.event(`Mesa: ${state}${detail ? ` (${detail})` : ''}`);
       this.connection = state;
@@ -109,7 +146,7 @@ export class App {
   }
 
   async start(): Promise<void> {
-    this.log.write('inicio', { mode: this.mode, auxes: this.cfg.streamAuxes, leveler: this.cfg.leveler });
+    this.log.write('inicio', { mode: this.mode, leveler: this.cfg.leveler });
     this.timers.push(setInterval(() => this.tick(), this.cfg.leveler.tickMs));
     this.timers.push(setInterval(() => this.runFades(), FADE_STEP_MS));
     this.timers.push(setInterval(() => this.persistIfDirty(), 5000));
@@ -146,85 +183,157 @@ export class App {
     }
   }
 
-  /** Assina VU e envios. Feito uma vez só: a biblioteca mantém as assinaturas entre reconexões. */
+  /** Assinaturas globais (uma vez só) e depois as saídas escolhidas. */
   private wire(): void {
     if (this.wired) return;
     this.wired = true;
-    const persisted = this.store.load();
-    this.activePresetId = persisted.activePresetId;
+    this.persisted = this.store.load();
+    this.activePresetId = this.persisted.activePresetId;
     const channels = this.adapter.listChannels();
-    const fxReturns = this.adapter.listFxReturns();
 
-    this.levelers.forEach((leveler, idx) => {
-      const aux = leveler.aux;
-      const follower = this.followers[idx];
-      const saved = persisted.auxes[String(aux)] ?? {};
-      const savedFollow = persisted.fxFollow?.[String(aux)] ?? {};
-
+    for (const fx of this.adapter.listFxReturns()) {
       for (const ch of channels) {
-        leveler.ensureChannel(ch.key, ch.name, saved[ch.key]);
-        this.adapter.watchSend(aux, ch.key, (info) => {
-          const change = leveler.onSend(ch.key, info, Date.now());
-          if (change) this.operatorMoved(aux, ch.key, leveler.channelName(ch.key), change);
+        this.adapter.watchFxSend(fx.number, ch.key, (db) => {
+          this.fxSends.set(`${fx.key}:${ch.key}`, db);
+          for (const c of this.controllers.values()) c.follower.onFxSend(fx.key, ch.key, db);
         });
       }
-
-      for (const fx of fxReturns) {
-        follower.ensureReturn(fx.key, fx.name, savedFollow[fx.key] ?? true);
-        this.adapter.watchSend(aux, fx.key, (info) => {
-          const change = follower.onSend(fx.key, info, Date.now());
-          if (change) this.operatorMoved(aux, fx.key, fx.name, change);
-        });
-        for (const ch of channels) {
-          this.adapter.watchFxSend(fx.number, ch.key, (db) => follower.onFxSend(fx.key, ch.key, db));
-        }
-      }
-
-      this.adapter.watchAuxMaster(aux, (db) => this.auxMaster.set(aux, db));
-    });
+      this.adapter.watchSend(MASTER_BUS, fx.key, (info) =>
+        this.fxInRoom.set(fx.key, !info.muted && Number.isFinite(info.db) && info.db > IN_ROOM_THRESHOLD_DB),
+      );
+    }
 
     this.adapter.onChannelName((key, name) => {
-      this.levelers.forEach((l) => l.setName(key, name));
-      this.followers.forEach((f) => f.setName(key, name));
+      for (const c of this.controllers.values()) {
+        c.leveler.setName(key, name);
+        c.follower.setName(key, name);
+      }
     });
 
     this.adapter.onVu((frame) => {
-      this.levelers.forEach((leveler, idx) => {
-        const follower = this.followers[idx];
+      this.outLevels = frame.busOut;
+      for (const c of this.controllers.values()) {
         for (const [key, vu] of frame.channels) {
-          if (key.startsWith('f')) follower.onVu(key, vu.post);
-          else leveler.onVu(key, vu, frame.t);
+          if (key.startsWith('f')) c.follower.onVu(key, vu.post);
+          else c.leveler.onVu(key, vu, frame.t);
         }
-        leveler.auxOutDB = frame.auxOut.get(leveler.aux);
-      });
+        c.leveler.outDB = frame.busOut.get(c.bus);
+      }
     });
+
+    this.selectBuses(this.persisted.buses ?? this.cfg.streamAuxes, false);
   }
 
-  private operatorMoved(aux: number, key: string, name: string, change: { fromDB: number; toDB: number }): void {
+  // ---------- escolha das saídas controladas ----------
+
+  private busInfo(id: number): BusInfo | undefined {
+    return this.adapter.listBuses().find((b) => b.id === id);
+  }
+
+  /** Normaliza a escolha: par estéreo vira o aux "dono" (7 em 7+8), matrizes ficam de fora. */
+  private normalizeBuses(ids: number[]): number[] {
+    const out = new Set<number>();
+    for (const id of ids) {
+      const info = this.busInfo(id);
+      if (!info || info.isMatrix) continue;
+      out.add(primaryBus(info));
+    }
+    return [...out].sort((a, b) => a - b);
+  }
+
+  private selectBuses(ids: number[], announce = true): void {
+    const wanted = new Set(this.normalizeBuses(ids));
+    for (const [bus, c] of this.controllers) {
+      if (wanted.has(bus)) continue;
+      this.persistController(c);
+      c.unsubs.forEach((u) => u());
+      this.controllers.delete(bus);
+      for (const [id, f] of this.fades) if (f.bus === bus) this.fades.delete(id);
+      if (announce) this.event(`Parei de controlar ${this.labelOf(bus)}`);
+    }
+    for (const bus of wanted) {
+      if (this.controllers.has(bus)) continue;
+      this.addController(bus);
+      if (announce) {
+        this.event(
+          bus === MASTER_BUS
+            ? 'Controlando o MASTER: atenção, isso muda o som do SALÃO'
+            : `Controlando ${this.labelOf(bus)} (${this.adapter.busName(bus)})`,
+        );
+      }
+    }
+    this.persisted.buses = [...wanted];
     this.dirty = true;
-    this.fades.delete(`${aux}:${key}`); // o operador manda: cancela fade em andamento
-    this.event(`Operador: ${name} (aux ${aux}) → ${fmt(change.toDB)} dB`, `op:${aux}:${key}`);
-    this.log.write('operador', { aux, key, ...change });
+    this.log.write('saidas', { buses: [...wanted] });
+  }
+
+  private addController(bus: number): void {
+    const leveler = new AuxLeveler(bus, this.cfg.leveler);
+    const follower = new FxFollower(bus, this.cfg.leveler);
+    leveler.setMode(this.mode);
+    follower.setMode(this.mode);
+    const c: BusController = { bus, leveler, follower, unsubs: [] };
+    this.controllers.set(bus, c);
+
+    const saved = this.persisted.auxes[String(bus)] ?? {};
+    const savedFollow = this.persisted.fxFollow?.[String(bus)] ?? {};
+
+    for (const ch of this.adapter.listChannels()) {
+      leveler.ensureChannel(ch.key, ch.name, saved[ch.key]);
+      c.unsubs.push(
+        this.adapter.watchSend(bus, ch.key, (info) => {
+          const change = leveler.onSend(ch.key, info, Date.now());
+          if (change) this.operatorMoved(bus, ch.key, leveler.channelName(ch.key), change);
+        }),
+      );
+    }
+    for (const fx of this.adapter.listFxReturns()) {
+      follower.ensureReturn(fx.key, fx.name, savedFollow[fx.key] ?? true);
+      for (const ch of this.adapter.listChannels()) {
+        const db = this.fxSends.get(`${fx.key}:${ch.key}`);
+        if (db !== undefined) follower.onFxSend(fx.key, ch.key, db);
+      }
+      c.unsubs.push(
+        this.adapter.watchSend(bus, fx.key, (info) => {
+          const change = follower.onSend(fx.key, info, Date.now());
+          if (change) this.operatorMoved(bus, fx.key, fx.name, change);
+        }),
+      );
+    }
+    c.unsubs.push(this.adapter.watchBusMaster(bus, (db) => (c.masterDB = db)));
+  }
+
+  private labelOf(bus: number): string {
+    return busLabel(this.busInfo(bus), bus);
+  }
+
+  // ---------- ciclo ----------
+
+  private operatorMoved(bus: number, key: string, name: string, change: { fromDB: number; toDB: number }): void {
+    this.dirty = true;
+    this.fades.delete(`${bus}:${key}`); // o operador manda: cancela fade em andamento
+    this.event(`Operador: ${name} → ${this.labelOf(bus)} ${fmt(change.toDB)} dB`, `op:${bus}:${key}`);
+    this.log.write('operador', { bus, key, ...change });
   }
 
   private tick(): void {
     if (!this.wired) return;
     const now = Date.now();
-    this.levelers.forEach((leveler, idx) => {
-      this.apply(leveler.tick(now));
-      this.apply(this.followers[idx].tick(now, leveler.offsets(now)));
-    });
+    for (const c of this.controllers.values()) {
+      this.apply(c.leveler.tick(now));
+      this.apply(c.follower.tick(now, c.leveler.offsets(now)));
+    }
 
     if (now - this.lastLevelLog >= LEVEL_LOG_EVERY_MS) {
       this.lastLevelLog = now;
-      this.levelers.forEach((leveler, idx) => {
-        const active = leveler
+      for (const c of this.controllers.values()) {
+        const active = c.leveler
           .snapshot(now)
-          .filter((c) => c.status !== 'silencio' && c.status !== 'sem-envio' && c.status !== 'desabilitado')
-          .map((c) => [c.key, c.levelDB, c.sendDB, c.targetDB, c.status]);
-        const fx = this.followers[idx].snapshot().map((f) => [f.key, f.sendDB, f.followDeltaDB, f.status]);
-        this.log.write('niveis', { aux: leveler.aux, mode: this.mode, out: leveler.auxOutDB, ch: active, fx });
-      });
+          .filter((s) => s.status !== 'silencio' && s.status !== 'sem-envio' && s.status !== 'desabilitado')
+          .map((s) => [s.key, s.levelDB, s.sendDB, s.targetDB, s.status]);
+        const fx = c.follower.snapshot().map((f) => [f.key, f.sendDB, f.followDeltaDB, f.status]);
+        this.log.write('niveis', { bus: c.bus, mode: this.mode, out: c.leveler.outDB, ch: active, fx });
+      }
     }
   }
 
@@ -232,17 +341,13 @@ export class App {
   private apply(actions: SendAction[]): void {
     const now = Date.now();
     for (const a of actions) {
-      this.markCommanded(a.aux, a.key, a.toDB, now);
-      this.adapter.setSendDB(a.aux, a.key, a.toDB);
+      const c = this.controllers.get(a.bus);
+      if (!c) continue;
+      if (a.key.startsWith('f')) c.follower.markCommanded(a.key, a.toDB, now);
+      else c.leveler.markCommanded(a.key, a.toDB, now);
+      this.adapter.setSendDB(a.bus, a.key, a.toDB);
       if (a.reason !== 'preset') this.log.write('envio', { ...a });
     }
-  }
-
-  private markCommanded(aux: number, key: string, db: number, now: number): void {
-    const idx = this.levelers.findIndex((l) => l.aux === aux);
-    if (idx < 0) return;
-    if (key.startsWith('f')) this.followers[idx].markCommanded(key, db, now);
-    else this.levelers[idx].markCommanded(key, db, now);
   }
 
   private runFades(): void {
@@ -255,69 +360,85 @@ export class App {
       if (progress >= 1) db = f.toDB;
       else if (!Number.isFinite(f.fromDB) || !Number.isFinite(f.toDB)) continue; // abre/fecha no fim do fade
       else db = round1(f.fromDB + (f.toDB - f.fromDB) * easeInOut(progress));
-      actions.push({ aux: f.aux, key: f.key, fromDB: f.fromDB, toDB: db, reason: 'preset' });
+      actions.push({ bus: f.bus, key: f.key, fromDB: f.fromDB, toDB: db, reason: 'preset' });
       if (progress >= 1) this.fades.delete(id);
     }
     this.apply(actions);
   }
 
+  // ---------- comandos do painel ----------
+
   handle(cmd: Command): void {
     const now = Date.now();
-    const auxIdx = 'aux' in cmd && cmd.aux !== undefined ? this.levelers.findIndex((l) => l.aux === cmd.aux) : -1;
-    const leveler = auxIdx >= 0 ? this.levelers[auxIdx] : undefined;
-    const follower = auxIdx >= 0 ? this.followers[auxIdx] : undefined;
+    const c = 'bus' in cmd && cmd.bus !== undefined ? this.controllers.get(cmd.bus) : undefined;
 
     switch (cmd.type) {
       case 'setMode':
         if (!['desligado', 'observar', 'automatico'].includes(cmd.mode)) return;
         this.mode = cmd.mode;
-        this.setModeAll(cmd.mode);
+        for (const x of this.controllers.values()) {
+          x.leveler.setMode(cmd.mode);
+          x.follower.setMode(cmd.mode);
+        }
         this.event(`Modo: ${cmd.mode}`);
         this.log.write('modo', { mode: cmd.mode });
         break;
-      case 'capture': {
-        this.levelers.forEach((l, idx) => {
-          if (cmd.aux !== undefined && l.aux !== cmd.aux) return;
-          const n = l.captureTargets(now);
-          this.followers[idx].resetReferences();
-          this.event(`Mixagem atual do aux ${l.aux} gravada como alvo (${n} canais)`);
-          this.log.write('captura', { aux: l.aux, canais: n, alvos: l.exportPersisted() });
-        });
+      case 'setBuses':
+        if (Array.isArray(cmd.buses)) this.selectBuses(cmd.buses.filter((b) => Number.isInteger(b)));
+        break;
+      case 'capture':
+        for (const x of this.controllers.values()) {
+          if (cmd.bus !== undefined && x.bus !== cmd.bus) continue;
+          const n = x.leveler.captureTargets(now);
+          x.follower.resetReferences();
+          this.event(`Mixagem atual de ${this.labelOf(x.bus)} gravada como alvo (${n} canais)`);
+          this.log.write('captura', { bus: x.bus, canais: n, alvos: x.leveler.exportPersisted() });
+        }
         this.dirty = true;
         break;
-      }
       case 'restore':
-        for (const l of this.levelers) {
-          const actions = l.restoreBase();
+        for (const x of this.controllers.values()) {
+          const actions = x.leveler.restoreBase();
           this.apply(actions);
-          this.event(`Envios do aux ${l.aux} voltaram para a mixagem original (${actions.length} canais)`);
+          this.event(`${this.labelOf(x.bus)}: envios voltaram para a mixagem original (${actions.length} canais)`);
         }
         break;
       case 'setEnabled':
-        leveler?.setEnabled(cmd.key, cmd.enabled);
+        c?.leveler.setEnabled(cmd.key, cmd.enabled);
         this.dirty = true;
         break;
       case 'nudgeTarget':
-        leveler?.nudgeTarget(cmd.key, clampDelta(cmd.delta));
+        c?.leveler.nudgeTarget(cmd.key, clampDelta(cmd.delta));
         this.dirty = true;
         break;
       case 'clearTarget':
-        leveler?.setTarget(cmd.key, undefined);
+        c?.leveler.setTarget(cmd.key, undefined);
         this.dirty = true;
         break;
       case 'setSend':
         // Fader do painel = operador mexendo: NÃO marcamos como nosso, então o nivelador
         // trata como intervenção (pausa o canal e aprende o novo alvo).
-        if (leveler) this.adapter.setSendDB(cmd.aux, cmd.key, fromWire(cmd.db));
+        if (c) this.adapter.setSendDB(cmd.bus, cmd.key, fromWire(cmd.db));
         break;
-      case 'setAuxMaster':
-        if (leveler) {
-          this.adapter.setAuxMasterDB(cmd.aux, fromWire(cmd.db));
-          this.event(`Volume geral da live (aux ${cmd.aux}) → ${fmt(fromWire(cmd.db))} dB`, `master:${cmd.aux}`);
+      case 'setBusMaster':
+        if (c) {
+          this.adapter.setBusMasterDB(cmd.bus, fromWire(cmd.db));
+          this.event(`Volume geral de ${this.labelOf(cmd.bus)} → ${fmt(fromWire(cmd.db))} dB`, `master:${cmd.bus}`);
         }
         break;
+      case 'setFxSend': {
+        const fx = this.adapter.listFxReturns().find((f) => f.key === cmd.fx);
+        const ch = this.adapter.listChannels().find((x) => x.key === cmd.key);
+        if (!fx || !ch) return;
+        const db = fromWire(cmd.db);
+        this.adapter.setFxSendDB(fx.number, ch.key, db);
+        const where = this.fxInRoom.get(fx.key) ? 'salão + live' : 'só live';
+        this.event(`Efeito: ${ch.name} → ${fx.name} ${fmt(db)} dB (${where})`, `fx:${fx.key}:${ch.key}`);
+        this.log.write('efeito', { fx: fx.key, key: ch.key, db: Number.isFinite(db) ? db : null });
+        break;
+      }
       case 'setFxFollow':
-        follower?.setFollow(cmd.key, cmd.follow);
+        c?.follower.setFollow(cmd.key, cmd.follow);
         this.dirty = true;
         break;
       case 'preset.save':
@@ -346,27 +467,24 @@ export class App {
       case 'sim.reset':
         this.sim()?.resetSources();
         break;
-      case 'sim.operator': {
-        // simula o operador mexendo no envio direto na mesa (não passa pelo nivelador)
-        const sim = this.sim();
-        const ch = leveler?.snapshot(now).find((c) => c.key === cmd.key);
-        if (sim && ch?.sendDB !== undefined) sim.setSendDB(cmd.aux, cmd.key, ch.sendDB + clampDelta(cmd.delta));
-        break;
-      }
     }
   }
 
+  // ---------- presets ----------
+
   private savePreset(name: string, id?: string): void {
     const cleanName = String(name ?? '').trim().slice(0, 40);
-    if (!cleanName) return;
-    const auxes: Record<string, { channels: ReturnType<AuxLeveler['exportPreset']>; fx: Record<string, number | null> }> = {};
-    this.levelers.forEach((l, idx) => {
-      auxes[String(l.aux)] = { channels: l.exportPreset(), fx: this.followers[idx].exportSends() };
-    });
+    if (!cleanName || this.controllers.size === 0) return;
+    const existing = id ? this.presets.get(id) : undefined;
+    // mantém no preset as saídas que não estão sendo controladas agora
+    const auxes = { ...(existing?.auxes ?? {}) };
+    for (const c of this.controllers.values()) {
+      auxes[String(c.bus)] = { channels: c.leveler.exportPreset(), fx: c.follower.exportSends() };
+      // a mixagem salva vira a referência dos efeitos (eles param de compensar a partir daqui)
+      c.leveler.resetReferences();
+      c.follower.resetReferences();
+    }
     const preset = this.presets.save({ id, name: cleanName, savedAt: Date.now(), auxes });
-    // A mixagem salva vira a referência dos efeitos (eles param de compensar a partir daqui).
-    this.followers.forEach((f) => f.resetReferences());
-    this.levelers.forEach((l) => l.resetReferences());
     this.activePresetId = preset.id;
     this.dirty = true;
     this.event(`Preset "${preset.name}" ${id ? 'atualizado' : 'salvo'}`);
@@ -379,58 +497,90 @@ export class App {
     const now = Date.now();
     const durationMs = Math.max(0, this.cfg.leveler.presetFadeSec * 1000);
     const until = now + durationMs + 1500;
+    let applied = 0;
 
-    this.levelers.forEach((leveler, idx) => {
-      const data = preset.auxes[String(leveler.aux)];
-      if (!data) return;
-      const follower = this.followers[idx];
-      const current = new Map(leveler.snapshot(now).map((c) => [c.key, c.sendDB ?? Number.NEGATIVE_INFINITY]));
-      const currentFx = new Map(follower.snapshot().map((f) => [f.key, f.sendDB ?? Number.NEGATIVE_INFINITY]));
-
+    for (const c of this.controllers.values()) {
+      const data = preset.auxes[String(c.bus)];
+      if (!data) continue;
+      applied++;
+      const current = new Map(c.leveler.snapshot(now).map((s) => [s.key, s.sendDB ?? Number.NEGATIVE_INFINITY]));
+      const currentFx = new Map(c.follower.snapshot().map((f) => [f.key, f.sendDB ?? Number.NEGATIVE_INFINITY]));
       for (const [key, p] of Object.entries(data.channels)) {
-        leveler.holdForTransition(key, until);
-        this.startFade(leveler.aux, key, current.get(key), p.sendDB, now, durationMs);
+        c.leveler.holdForTransition(key, until);
+        this.startFade(c.bus, key, current.get(key), p.sendDB, now, durationMs);
       }
       for (const [key, db] of Object.entries(data.fx)) {
-        follower.holdForTransition(key, until);
-        this.startFade(leveler.aux, key, currentFx.get(key), db, now, durationMs);
+        c.follower.holdForTransition(key, until);
+        this.startFade(c.bus, key, currentFx.get(key), db, now, durationMs);
       }
-      leveler.applyPreset(data.channels);
-      follower.resetReferences(data.fx);
-    });
+      c.leveler.applyPreset(data.channels);
+      c.follower.resetReferences(data.fx);
+    }
 
+    if (applied === 0) {
+      this.event(`Preset "${preset.name}" não tem dados para as saídas controladas agora`);
+      return;
+    }
     this.activePresetId = preset.id;
     this.dirty = true;
     this.event(`Preset "${preset.name}" carregado (fade de ${this.cfg.leveler.presetFadeSec} s)`);
     this.log.write('preset', { id: preset.id, name: preset.name });
   }
 
-  private startFade(aux: number, key: string, from: number | undefined, to: number | null, now: number, durationMs: number): void {
+  private startFade(bus: number, key: string, from: number | undefined, to: number | null, now: number, durationMs: number): void {
     const fromDB = from ?? Number.NEGATIVE_INFINITY;
     const toDB = to ?? Number.NEGATIVE_INFINITY;
     if (fromDB === toDB || (Number.isFinite(fromDB) && Number.isFinite(toDB) && Math.abs(fromDB - toDB) < 0.05)) return;
-    this.fades.set(`${aux}:${key}`, { aux, key, fromDB, toDB, start: now, durationMs: Math.max(1, durationMs) });
+    this.fades.set(`${bus}:${key}`, { bus, key, fromDB, toDB, start: now, durationMs: Math.max(1, durationMs) });
   }
+
+  // ---------- estado para o painel ----------
 
   snapshot(): AppSnapshot {
     const now = Date.now();
+    const buses = this.wired ? this.adapter.listBuses() : [];
+    const choices: BusChoice[] = buses
+      .filter((b) => !b.isMatrix && (b.linkedWith === undefined || b.id === primaryBus(b)))
+      .map((b) => ({
+        id: b.id,
+        label: busLabel(b, b.id),
+        name: b.name,
+        stereo: b.linkedWith !== undefined,
+        selected: this.controllers.has(b.id),
+      }));
+
+    const fxReturns = this.wired ? this.adapter.listFxReturns() : [];
+    const fxSends: Record<string, Record<string, number | null>> = {};
+    for (const [id, db] of this.fxSends) {
+      const [fx, ch] = id.split(':');
+      (fxSends[ch] ??= {})[fx] = Number.isFinite(db) ? round1(db) : null;
+    }
+
     return {
       connection: this.connection,
       connectionDetail: this.connectionDetail,
       mixer: this.mixer,
       mode: this.mode,
       deadbandDB: this.cfg.leveler.deadbandDB,
-      auxes: this.levelers.map((l, idx) => {
-        const master = this.auxMaster.get(l.aux);
-        return {
-          aux: l.aux,
-          name: this.adapter.auxName(l.aux),
-          outDB: l.auxOutDB === undefined ? undefined : round1(l.auxOutDB),
-          masterDB: master === undefined || !Number.isFinite(master) ? undefined : round1(master),
-          channels: l.snapshot(now),
-          fx: this.followers[idx].snapshot(),
-        };
-      }),
+      buses: choices,
+      controlled: [...this.controllers.values()]
+        .sort((a, b) => a.bus - b.bus)
+        .map((c) => {
+          const info = buses.find((b) => b.id === c.bus);
+          const out = this.outLevels.get(c.bus);
+          return {
+            bus: c.bus,
+            label: busLabel(info, c.bus),
+            name: this.adapter.busName(c.bus),
+            stereo: info?.linkedWith !== undefined,
+            outDB: out === undefined ? undefined : round1(out),
+            masterDB: c.masterDB === undefined || !Number.isFinite(c.masterDB) ? undefined : round1(c.masterDB),
+            channels: c.leveler.snapshot(now),
+            fx: c.follower.snapshot(),
+          };
+        }),
+      fxInfo: fxReturns.map((f) => ({ key: f.key, name: f.name, inRoom: this.fxInRoom.get(f.key) ?? false })),
+      fxSends,
       presets: this.presets.list().map((p) => ({ id: p.id, name: p.name, savedAt: p.savedAt })),
       activePresetId: this.activePresetId,
       events: this.events.slice(-MAX_EVENTS).reverse(),
@@ -438,10 +588,7 @@ export class App {
     };
   }
 
-  private setModeAll(mode: Mode): void {
-    this.levelers.forEach((l) => l.setMode(mode));
-    this.followers.forEach((f) => f.setMode(mode));
-  }
+  // ---------- internos ----------
 
   private sim(): SimulatorAdapter | undefined {
     return this.adapter instanceof SimulatorAdapter ? this.adapter : undefined;
@@ -460,14 +607,17 @@ export class App {
     console.log(`[${new Date(now).toLocaleTimeString('pt-BR')}] ${text}`);
   }
 
+  private persistController(c: BusController): void {
+    this.persisted.auxes[String(c.bus)] = c.leveler.exportPersisted();
+    (this.persisted.fxFollow ??= {})[String(c.bus)] = c.follower.exportFollow();
+  }
+
   private persistIfDirty(): void {
-    if (!this.dirty) return;
+    if (!this.dirty || !this.wired) return;
     this.dirty = false;
-    this.store.save({
-      auxes: Object.fromEntries(this.levelers.map((l) => [String(l.aux), l.exportPersisted()])),
-      fxFollow: Object.fromEntries(this.followers.map((f) => [String(f.aux), f.exportFollow()])),
-      activePresetId: this.activePresetId,
-    });
+    for (const c of this.controllers.values()) this.persistController(c);
+    this.persisted.activePresetId = this.activePresetId;
+    this.store.save(this.persisted);
   }
 }
 

@@ -79,6 +79,22 @@ button.small { padding: 2px 7px; font-size: 12px; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .toggle { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); margin-left: auto; }
 
+.buses { border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
+.bus-list { display: flex; gap: 6px; flex-wrap: wrap; }
+.bus-list button { display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 1.2; padding: 5px 10px; }
+.bus-list button small { color: var(--muted); font-size: 11px; }
+.bus-list button.selected { background: var(--ok); border-color: var(--ok); color: #03200f; font-weight: 700; }
+.bus-list button.selected small { color: #0b3a22; }
+.bus-list button.master { border-color: var(--bad); }
+.bus-list button.master.selected { background: var(--bad); color: #2a0606; }
+.hint { font-size: 12px; }
+.empty-state { text-align: center; padding: 30px 10px; color: var(--muted); background: var(--panel); border: 1px dashed var(--line); border-radius: 10px; }
+
+.aux-help { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.aux-help strong { color: var(--text); }
+.aux-help .warn { color: var(--bad); font-weight: 700; }
+.aux.is-master { border-color: var(--bad); }
+
 .presets { border-top: 1px solid var(--line); padding-top: 10px; }
 .preset-list { display: flex; gap: 6px; flex-wrap: wrap; }
 .preset-list button { min-width: 90px; }
@@ -166,6 +182,20 @@ body[data-view="mesa"] .table-view, body[data-view="tabela"] .mixer-view { displ
 .fader.moving::-webkit-slider-thumb { background: linear-gradient(180deg, #ffe39a, #f5b642 45%, #2b3038 47%, #2b3038 53%, #f5b642 55%, #ffd36b); }
 
 .send-db { font-weight: 700; font-variant-numeric: tabular-nums; }
+.fader-dest { font-size: 10px; color: var(--muted); line-height: 1.2; margin-top: -4px; }
+
+.fx-sends { width: 100%; border-top: 1px solid var(--line); padding-top: 5px; display: flex; flex-direction: column; gap: 3px; }
+body:not(.show-fx) .fx-sends { display: none; }
+.fx-send { display: flex; flex-direction: column; gap: 0; }
+.fx-send .lbl { display: flex; justify-content: space-between; font-size: 10px; color: var(--fx); gap: 2px; }
+.fx-send .lbl .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-send.room .lbl { color: var(--warn); }
+.fx-send .val { font-variant-numeric: tabular-nums; color: var(--text); }
+.fx-send input { width: 100%; height: 14px; margin: 0; accent-color: var(--fx); }
+.fx-send.room input { accent-color: var(--warn); }
+.fx-badge { font-size: 10px; padding: 0 6px; border-radius: 999px; border: 1px solid currentColor; }
+.fx-badge.room { color: var(--warn); }
+.fx-badge.live { color: var(--fx); }
 .delta { font-size: 12px; min-height: 16px; font-variant-numeric: tabular-nums; }
 .delta.down { color: var(--warn); }
 .delta.up { color: var(--accent); }
