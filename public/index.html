@@ -10,7 +10,7 @@
   <!-- 1º andar: navegação, simulador, conexão e conta -->
   <header class="appbar">
     <strong class="logo">Copiloto</strong>
-    <nav class="nav" id="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="conexao.html">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
+    <nav class="nav" id="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="analise.html">Análise</a><a href="conexao.html">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
 
     <div id="sim" class="simgroup" hidden title="Mesa falsa para testes: nada é enviado para a Ui24R">
       <span class="sim-chip">SIMULADOR</span>
@@ -25,6 +25,9 @@
     </div>
 
     <span class="spacer"></span>
+    <button id="tips-btn" class="tips-btn" title="Dicas a partir do que o software está lendo (clip, volume baixo, ruído, microfonia…)">
+      Dicas <span id="tips-count" class="tips-count">0</span>
+    </button>
     <a id="conn" class="pill" href="conexao.html" title="Abrir a tela de conexão">…</a>
     <details class="menu user-menu">
       <summary id="user-name">…</summary>
@@ -37,13 +40,13 @@
 
   <!-- 2º andar: controles da mixagem, em grupos -->
   <div class="toolbar" role="toolbar" aria-label="Controles da mixagem">
-    <div class="tgroup" title="Qual saída da mesa você está vendo e mixando">
-      <label class="tlabel" for="bus-select">Saída</label>
+    <div class="tgroup g-saida" title="SAÍDA: qual saída da mesa você está vendo e mixando (aux da live, retornos ou master). Cada pessoa vê a sua.">
+      <label class="tlabel" for="bus-select">Saída <span class="ti">ⓘ</span></label>
       <select id="bus-select"></select>
     </div>
 
-    <div class="tgroup">
-      <span class="tlabel">Automático</span>
+    <div class="tgroup g-auto" title="AUTOMÁTICO: o que o software faz NESTA saída. Desligado = só mostra. Observar = calcula as correções sem mexer na mesa. Ligado = corrige os envios devagar, dentro dos limites.">
+      <span class="tlabel">Automático <span class="ti">ⓘ</span></span>
       <div class="seg modes" role="radiogroup" aria-label="Modo do automático nesta saída">
         <button data-mode="desligado" title="Só mostra os níveis">Desligado</button>
         <button data-mode="observar" title="Calcula as correções mas NÃO mexe na mesa">Observar</button>
@@ -51,14 +54,14 @@
       </div>
     </div>
 
-    <div class="tgroup">
-      <span class="tlabel">Alvo</span>
+    <div class="tgroup g-alvo" title="ALVO: a mixagem de referência que o automático mantém. Gravar = o nível atual de cada canal vira o alvo. Voltar ao original = desfaz as correções.">
+      <span class="tlabel">Alvo <span class="ti">ⓘ</span></span>
       <button id="capture" class="primary" title="Use quando a mixagem estiver soando bem: o nível atual de cada canal vira o alvo">Gravar</button>
       <button id="restore" class="danger" title="Volta os envios para a mixagem original (ou do preset carregado)">Voltar ao original</button>
     </div>
 
-    <div class="tgroup">
-      <label class="tlabel" for="preset-select">Preset</label>
+    <div class="tgroup g-preset" title="PRESET: mixagens salvas desta saída (ex.: Louvor, Pregação), carregadas com fade suave. + salva nova, ↻ atualiza a ativa, × apaga.">
+      <label class="tlabel" for="preset-select">Preset <span class="ti">ⓘ</span></label>
       <select id="preset-select" title="Carregar preset desta saída (com fade suave)"></select>
       <div class="btn-row">
         <button id="preset-new" class="icon-btn" title="Salvar a mixagem atual desta saída como novo preset">+</button>
@@ -67,14 +70,24 @@
       </div>
     </div>
 
-    <div class="tgroup">
-      <label class="tlabel" for="view-select">Tela</label>
+    <div class="tgroup g-tela" title="TELA: como os faders aparecem (quantos por tela, quais canais). ✎ cria seus modos. Expandir canal = clicar no nome abre ganho, master, efeitos e espectro.">
+      <label class="tlabel" for="view-select">Tela <span class="ti">ⓘ</span></label>
       <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
       <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
       <label class="toggle-btn" title="Clicar no nome do canal abre todos os volumes dele: master, esta saída e efeitos 1 a 4">
         <input type="checkbox" id="expand"> Expandir canal
       </label>
     </div>
+
+    <button id="help-btn" class="help-btn" aria-expanded="false" aria-controls="toolbar-help" title="Explica cada seção da barra">? Como funciona</button>
+  </div>
+
+  <div id="toolbar-help" class="toolbar-help" hidden>
+    <div class="h g-saida"><strong>Saída</strong> Qual saída da mesa você vê e mixa: o aux da live (ex.: AUX 7+8), um retorno ou o master do salão. Cada pessoa vê a sua; o admin escolhe quem pode usar qual.</div>
+    <div class="h g-auto"><strong>Automático</strong> O que o software faz nesta saída. <em>Desligado</em>: só mostra. <em>Observar</em>: calcula as correções sem mexer na mesa. <em>Ligado</em>: corrige os envios devagar, dentro dos limites.</div>
+    <div class="h g-alvo"><strong>Alvo</strong> <em>Gravar</em>: com a mixagem soando bem, o nível de cada canal vira o alvo que o automático mantém. <em>Voltar ao original</em>: desfaz as correções (botão de pânico).</div>
+    <div class="h g-preset"><strong>Preset</strong> Mixagens salvas desta saída (ex.: "Louvor – mais batera", "Pregação"). Escolher na lista carrega com fade suave. <em>+</em> salva nova, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
+    <div class="h g-tela"><strong>Tela</strong> Como os faders aparecem: quantos cabem na tela e quais canais (✎ cria seus modos). <em>Expandir canal</em>: clicar no nome do canal abre ganho, phantom, master, efeitos e espectro.</div>
   </div>
 
   <p id="default-pass" class="warnbar" hidden>
@@ -94,28 +107,91 @@
     </details>
   </footer>
 
-  <!-- painel do canal: todos os volumes de um canal -->
-  <aside id="detail" class="detail" hidden aria-label="Controles do canal">
-    <div class="detail-head">
-      <div>
+  <!-- janela do canal: todos os volumes e controles de um canal, no meio da tela -->
+  <div id="detail-backdrop" class="modal-backdrop" hidden></div>
+  <section id="detail" class="channel-modal" role="dialog" aria-modal="true" aria-labelledby="d-name" hidden>
+    <header class="cm-head">
+      <span id="d-num" class="cm-num">—</span>
+      <div class="cm-title">
         <h2 id="d-name"></h2>
         <span class="muted small" id="d-sub"></span>
       </div>
-      <button id="d-close" class="icon-btn" title="Fechar (Esc)">×</button>
+      <span class="spacer"></span>
+      <button id="d-close" class="cm-close" title="Fechar e voltar para a mixagem (Esc)">✕ Voltar</button>
+    </header>
+
+    <div class="cm-body">
+      <section class="cm-volumes">
+        <h3>Volumes deste canal <span class="muted small">— cada fader é um destino diferente do mesmo canal</span></h3>
+        <div id="d-faders" class="detail-faders"></div>
+      </section>
+
+      <aside class="cm-side">
+        <section class="cm-card g-alvo-card" id="d-preamp" hidden>
+          <h3>Pré-amplificador</h3>
+          <div class="detail-preamp">
+            <span class="small-label">Ganho</span>
+            <button class="icon-btn" id="d-gminus" title="Ganho −1 dB">−</button>
+            <input type="range" id="d-gain" min="-6" max="57" step="0.5" aria-label="Ganho do pré-amplificador">
+            <button class="icon-btn" id="d-gplus" title="Ganho +1 dB">+</button>
+            <strong id="d-gain-val" class="num">—</strong>
+          </div>
+          <div class="detail-preamp">
+            <label class="toggle-btn phantom" title="Phantom power 48V (só o admin). Ligar/desligar com o som aberto dá estalo!">
+              <input type="checkbox" id="d-phantom"> Phantom 48V
+            </label>
+            <span id="d-preamp-note" class="small muted"></span>
+          </div>
+        </section>
+
+        <section class="cm-card">
+          <h3>Automático nesta saída</h3>
+          <label class="toggle-btn"><input type="checkbox" id="d-auto"> AUTO ligado neste canal</label>
+          <div class="cm-stats">
+            <div><span>agora</span><strong id="d-now">—</strong></div>
+            <div><span>média</span><strong id="d-avg">—</strong></div>
+            <div><span>alvo</span><strong id="d-target">—</strong></div>
+            <div><span>envio</span><strong id="d-send">—</strong></div>
+            <div><span>correção</span><strong id="d-corr">—</strong></div>
+          </div>
+          <div class="detail-row">
+            <span class="small muted">Ajustar o alvo:</span>
+            <button class="icon-btn" id="d-tminus" title="Alvo −1 dB">− 1 dB</button>
+            <button class="icon-btn" id="d-tplus" title="Alvo +1 dB">+ 1 dB</button>
+          </div>
+          <p id="d-status-help" class="small muted"></p>
+        </section>
+
+        <section class="cm-card">
+          <h3>Alertas deste canal</h3>
+          <ul id="d-tips" class="tips-list"></ul>
+        </section>
+
+        <section class="cm-card detail-rta" id="d-rta-wrap" hidden>
+          <h3>Espectro (áudio USB)</h3>
+          <canvas id="d-rta" width="320" height="110" aria-label="Espectro do canal por bandas de 1/3 de oitava"></canvas>
+          <div class="rta-axis small muted"><span>25 Hz</span><span>125</span><span>500</span><span>2 k</span><span>8 k</span><span>20 kHz</span></div>
+        </section>
+
+        <section class="cm-card sim-ctl-d">
+          <h3>Simulador</h3>
+          <div class="detail-row">Músico: <button class="icon-btn" id="d-srcminus">−6 dB</button><button class="icon-btn" id="d-srcplus">+6 dB</button></div>
+          <div class="detail-row">USB simulado: <button class="small-btn" id="d-fb">microfonia</button><button class="small-btn" id="d-hum">zumbido</button><button class="small-btn" id="d-clear">limpar</button></div>
+        </section>
+      </aside>
     </div>
-    <div class="detail-row">
-      <label class="toggle-btn"><input type="checkbox" id="d-auto"> AUTO nesta saída</label>
-      <span class="small muted">Alvo do automático:</span>
-      <button class="icon-btn" id="d-tminus" title="Alvo −1 dB">−</button>
-      <strong id="d-target" class="num">—</strong>
-      <button class="icon-btn" id="d-tplus" title="Alvo +1 dB">+</button>
-      <span class="sim-ctl-d">Simular músico: <button class="icon-btn" id="d-srcminus">−6</button><button class="icon-btn" id="d-srcplus">+6</button></span>
+  </section>
+
+  <!-- dicas -->
+  <aside id="tips" class="detail tips-panel" hidden aria-label="Dicas">
+    <div class="detail-head">
+      <div>
+        <h2>Dicas</h2>
+        <span class="muted small" id="tips-sub"></span>
+      </div>
+      <button id="tips-close" class="icon-btn" title="Fechar (Esc)">×</button>
     </div>
-    <div id="d-faders" class="detail-faders"></div>
-    <div id="d-others-wrap" class="detail-others">
-      <h3>Outros auxiliares deste canal</h3>
-      <div id="d-others"></div>
-    </div>
+    <ul id="tips-list" class="tips-list"></ul>
   </aside>
 
   <!-- editor de modos de visualização -->

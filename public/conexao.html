@@ -10,7 +10,7 @@
   <header class="top">
     <div class="brand">
       <h1>Copiloto Ui24R</h1>
-      <nav class="nav"><a href="/">Mixagem</a><a href="conexao.html" class="active" aria-current="page">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
+      <nav class="nav"><a href="/">Mixagem</a><a href="analise.html">Análise</a><a href="conexao.html" class="active" aria-current="page">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
     </div>
     <span id="quality" class="quality">…</span>
   </header>
@@ -62,7 +62,12 @@
       <div class="source sim" id="lv-usb">
         <h3>Áudio USB (conexão física) <span class="now" hidden>EM USO</span></h3>
         <p class="muted small">Mede o áudio de cada canal que chega pelo cabo USB (driver da Soundcraft + ffmpeg). Mais preciso.</p>
-        <div class="row"><button type="button" id="detect">Procurar a Ui24R no USB</button><span id="usb-state" class="small"></span></div>
+        <div class="row">
+          <button type="button" id="detect">Procurar a Ui24R no USB</button>
+          <button type="button" id="use-usb-sim" class="primary" hidden>Usar USB simulado</button>
+          <span id="usb-state" class="small"></span>
+        </div>
+        <p class="muted small">No modo USB ligam os recursos avançados (tela <a href="analise.html">Análise</a>): microfonia, ruído, espectro, fala × música, loudness, gravação e OBS.</p>
         <div id="usb-result"></div>
         <form id="usb-form" class="usb-form" hidden>
           <select id="usb-device"></select>

@@ -143,6 +143,7 @@ function connect() {
   socket.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'erro') return toast(msg.text);
+    checkBuild(msg);
     state = msg;
     if (first) {
       first = false;
@@ -206,6 +207,7 @@ function render() {
   if (s.bus) renderBus(s.bus, s);
   $('#no-bus').hidden = Boolean(s.bus) || !s.mixer;
   renderDetail(s);
+  renderTips(s);
 
   const last = s.events[0];
   $('#last-event').textContent = last ? `${new Date(last.t).toLocaleTimeString('pt-BR')}  ${last.text}` : '—';
@@ -422,12 +424,14 @@ function scaleHtml() {
 
 // ---------- faixas verticais ----------
 
-function stripSkeleton({ cls = '', name = '', key = '', toggleLabel = 'AUTO', toggleTitle = '', dest = '' }) {
+function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 'AUTO', toggleTitle = '', dest = '' }) {
   const el = document.createElement('div');
   el.className = `strip ${cls}`;
+  // linhas de altura fixa: assim os faders de canais, efeitos e master ficam alinhados
   el.innerHTML = `
     <button class="strip-name" type="button"></button>
-    <div class="strip-sub"><span class="strip-key"></span><span class="status"></span></div>
+    <div class="strip-sub"><span class="status"></span></div>
+    <div class="strip-tag"><span class="tag-text"></span></div>
     <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
@@ -435,10 +439,11 @@ function stripSkeleton({ cls = '', name = '', key = '', toggleLabel = 'AUTO', to
       <input type="range" class="fader" min="0" max="1000" step="1">
     </div>
     <div class="send-db"></div>
-    <div class="delta"></div>`;
+    <div class="delta"></div>
+    <div class="strip-num" title="${escapeHtml(key)}"></div>`;
   $('.strip-name', el).textContent = name;
   $('.strip-name', el).title = `${name} — ${dest}`;
-  $('.strip-key', el).textContent = key;
+  $('.strip-num', el).textContent = num;
   $('.fader', el).setAttribute('aria-label', `${name}: ${dest}`);
   $('.fader', el).title = dest;
   return {
@@ -453,7 +458,14 @@ function stripSkeleton({ cls = '', name = '', key = '', toggleLabel = 'AUTO', to
     fader: $('.fader', el),
     readout: $('.send-db', el),
     delta: $('.delta', el),
+    tag: $('.tag-text', el),
   };
+}
+
+/** Número que aparece embaixo do fader: 1, 2… (entradas), L1/P1 (line/player), FX1… */
+function stripNumber(key) {
+  const n = key.slice(1);
+  return key[0] === 'i' ? n : key[0] === 'l' ? `L${n}` : key[0] === 'p' ? `P${n}` : `FX${n}`;
 }
 
 function setMeter(strip, instantDB, avgDB, targetDB, deadbandDB) {
@@ -483,6 +495,7 @@ function createChannelStrip(bus, ch) {
   const strip = stripSkeleton({
     name: ch.name,
     key: ch.key,
+    num: stripNumber(ch.key),
     toggleTitle: 'Liga/desliga o automático deste canal nesta saída',
     dest: isMaster ? 'fader do canal no master (salão)' : `envio do canal para ${bus.label}`,
   });
@@ -520,6 +533,10 @@ function updateChannelStrip(strip, ch, s) {
   strip.el.classList.toggle('off', !ch.enabled);
   if (!strip.el.hidden) setStripName(strip, ch.name);
   strip.toggle.classList.toggle('on', ch.enabled);
+  const phantom = s.phantom?.includes(ch.key);
+  strip.tag.textContent = phantom ? '48V' : '';
+  strip.tag.className = `tag-text ${phantom ? 'p48' : ''}`;
+  strip.tag.title = phantom ? 'Phantom 48V ligado' : '';
 
   let label = STATUS_LABEL[ch.status] ?? ch.status;
   if (ch.status === 'manual') label = `oper. ${ch.manualForSec}s`;
@@ -543,13 +560,13 @@ function createFxStrip(bus, fx) {
     cls: 'fx',
     name: fx.name,
     key: fx.key.toUpperCase(),
+    num: stripNumber(fx.key),
     toggleLabel: 'ACOMP.',
     toggleTitle: 'Efeito acompanha os canais: quando um canal desce nesta saída, o efeito dele desce junto',
     dest: isMaster ? 'retorno do efeito no master' : `retorno do efeito em ${bus.label}`,
   });
   strip.name.disabled = true;
-  strip.badge = document.createElement('span');
-  strip.el.insertBefore(strip.badge, strip.toggle);
+  strip.badge = strip.tag;
   strip.toggle.addEventListener('click', () =>
     send({ type: 'setFxFollow', bus: bus.bus, key: fx.key, follow: !strip.toggle.classList.contains('on') }),
   );
@@ -579,6 +596,7 @@ function createMasterStrip(bus) {
     cls: `master ${isMaster ? 'is-master' : ''}`,
     name: isMaster ? 'MASTER' : bus.label,
     key: isMaster ? 'salão' : 'master',
+    num: isMaster ? 'MST' : bus.label.replace('AUX ', 'A'),
     toggleLabel: 'GERAL',
     dest: isMaster ? 'volume geral do salão' : `volume geral de ${bus.label}`,
   });
@@ -604,11 +622,14 @@ const detailCtrls = new Map(); // id -> { el, fader, readout, ... }
 function openDetail(key) {
   send({ type: 'view', detail: key });
   $('#detail').hidden = false;
+  $('#detail-backdrop').hidden = false;
+  $('#d-close').focus();
 }
 
 function closeDetail() {
   send({ type: 'view', detail: null });
   $('#detail').hidden = true;
+  $('#detail-backdrop').hidden = true;
 }
 
 function detailFader(id, { title, sub, badge, badgeCls, locked, lockText, onValue }) {
@@ -643,23 +664,47 @@ function detailFader(id, { title, sub, badge, badgeCls, locked, lockText, onValu
 
 function renderDetail(s) {
   const d = s.detail;
-  // o painel só fecha pelo usuário (×, Esc, troca de saída); sem dados ainda = aguardando o servidor
+  // a janela só fecha pelo usuário (✕, Esc, clique fora, troca de saída); sem dados ainda = aguardando o servidor
   if (!d || $('#detail').hidden) return;
+  const ch = s.bus?.channels.find((c) => c.key === d.key);
+  $('#d-num').textContent = stripNumber(d.key);
   $('#d-name').textContent = d.name;
-  $('#d-sub').textContent = `${d.key} · ${STATUS_LABEL[d.status] ?? d.status}${d.levelDB !== undefined ? ` · nível ${fmt(d.levelDB)} dB` : ''}`;
+  $('#d-sub').textContent = `${d.key} · ${STATUS_LABEL[d.status] ?? d.status}${s.bus ? ` · em ${s.bus.label}` : ''}`;
   $('#d-auto').checked = d.enabled;
-  $('#d-target').textContent = d.targetDB === undefined ? '—' : `${fmt(d.targetDB)} dB`;
+  const dbTxt = (v) => (v === undefined || v === null ? '—' : `${fmt(v)} dB`);
+  $('#d-now').textContent = dbTxt(d.levelDB);
+  $('#d-avg').textContent = dbTxt(ch?.levelDB);
+  $('#d-target').textContent = dbTxt(d.targetDB);
+  $('#d-send').textContent = ch?.sendDB === undefined ? '-∞' : dbTxt(ch.sendDB);
+  const corr = ch && ch.sendDB !== undefined && ch.baseSendDB !== undefined ? ch.sendDB - ch.baseSendDB : undefined;
+  $('#d-corr').textContent = s.bus?.mode === 'automatico' ? dbTxt(corr) : ch?.suggestedDeltaDB ? `${fmt(ch.suggestedDeltaDB, true)} (sugerida)` : '—';
+  $('#d-status-help').textContent = STATUS_HELP[d.status] ?? '';
+  renderPreamp(d);
+  renderRta(d, s);
   $('.sim-ctl-d').hidden = s.source.kind !== 'simulador';
+
+  // alertas só deste canal
+  const tips = (s.tips ?? []).filter((t) => t.channel === d.key);
+  const tipSig = JSON.stringify(tips.map((t) => [t.id, t.detail]));
+  const tipBox = $('#d-tips');
+  if (tipBox.dataset.sig !== tipSig) {
+    tipBox.dataset.sig = tipSig;
+    tipBox.innerHTML = tips.length
+      ? tips.map((t) => `<li class="${t.severity}"><strong>${escapeHtml(t.title)}</strong><p>${escapeHtml(t.detail)}</p></li>`).join('')
+      : '<li class="empty"><strong>Nada de errado com este canal.</strong></li>';
+  }
 
   const used = [];
   const add = (id, opts, db) => {
     const c = detailFader(id, opts);
+    c.el.dataset.kind = opts.kind;
     setFader(c, db);
     used.push(c.el);
   };
   add(
     'master',
     {
+      kind: 'master',
       title: 'MASTER',
       sub: 'som do salão',
       badge: 'salão',
@@ -674,6 +719,7 @@ function renderDetail(s) {
     add(
       'bus',
       {
+        kind: 'bus',
         title: d.busSend.label,
         sub: 'esta saída',
         badge: 'você está aqui',
@@ -687,6 +733,7 @@ function renderDetail(s) {
     add(
       fx.key,
       {
+        kind: 'fx',
         title: fx.key.toUpperCase(),
         sub: fx.name,
         badge: fx.inRoom ? 'salão+live' : 'só live',
@@ -698,31 +745,27 @@ function renderDetail(s) {
       fx.db,
     );
   }
+  // outros auxiliares liberados: também como faders verticais (aproveita a janela grande)
+  for (const o of d.otherAuxes) {
+    add(
+      `aux:${o.bus}`,
+      {
+        kind: 'aux',
+        title: o.label,
+        sub: o.name,
+        badge: 'outro aux',
+        badgeCls: '',
+        onValue: (db) => send({ type: 'setSend', bus: o.bus, key: d.key, db }),
+      },
+      o.db,
+    );
+  }
   const box = $('#d-faders');
   if (box.children.length !== used.length || used.some((el, i) => box.children[i] !== el)) box.replaceChildren(...used);
-
-  // outros auxes liberados: sliders horizontais compactos
-  const others = $('#d-others');
-  $('#d-others-wrap').hidden = d.otherAuxes.length === 0;
-  const sig = d.key + d.otherAuxes.map((o) => o.bus).join(',');
-  if (others.dataset.sig !== sig) {
-    others.dataset.sig = sig;
-    others.innerHTML = '';
-    for (const o of d.otherAuxes) {
-      const row = document.createElement('div');
-      row.className = 'other-aux';
-      row.innerHTML = `<span class="oa-name"></span><input type="range" min="0" max="1000" step="1"><span class="oa-val num"></span>`;
-      $('.oa-name', row).textContent = `${o.label} · ${o.name}`;
-      const ctrl = { fader: $('input', row), readout: $('.oa-val', row), bus: o.bus };
-      bindFader(ctrl, (db) => send({ type: 'setSend', bus: ctrl.bus, key: d.key, db }));
-      row.ctrl = ctrl;
-      others.append(row);
-    }
-  }
-  [...others.children].forEach((row, i) => setFader(row.ctrl, d.otherAuxes[i]?.db));
 }
 
 $('#d-close').addEventListener('click', closeDetail);
+$('#detail-backdrop').addEventListener('click', closeDetail);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('#detail').hidden) closeDetail();
 });
@@ -734,6 +777,141 @@ $('#d-tminus').addEventListener('click', () => state?.detail && send({ type: 'nu
 $('#d-tplus').addEventListener('click', () => state?.detail && send({ type: 'nudgeTarget', bus: state.bus.bus, key: state.detail.key, delta: 1 }));
 $('#d-srcminus').addEventListener('click', () => state?.detail && send({ type: 'sim.source', key: state.detail.key, delta: -6 }));
 $('#d-srcplus').addEventListener('click', () => state?.detail && send({ type: 'sim.source', key: state.detail.key, delta: 6 }));
+
+// ---------- dicas ----------
+
+let tipsSig = '';
+
+function renderTips(s) {
+  const tips = s.tips ?? [];
+  const worst = tips[0]?.severity;
+  const btn = $('#tips-btn');
+  btn.className = `tips-btn ${worst ?? ''}`;
+  $('#tips-count').textContent = String(tips.length);
+  btn.title = tips.length ? tips.map((t) => `• ${t.title}`).join('\n') : 'Nenhuma dica agora: tudo parece bem.';
+  if ($('#tips').hidden) return;
+  const sig = JSON.stringify(tips.map((t) => [t.id, t.title, t.detail]));
+  if (sig === tipsSig) return;
+  tipsSig = sig;
+  $('#tips-sub').textContent = s.advanced?.active
+    ? 'Com o áudio USB: inclui microfonia, zumbido, chiado, loudness e OBS.'
+    : 'Pelo VU da rede. No modo Áudio USB aparecem também microfonia, zumbido e loudness.';
+  $('#tips-list').innerHTML = tips.length
+    ? tips
+        .map(
+          (t) => `<li class="${t.severity}"><strong>${escapeHtml(t.title)}</strong><p>${escapeHtml(t.detail)}</p>${
+            t.channel && t.action === 'canal' ? `<button class="small-btn" data-open="${t.channel}">Abrir o canal</button>` : ''
+          }</li>`,
+        )
+        .join('')
+    : '<li class="empty"><strong>Tudo certo por aqui.</strong><p>Nenhum clip, volume baixo ou ruído detectado agora.</p></li>';
+}
+
+$('#tips-btn').addEventListener('click', () => {
+  const panel = $('#tips');
+  panel.hidden = !panel.hidden;
+  tipsSig = '';
+  if (!panel.hidden && state) renderTips(state);
+});
+$('#tips-close').addEventListener('click', () => ($('#tips').hidden = true));
+$('#tips-list').addEventListener('click', (e) => {
+  const key = e.target.dataset?.open;
+  if (!key) return;
+  $('#tips').hidden = true;
+  $('#expand').checked = true;
+  openDetail(key);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#tips').hidden) $('#tips').hidden = true;
+});
+
+// ---------- pré-amplificador e espectro no painel do canal ----------
+
+let gainDragging = false;
+
+function renderPreamp(d) {
+  const box = $('#d-preamp');
+  box.hidden = !d.preamp;
+  if (!d.preamp) return;
+  const p = d.preamp;
+  const gain = $('#d-gain');
+  if (!gainDragging) gain.value = String(p.gainDB);
+  $('#d-gain-val').textContent = `${Number(gainDragging ? gain.value : p.gainDB).toFixed(1)} dB`;
+  for (const el of [gain, $('#d-gminus'), $('#d-gplus')]) el.disabled = !p.gainAllowed;
+  $('#d-phantom').checked = p.phantom;
+  $('#d-phantom').disabled = !p.phantomAllowed;
+  $('#d-preamp-note').textContent = !p.gainAllowed
+    ? 'ganho: só admin ou quem tem o master (muda salão e todas as saídas)'
+    : 'o ganho muda o salão, todas as saídas e a gravação';
+}
+
+function sendGain(db) {
+  const d = state?.detail;
+  if (!d?.preamp) return;
+  const v = Math.max(-6, Math.min(57, db));
+  const before = d.preamp.gainDB;
+  if (Math.abs(v - before) >= 6 && !confirm(`Mudar o ganho de ${d.name} de ${before.toFixed(1)} para ${v.toFixed(1)} dB? Isso muda o salão e todas as saídas.`)) {
+    $('#d-gain').value = String(before);
+    return;
+  }
+  send({ type: 'setGain', key: d.key, db: v });
+}
+
+$('#d-gain').addEventListener('input', () => {
+  gainDragging = true;
+  $('#d-gain-val').textContent = `${Number($('#d-gain').value).toFixed(1)} dB`;
+});
+$('#d-gain').addEventListener('change', () => {
+  gainDragging = false;
+  sendGain(Number($('#d-gain').value));
+});
+$('#d-gminus').addEventListener('click', () => state?.detail?.preamp && sendGain(state.detail.preamp.gainDB - 1));
+$('#d-gplus').addEventListener('click', () => state?.detail?.preamp && sendGain(state.detail.preamp.gainDB + 1));
+$('#d-phantom').addEventListener('change', (e) => {
+  const d = state?.detail;
+  if (!d) return;
+  const on = e.target.checked;
+  const msg = on
+    ? `LIGAR o phantom 48V em ${d.name}? Abaixe o volume antes: ligar com o som aberto dá um estalo forte. Só use em microfones condensadores/DI ativos.`
+    : `DESLIGAR o phantom 48V em ${d.name}? Abaixe o volume antes para evitar estalo; microfone condensador vai parar de funcionar.`;
+  if (!confirm(msg)) {
+    e.target.checked = !on;
+    return;
+  }
+  send({ type: 'setPhantom', key: d.key, on });
+});
+
+const RTA_MIN = -90;
+const RTA_MAX = -10;
+
+function renderRta(d, s) {
+  const wrap = $('#d-rta-wrap');
+  const bands = d.rta;
+  wrap.hidden = !(s.advanced?.active && s.advanced.settings.rta);
+  if (wrap.hidden) return;
+  const canvas = $('#d-rta');
+  const ctx = canvas.getContext('2d');
+  const w = (canvas.width = canvas.clientWidth || 560);
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!bands) {
+    ctx.fillStyle = '#8b96a5';
+    ctx.font = '12px system-ui';
+    ctx.fillText('aguardando áudio deste canal…', 10, h / 2);
+    return;
+  }
+  const bw = w / bands.length;
+  bands.forEach((db, i) => {
+    const v = Math.max(0, Math.min(1, (db - RTA_MIN) / (RTA_MAX - RTA_MIN)));
+    const bh = v * (h - 4);
+    ctx.fillStyle = db > -20 ? '#f5b642' : '#3ecf8e';
+    ctx.fillRect(i * bw + 1, h - bh, Math.max(1, bw - 2), bh);
+  });
+}
+
+$('#d-fb').addEventListener('click', () => state?.detail && send({ type: 'sim.inject', key: state.detail.key, kind: 'microfonia' }));
+$('#d-hum').addEventListener('click', () => state?.detail && send({ type: 'sim.inject', key: state.detail.key, kind: 'zumbido' }));
+$('#d-clear').addEventListener('click', () => state?.detail && send({ type: 'sim.clearInject', key: state.detail.key }));
 
 // ---------- vista tabela ----------
 
@@ -935,6 +1113,7 @@ $('#bus-select').addEventListener('change', (e) => {
     return;
   }
   $('#detail').hidden = true;
+  $('#detail-backdrop').hidden = true;
   send({ type: 'view', bus: id, detail: null });
   savePrefs({ bus: id });
 });
@@ -979,6 +1158,29 @@ $('#logout').addEventListener('click', async () => {
   location.href = '/login.html';
 });
 
+/** Preferência só deste navegador (não quebra se o armazenamento estiver bloqueado). */
+function localPref(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(`copiloto.${key}`);
+    localStorage.setItem(`copiloto.${key}`, value);
+  } catch {
+    return null;
+  }
+  return value;
+}
+
+$('#help-btn').addEventListener('click', () => {
+  const panel = $('#toolbar-help');
+  panel.hidden = !panel.hidden;
+  $('#help-btn').setAttribute('aria-expanded', String(!panel.hidden));
+  localPref('help', panel.hidden ? '0' : '1');
+  layoutStrips();
+});
+if (localPref('help') === '1') {
+  $('#toolbar-help').hidden = false;
+  $('#help-btn').setAttribute('aria-expanded', 'true');
+}
+
 // fecha menus ao clicar fora
 document.addEventListener('click', (e) => {
   document.querySelectorAll('details.menu[open]').forEach((m) => {
@@ -1002,3 +1204,11 @@ document.addEventListener('click', (e) => {
   await loadViews(me.prefs.viewId);
   connect();
 })().catch((err) => toast(err.message));
+
+/** Recarrega a página quando o programa foi reiniciado com uma versão nova. */
+let firstBuild;
+function checkBuild(msg) {
+  if (!msg.build) return;
+  firstBuild ??= msg.build;
+  if (msg.build !== firstBuild) location.reload();
+}

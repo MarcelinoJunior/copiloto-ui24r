@@ -143,8 +143,17 @@ export interface UsbCaptureOptions {
 
 export type UsbCaptureState = 'parado' | 'iniciando' | 'capturando' | 'erro';
 
+/** O que o app precisa de uma fonte de áudio (captura USB real ou o USB simulado). */
+export interface AudioSource {
+  state: UsbCaptureState;
+  lastError?: string;
+  lastLevelsAt?: number;
+  start(): void;
+  stop(): void;
+}
+
 /** Captura contínua via ffmpeg; chama `onLevels` a cada bloco com o nível (dB) de cada canal. */
-export class UsbAudioCapture {
+export class UsbAudioCapture implements AudioSource {
   private proc?: ChildProcess;
   private pending = Buffer.alloc(0);
   state: UsbCaptureState = 'parado';
@@ -154,6 +163,8 @@ export class UsbAudioCapture {
   constructor(
     private readonly opts: UsbCaptureOptions,
     private readonly onLevels: (levels: number[]) => void,
+    /** recebe também o bloco bruto (PCM 16 bits intercalado), para a análise avançada */
+    private readonly onBlock?: (block: Buffer, channels: number) => void,
   ) {}
 
   start(): void {
@@ -191,6 +202,7 @@ export class UsbAudioCapture {
         this.pending = this.pending.subarray(blockBytes);
         this.lastLevelsAt = Date.now();
         this.onLevels(pcmBlockLevels(block, this.opts.channels));
+        this.onBlock?.(Buffer.from(block), this.opts.channels);
       }
     });
     proc.on('error', (err) => {

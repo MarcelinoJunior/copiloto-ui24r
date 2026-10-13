@@ -24,11 +24,16 @@ import {
  */
 
 export type Scene = 'louvor' | 'pregacao' | 'avisos';
-type Behavior = 'fala' | 'canto' | 'instrumento' | 'percussao';
+export type Behavior = 'fala' | 'canto' | 'instrumento' | 'percussao';
 
 interface SimChannel {
   info: ChannelInfo;
   behavior: Behavior;
+  /** ganho do pré (dB); 30 dB é o "normal" do simulador */
+  gainDB: number;
+  phantom: boolean;
+  /** último nível pré-processamento calculado (dBFS), usado pelo áudio USB simulado */
+  lastPre: number;
   /** nível médio quando toca (dB no VU pré-processamento) */
   baseDB: number;
   scenes: Scene[];
@@ -108,6 +113,9 @@ export class SimulatorAdapter implements MixerAdapter {
         drift: 0,
         phraseOn: true,
         phraseUntil: 0,
+        gainDB: 30,
+        phantom: false,
+        lastPre: FLOOR_DB,
       });
       (def?.[4] ?? []).forEach((db, idx) => db !== null && this.fxSends.set(`${idx + 1}:${key}`, db));
     }
@@ -187,6 +195,32 @@ export class SimulatorAdapter implements MixerAdapter {
     this.emit(`fx:${fx}:${key}`, value);
   }
 
+  watchPreamp(key: string, cb: (p: { gainDB: number; phantom: boolean }) => void): Unsubscribe {
+    const ch = this.sim.find((s) => s.info.key === key);
+    if (!ch) return () => undefined;
+    cb({ gainDB: ch.gainDB, phantom: ch.phantom });
+    return this.watch(`pre:${key}`, cb);
+  }
+
+  setGainDB(key: string, db: number): void {
+    const ch = this.sim.find((s) => s.info.key === key);
+    if (!ch) return;
+    ch.gainDB = Math.round(clamp(db, -6, 57) * 10) / 10;
+    this.emit(`pre:${key}`, { gainDB: ch.gainDB, phantom: ch.phantom });
+  }
+
+  setPhantom(key: string, on: boolean): void {
+    const ch = this.sim.find((s) => s.info.key === key);
+    if (!ch) return;
+    ch.phantom = on;
+    this.emit(`pre:${key}`, { gainDB: ch.gainDB, phantom: ch.phantom });
+  }
+
+  /** Para o áudio USB simulado: comportamento e nível atual de cada canal. */
+  audioProfile(): { key: string; behavior: Behavior; preDb: number; index: number }[] {
+    return this.sim.map((s, index) => ({ key: s.info.key, behavior: s.behavior, preDb: s.lastPre, index }));
+  }
+
   watchBusMaster(bus: number, cb: (db: number) => void): Unsubscribe {
     cb(this.busMaster.get(bus) ?? 0);
     return this.watch(`master:${bus}`, cb);
@@ -263,6 +297,7 @@ export class SimulatorAdapter implements MixerAdapter {
     const channels = new Map<string, ChannelVu>();
     for (const ch of this.sim) {
       const pre = this.levelFor(ch, now, dt);
+      ch.lastPre = pre;
       // processamento (compressor) segura um pouco os picos
       const post = pre > -20 ? -20 + (pre + 20) * 0.6 - 1 : pre - 1;
       const fader = this.getSend(MASTER_BUS, ch.info.key);
@@ -305,7 +340,7 @@ export class SimulatorAdapter implements MixerAdapter {
 
     // dinâmica lenta da música (+-4 dB ao longo de dezenas de segundos)
     ch.drift = clamp(ch.drift + (Math.random() - 0.5) * 0.6 * dt * 10, -4, 4);
-    let level = ch.baseDB + ch.offsetDB + ch.drift;
+    let level = ch.baseDB + ch.offsetDB + ch.drift + (ch.gainDB - 30);
 
     if (ch.behavior === 'fala' || ch.behavior === 'canto') {
       if (now > ch.phraseUntil) {

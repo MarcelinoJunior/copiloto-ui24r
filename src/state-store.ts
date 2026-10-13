@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { AdvancedSettings } from './analysis/engine.js';
 import type { Mode, PersistedChannel } from './leveler/aux-leveler.js';
 
 /**
@@ -13,6 +14,8 @@ export interface PersistedState {
   modes?: Record<string, Mode>;
   activePresets?: Record<string, string>;
   levelSource?: { kind: 'vu' | 'usb'; device?: string; channels?: number };
+  /** recursos avançados do modo Áudio USB (microfonia, loudness, OBS…) */
+  advanced?: AdvancedSettings;
 }
 
 export class StateStore {

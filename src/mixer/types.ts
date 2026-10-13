@@ -93,6 +93,13 @@ export interface MixerAdapter {
   /** Envio de um canal para um efeito (quanto do canal entra no reverb/delay). Vale para salão E live. */
   watchFxSend(fx: number, key: string, cb: (db: number) => void): Unsubscribe;
   setFxSendDB(fx: number, key: string, db: number): void;
+  /**
+   * Pré-amplificador da entrada física (só canais "iN"): ganho de -6 a +57 dB e phantom 48V.
+   * Vale para TUDO (salão, auxes e gravação). Considera patch 1:1 (entrada N = canal N).
+   */
+  watchPreamp(key: string, cb: (p: { gainDB: number; phantom: boolean }) => void): Unsubscribe;
+  setGainDB(key: string, db: number): void;
+  setPhantom(key: string, on: boolean): void;
   /** Fader master do bus (volume geral daquela saída). */
   watchBusMaster(bus: number, cb: (db: number) => void): Unsubscribe;
   setBusMasterDB(bus: number, db: number): void;

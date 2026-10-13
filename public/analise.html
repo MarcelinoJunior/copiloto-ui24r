@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Análise · Copiloto</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="conn-page analysis-page">
+  <header class="top">
+    <div class="brand">
+      <h1>Copiloto Ui24R</h1>
+      <nav class="nav"><a href="/">Mixagem</a><a href="analise.html" class="active" aria-current="page">Análise</a><a href="conexao.html">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
+    </div>
+    <span id="adv-state" class="quality">…</span>
+  </header>
+
+  <p id="not-usb" class="setup-msg" hidden>
+    Os recursos desta tela só funcionam no modo <strong>Áudio USB</strong>, porque precisam do áudio de verdade de cada canal.
+    Ligue em <a href="conexao.html">Conexão › Medição de nível</a>. No simulador, use "USB simulado".
+  </p>
+  <p id="admin-note" class="setup-msg" hidden>Só o <strong>admin</strong> muda a configuração desta tela. A troca automática de preset vale para as saídas que você tem acesso.</p>
+  <p id="error" class="form-error" role="alert" hidden></p>
+
+  <section class="card">
+    <div class="card-head"><h2>Alertas ao vivo</h2><span class="muted small">microfonia · zumbido · chiado</span></div>
+    <ul id="alerts" class="tips-list"></ul>
+    <div class="row toggles">
+      <label class="toggle-btn"><input type="checkbox" data-set="feedback"> Alerta de microfonia</label>
+      <label class="toggle-btn"><input type="checkbox" data-set="noise"> Ruído e zumbido</label>
+      <label class="toggle-btn"><input type="checkbox" data-set="rta"> Espectro no painel do canal</label>
+    </div>
+    <p class="muted small">Microfonia: tom puro, parado na mesma frequência, que se sustenta ou cresce. Voz e instrumentos têm harmônicos e não disparam. Zumbido: 60/50 Hz com harmônicos (cabo/aterramento). Chiado: ruído largo constante num canal parado.</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Loudness da live</h2><span class="muted small">ITU-R BS.1770 · alvo do YouTube: -14 LUFS</span></div>
+    <div class="tiles">
+      <div class="tile"><span class="tl">Integrado</span><span class="tv" id="l-int">—</span><span class="ts" id="l-diff"></span></div>
+      <div class="tile"><span class="tl">Curto prazo (3 s)</span><span class="tv" id="l-short">—</span><span class="ts">LUFS</span></div>
+      <div class="tile"><span class="tl">Momentâneo (0,4 s)</span><span class="tv" id="l-mom">—</span><span class="ts">LUFS</span></div>
+      <div class="tile"><span class="tl">Pico</span><span class="tv" id="l-peak">—</span><span class="ts">dBFS (ideal abaixo de -1)</span></div>
+    </div>
+    <div class="lufs-bar" aria-hidden="true"><div id="l-fill"></div><div id="l-target"></div></div>
+    <form id="loud-form" class="row usb-form">
+      <label class="toggle-btn"><input type="checkbox" id="l-enabled"> Medir</label>
+      <label>De onde
+        <select id="l-source">
+          <option value="device">Outro dispositivo (Voicemeeter/OBS/saída da live)</option>
+          <option value="usb">Dois canais do USB da mesa</option>
+        </select>
+      </label>
+      <span id="l-device-wrap"><select id="l-device"></select></span>
+      <span id="l-usb-wrap">canais L <input id="l-left" type="number" min="1" max="32" style="width:58px"> R <input id="l-right" type="number" min="1" max="32" style="width:58px"></span>
+      <label>alvo <input id="l-target-in" type="number" min="-30" max="-5" step="1" style="width:62px"> LUFS</label>
+      <button type="submit" class="primary">Aplicar</button>
+      <button type="button" id="l-reset">Zerar integrado</button>
+    </form>
+    <p class="muted small">O melhor é medir o som que vai para a transmissão: a saída do Voicemeeter/OBS (lista em Conexão › Procurar) ou, se a mesa mandar a mixagem da live pelo USB, os dois canais dela.</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Fala × música</h2><span id="m-state" class="moment">—</span></div>
+    <label class="toggle-btn"><input type="checkbox" id="m-enabled"> Detectar o momento do culto</label>
+    <h3>Trocar o preset sozinho</h3>
+    <div id="m-auto" class="auto-list"></div>
+    <h3>Papel de cada canal</h3>
+    <p class="muted small">Instrumento tocando = música (muito confiável). Só fala = pregação/avisos. "Automático" decide pelo jeito do som (fala tem pausas curtas).</p>
+    <div id="m-roles" class="roles"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Gravação multipista</h2><span id="r-state" class="muted small"></span></div>
+    <div class="row">
+      <button id="r-start" class="primary">● Gravar</button>
+      <button id="r-stop" class="danger">■ Parar</button>
+    </div>
+    <p class="muted small">Um arquivo WAV por canal (~2,8 MB/min cada) em <code>data/gravacoes/</code>. Abra no Reaper/Audacity para treinar a mixagem durante a semana.</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>OBS Studio</h2><span id="o-state" class="muted small"></span></div>
+    <form id="obs-form" class="row usb-form">
+      <label class="toggle-btn"><input type="checkbox" id="o-enabled"> Conectar ao OBS</label>
+      <label>IP <input id="o-host" style="width:130px"></label>
+      <label>porta <input id="o-port" type="number" style="width:76px"></label>
+      <label>senha <input id="o-pass" type="password" autocomplete="off" style="width:140px"></label>
+      <label>fonte de áudio <select id="o-input"></select></label>
+      <button type="submit" class="primary">Aplicar</button>
+      <button type="button" id="o-refresh">Atualizar</button>
+    </form>
+    <div class="tiles">
+      <div class="tile"><span class="tl">Live</span><span class="tv" id="o-live">—</span></div>
+      <div class="tile"><span class="tl">Nível da fonte</span><span class="tv" id="o-level">—</span><span class="ts" id="o-peak"></span></div>
+    </div>
+    <h3>Filtros da fonte (plugins do OBS)</h3>
+    <div id="o-filters" class="row"></div>
+    <p class="muted small">No OBS: Ferramentas › Configurações do servidor WebSocket › ativar (porta 4455). Os plugins gratuitos (supressão de ruído RNNoise, compressor, limitador, ReaPlugs…) rodam dentro do OBS; aqui você liga e desliga.</p>
+  </section>
+
+  <script src="analise.js"></script>
+</body>
+</html>

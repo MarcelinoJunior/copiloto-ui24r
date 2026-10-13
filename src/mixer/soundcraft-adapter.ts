@@ -198,6 +198,24 @@ export class SoundcraftAdapter implements MixerAdapter {
     setFader(this.fxChannel(fx, key), db);
   }
 
+  watchPreamp(key: string, cb: (p: { gainDB: number; phantom: boolean }) => void): Unsubscribe {
+    const { kind, number } = parseChannelKey(key);
+    if (kind !== 'i') return () => undefined;
+    const hw = this.ui.hw(number);
+    const sub = combineLatest([hw.gainDB$, hw.phantom$]).subscribe(([gainDB, phantom]) => cb({ gainDB, phantom }));
+    return () => sub.unsubscribe();
+  }
+
+  setGainDB(key: string, db: number): void {
+    const { kind, number } = parseChannelKey(key);
+    if (kind === 'i') this.ui.hw(number).setGainDB(Math.max(-6, Math.min(57, db)));
+  }
+
+  setPhantom(key: string, on: boolean): void {
+    const { kind, number } = parseChannelKey(key);
+    if (kind === 'i') this.ui.hw(number).setPhantom(on);
+  }
+
   watchBusMaster(bus: number, cb: (db: number) => void): Unsubscribe {
     const fader = bus === MASTER_BUS ? this.ui.master : this.ui.master.aux(bus);
     const sub = fader.faderLevelDB$.subscribe(cb);

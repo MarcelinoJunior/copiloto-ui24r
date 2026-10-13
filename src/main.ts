@@ -44,6 +44,7 @@ const app = new App(
     ip,
     create: (kind, address) => (kind === 'simulador' ? new SimulatorAdapter() : new SoundcraftAdapter(address)),
     profiles,
+    dataDir,
   },
   log,
   connStore,

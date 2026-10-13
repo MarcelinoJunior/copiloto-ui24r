@@ -2,3 +2,7 @@ node_modules/
 data/
 *.log
 .env
+
+# anotações locais do assistente de desenvolvimento (não vão para o repositório)
+CLAUDE.md
+.claude/

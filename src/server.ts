@@ -7,6 +7,8 @@ import { AuthError, type AuthService, publicUser, type Role, type User } from '.
 import { ViewError, type ViewStore } from './views.js';
 
 const PUBLIC_DIR = resolve('public');
+/** muda a cada vez que o programa abre: as páginas abertas recarregam sozinhas quando ele é atualizado */
+const BUILD = String(Date.now());
 const PUSH_INTERVAL_MS = 250;
 const USER_REFRESH_MS = 2000;
 const MAX_BODY = 64 * 1024;
@@ -250,7 +252,7 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
     wss.handleUpgrade(req, socket, head, (ws) => {
       const ctx = { user, view: {}, token, checkedAt: Date.now() };
       clients.set(ws, ctx);
-      ws.send(JSON.stringify(app.snapshotFor(ctx)));
+      ws.send(JSON.stringify({ ...app.snapshotFor(ctx), build: BUILD }));
       ws.on('message', (raw) => {
         let cmd: Command;
         try {
@@ -284,7 +286,7 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
         }
         ctx.user = fresh;
       }
-      ws.send(JSON.stringify(app.snapshotFor(ctx)));
+      ws.send(JSON.stringify({ ...app.snapshotFor(ctx), build: BUILD }));
     }
   }, PUSH_INTERVAL_MS);
 

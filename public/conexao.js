@@ -18,6 +18,7 @@ function connect() {
   socket.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'erro') return showError(msg.text);
+    checkBuild(msg);
     state = msg;
     render(state);
   };
@@ -66,7 +67,7 @@ function render(s) {
   const isAdmin = s.user.role === 'admin';
   $('#admin-note').hidden = isAdmin;
   $('#nav-admin').textContent = isAdmin ? 'Pessoas' : 'Conta';
-  document.querySelectorAll('#ip-form button, #ip, #use-sim, #use-vu, #detect, #usb-form button').forEach((el) => {
+  document.querySelectorAll('#ip-form button, #ip, #use-sim, #use-vu, #detect, #use-usb-sim, #usb-form button').forEach((el) => {
     if (!isAdmin) el.disabled = true;
   });
   renderLevels(s, isAdmin);
@@ -108,7 +109,7 @@ function render(s) {
 
   renderSpark(h.ping.samples, isSim);
   // operador só vê: reaplica o bloqueio depois dos ajustes acima
-  if (!isAdmin) document.querySelectorAll('#ip-form button, #ip, #use-sim, #use-vu, #detect, #usb-form button').forEach((el) => (el.disabled = true));
+  if (!isAdmin) document.querySelectorAll('#ip-form button, #ip, #use-sim, #use-vu, #detect, #use-usb-sim, #usb-form button').forEach((el) => (el.disabled = true));
 
   $('#pc').innerHTML = h.pc.length
     ? h.pc
@@ -141,6 +142,9 @@ function renderLevels(s, isAdmin) {
   $('#lv-vu .now').hidden = usb;
   $('#lv-usb .now').hidden = !usb;
   if (isAdmin) $('#use-vu').disabled = !usb;
+  const simMode = s.source.kind === 'simulador';
+  $('#use-usb-sim').hidden = !simMode || usb;
+  $('#detect').hidden = simMode;
 
   const st = $('#usb-state');
   if (usb) {
@@ -221,6 +225,7 @@ $('#ip-form').addEventListener('submit', (e) => {
 });
 
 $('#use-vu').addEventListener('click', () => send({ type: 'level.useVu' }));
+$('#use-usb-sim').addEventListener('click', () => send({ type: 'level.useUsb', device: 'USB simulado', channels: 24 }));
 $('#detect').addEventListener('click', () => {
   $('#usb-result').innerHTML = '<p class="muted small">Procurando…</p>';
   $('#usb-result').dataset.sig = '';
@@ -232,3 +237,11 @@ $('#usb-form').addEventListener('submit', (e) => {
 });
 
 connect();
+
+/** Recarrega a página quando o programa foi reiniciado com uma versão nova. */
+let firstBuild;
+function checkBuild(msg) {
+  if (!msg.build) return;
+  firstBuild ??= msg.build;
+  if (msg.build !== firstBuild) location.reload();
+}
