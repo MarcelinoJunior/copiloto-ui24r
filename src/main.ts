@@ -20,20 +20,23 @@ const cfg = loadConfig();
 // PORT=8081 npm start  → permite rodar duas cópias ao mesmo tempo
 if (process.env.PORT) cfg.server.port = Number(process.env.PORT);
 
+// Pasta de dados (padrão: ./data). COPILOTO_DATA=outra/pasta permite rodar uma cópia de teste isolada.
+const dataDir = resolve(process.env.COPILOTO_DATA ?? 'data');
+
 // O endereço escolhido na tela "Conexão" tem prioridade sobre o config/config.json.
-const connStore = new ConnectionStore(resolve('data', 'conexao.json'));
+const connStore = new ConnectionStore(resolve(dataDir, 'conexao.json'));
 const ip = connStore.loadIp() ?? cfg.mixer.ip;
 
 // Mesa real e simulador guardam alvos e presets separados, para um não bagunçar o outro.
 const profiles: Record<SourceKind, Profile> = {
-  mesa: { store: new StateStore(resolve('data', 'estado.json')), presets: new PresetStore(resolve('data', 'presets.json')) },
+  mesa: { store: new StateStore(resolve(dataDir, 'estado.json')), presets: new PresetStore(resolve(dataDir, 'presets.json')) },
   simulador: {
-    store: new StateStore(resolve('data', 'estado-simulador.json')),
-    presets: new PresetStore(resolve('data', 'presets-simulador.json')),
+    store: new StateStore(resolve(dataDir, 'estado-simulador.json')),
+    presets: new PresetStore(resolve(dataDir, 'presets-simulador.json')),
   },
 };
 
-const log = new SessionLog(resolve('data', 'sessoes'), startKind);
+const log = new SessionLog(resolve(dataDir, 'sessoes'), startKind);
 const app = new App(
   cfg,
   {
@@ -47,8 +50,9 @@ const app = new App(
 );
 
 // Banco local (SQLite): usuários, permissões e modos de visualização.
-const db = openDatabase(resolve('data', 'copiloto.db'));
+const db = openDatabase(resolve(dataDir, 'copiloto.db'));
 const auth = new AuthService(db);
+const createdAdmin = auth.ensureDefaultAdmin();
 const views = new ViewStore(db);
 
 const stopServer = await startServer({ app, auth, views }, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
@@ -71,7 +75,8 @@ console.log(
     : `  Fonte:   MESA REAL em ${ip} — troque o IP na tela Conexão`,
 );
 console.log(`  Modo:    ${cfg.initialMode}`);
-console.log(`  Painel:  ${panel}${auth.hasUsers() ? '' : '   ← primeiro acesso: crie o usuário admin'}`);
+console.log(`  Painel:  ${panel}`);
+if (createdAdmin) console.log('  Login:   usuário "admin", senha "admin"  ← TROQUE a senha em Conta/Pessoas');
 console.log(`  Conexão: ${panel}/conexao.html`);
 console.log(`  Log:     ${log.file}`);
 console.log('  Ctrl+C para sair (os envios ficam como estão).');

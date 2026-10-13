@@ -21,9 +21,9 @@ describe('AuthService', () => {
     expect(auth.sessionUser(token)).toBeUndefined();
   });
 
-  it('exige senha de letras e números com 6+ caracteres', () => {
+  it('exige senha de letras e números com 5+ caracteres', () => {
     const { auth } = setup();
-    expect(() => auth.createUser({ username: 'joao', password: '12345', role: 'operador' })).toThrow(AuthError);
+    expect(() => auth.createUser({ username: 'joao', password: '1234', role: 'operador' })).toThrow(AuthError);
     expect(() => auth.createUser({ username: 'joao', password: 'abc 123', role: 'operador' })).toThrow(AuthError);
     expect(() => auth.createUser({ username: 'jo ao', password: 'abc123', role: 'operador' })).toThrow(AuthError);
     expect(auth.createUser({ username: 'joao', password: 'abc123', role: 'operador' }).username).toBe('joao');
@@ -61,6 +61,19 @@ describe('AuthService', () => {
     const { token } = auth.login('bia', 'senha1');
     auth.updateUser(u.id, { password: 'senha2' });
     expect(auth.sessionUser(token)).toBeUndefined();
+  });
+});
+
+describe('admin padrão', () => {
+  it('cria admin/admin só na primeira vez e avisa que a senha é a padrão', () => {
+    const { auth } = setup();
+    expect(auth.ensureDefaultAdmin()).toBe(true);
+    expect(auth.ensureDefaultAdmin()).toBe(false);
+    const { user } = auth.login('admin', 'admin');
+    expect(user.role).toBe('admin');
+    expect(auth.usesDefaultPassword(user.id)).toBe(true);
+    auth.updateUser(user.id, { password: 'nova123' });
+    expect(auth.usesDefaultPassword(user.id)).toBe(false);
   });
 });
 

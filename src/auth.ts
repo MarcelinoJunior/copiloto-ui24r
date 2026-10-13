@@ -8,7 +8,7 @@ import type { Database } from './db.js';
  * - operador: só vê e mexe nas saídas liberadas (ex.: só o AUX 7+8 da live),
  *   para uma pessoa não mexer no auxiliar da outra.
  *
- * Senhas: só letras e números, mínimo de 6 caracteres. Guardadas com scrypt + sal (nunca em texto).
+ * Senhas: só letras e números, mínimo de 5 caracteres. Guardadas com scrypt + sal (nunca em texto).
  * Sessões: token aleatório no cookie; no banco fica só o hash do token.
  */
 
@@ -34,7 +34,9 @@ export class AuthError extends Error {
 }
 
 export const USERNAME_RE = /^[A-Za-z0-9]{3,32}$/;
-export const PASSWORD_RE = /^[A-Za-z0-9]{6,64}$/;
+export const PASSWORD_RE = /^[A-Za-z0-9]{5,64}$/;
+/** Usuário criado sozinho na primeira vez que o programa abre. Troque a senha! */
+export const DEFAULT_ADMIN = { username: 'admin', password: 'admin' };
 const SESSION_DAYS = 7;
 const MAX_FAILS = 5;
 const LOCK_MS = 30_000;
@@ -47,7 +49,7 @@ export function validateUsername(username: string): string {
 
 export function validatePassword(password: string): string {
   const p = String(password ?? '');
-  if (!PASSWORD_RE.test(p)) throw new AuthError('Senha: só letras e números, com pelo menos 6 caracteres.');
+  if (!PASSWORD_RE.test(p)) throw new AuthError('Senha: só letras e números, com pelo menos 5 caracteres.');
   return p;
 }
 
@@ -87,6 +89,21 @@ export class AuthService {
   private readonly fails = new Map<string, { count: number; until: number }>();
 
   constructor(private readonly db: Database) {}
+
+  /** Primeira vez: cria admin/admin para dar para entrar (com aviso para trocar a senha). */
+  ensureDefaultAdmin(): boolean {
+    if (this.hasUsers()) return false;
+    this.createUser({ ...DEFAULT_ADMIN, role: 'admin' });
+    return true;
+  }
+
+  /** O usuário ainda usa a senha padrão (admin/admin)? */
+  usesDefaultPassword(id: number): boolean {
+    const row = this.db.prepare('SELECT username, pass_hash FROM users WHERE id = ?').get(id) as
+      | { username: string; pass_hash: string }
+      | undefined;
+    return row !== undefined && row.username.toLowerCase() === DEFAULT_ADMIN.username && verifyPassword(DEFAULT_ADMIN.password, row.pass_hash);
+  }
 
   hasUsers(): boolean {
     return (this.db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n > 0;

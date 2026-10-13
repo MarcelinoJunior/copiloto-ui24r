@@ -10,10 +10,10 @@ const STATUS_LABEL = {
   manual: 'operador',
   transicao: 'preset',
   silencio: 'silêncio',
-  aguardando: 'aguardando',
+  aguardando: 'aguarda',
   ok: 'ok',
-  corrigindo: 'corrigindo',
-  'no-limite': 'no limite',
+  corrigindo: 'corrige',
+  'no-limite': 'limite',
 };
 
 const FX_STATUS_LABEL = {
@@ -23,6 +23,19 @@ const FX_STATUS_LABEL = {
   transicao: 'preset',
   ok: 'ok',
   acompanhando: 'acomp.',
+};
+
+const STATUS_HELP = {
+  desabilitado: 'Automático desligado neste canal (AUTO)',
+  'sem-envio': 'O envio deste canal para a saída está fechado ou mutado',
+  'sem-alvo': 'Ainda sem alvo: use "Gravar alvo" com o canal tocando',
+  manual: 'Você mexeu há pouco: o automático espera antes de agir',
+  transicao: 'Carregando preset (fade)',
+  silencio: 'Canal em silêncio: o automático não sobe (evita ruído)',
+  aguardando: 'Começou a tocar agora: aguardando estabilizar',
+  ok: 'Dentro do alvo',
+  corrigindo: 'Fora do alvo: corrigindo devagar',
+  'no-limite': 'Precisaria de mais correção do que o limite permite',
 };
 
 const MODE_HELP = {
@@ -334,7 +347,7 @@ function layoutStrips() {
     view.chGroup.style.minWidth = '';
   } else {
     view.scroll.style.removeProperty('--strip-w');
-    view.chGroup.style.minWidth = `${count * 44}px`; // em tela estreita, rola em vez de espremer
+    view.chGroup.style.minWidth = `${count * 48}px`; // em tela estreita, rola em vez de espremer
   }
   $('.bank', view.node).hidden = !(banked && count > n);
   updateBankLabel();
@@ -414,7 +427,7 @@ function stripSkeleton({ cls = '', name = '', key = '', toggleLabel = 'AUTO', to
   el.className = `strip ${cls}`;
   el.innerHTML = `
     <button class="strip-name" type="button"></button>
-    <div class="strip-sub"><span class="strip-key"></span> <span class="status"></span></div>
+    <div class="strip-sub"><span class="strip-key"></span><span class="status"></span></div>
     <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
@@ -494,20 +507,25 @@ function fitName(el) {
   }
 }
 
+/** Atualiza o nome e reajusta a fonte quando o texto ou a largura mudam. */
+function setStripName(strip, text) {
+  if (strip.name.textContent === text && strip.fitW === strip.name.clientWidth) return;
+  strip.name.textContent = text;
+  strip.name.title = text;
+  strip.fitW = strip.name.clientWidth;
+  if (strip.fitW > 0) fitName(strip.name);
+}
+
 function updateChannelStrip(strip, ch, s) {
   strip.el.classList.toggle('off', !ch.enabled);
-  if (strip.name.textContent !== ch.name || strip.fitW !== strip.name.clientWidth) {
-    strip.name.textContent = ch.name;
-    strip.name.title = ch.name;
-    strip.fitW = strip.name.clientWidth;
-    if (!strip.el.hidden) fitName(strip.name);
-  }
+  if (!strip.el.hidden) setStripName(strip, ch.name);
   strip.toggle.classList.toggle('on', ch.enabled);
 
   let label = STATUS_LABEL[ch.status] ?? ch.status;
   if (ch.status === 'manual') label = `oper. ${ch.manualForSec}s`;
   if (ch.status === 'corrigindo' && s.bus.mode !== 'automatico') label = 'corrigiria';
   strip.status.textContent = label;
+  strip.status.title = STATUS_HELP[ch.status] ?? '';
   strip.status.className = `status ${ch.status}`;
 
   const silent = ch.status === 'silencio' || ch.rawDB === undefined || ch.rawDB <= -79;
@@ -540,9 +558,10 @@ function createFxStrip(bus, fx) {
 }
 
 function updateFxStrip(strip, fx, s) {
-  strip.name.textContent = fx.name;
+  setStripName(strip, fx.name);
   strip.badge.className = `fx-badge ${fx.inRoom ? 'room' : 'live'}`;
-  strip.badge.textContent = fx.inRoom ? 'salão+live' : 'só live';
+  strip.badge.textContent = fx.inRoom ? 'salão' : 'só live';
+  strip.badge.title = fx.inRoom ? 'Este efeito toca no salão e nas saídas' : 'Este efeito não toca no salão (só nas saídas)';
   strip.toggle.classList.toggle('on', fx.follow);
   let label = FX_STATUS_LABEL[fx.status] ?? fx.status;
   if (fx.status === 'acompanhando' && s.bus.mode !== 'automatico') label = 'acomp.?';
@@ -571,6 +590,7 @@ function createMasterStrip(bus) {
 }
 
 function updateMasterStrip(strip, bus) {
+  setStripName(strip, bus.bus === MASTER_BUS ? 'MASTER' : bus.label);
   strip.status.textContent = bus.outDB === undefined ? '—' : `saída ${fmt(bus.outDB)}`;
   strip.status.className = `status ${bus.outDB > -3 ? 'no-limite' : 'ok'}`;
   setMeter(strip, bus.outDB);
@@ -976,6 +996,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   $('#user-name').textContent = `${me.username}${me.role === 'admin' ? ' (admin)' : ''}`;
+  $('#default-pass').hidden = !data.defaultPassword;
   $('#nav-admin').textContent = me.role === 'admin' ? 'Pessoas' : 'Conta';
   $('#expand').checked = me.prefs.expand !== false;
   await loadViews(me.prefs.viewId);

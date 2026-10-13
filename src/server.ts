@@ -92,7 +92,11 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
 
     // --- sessão ---
     if (path === '/api/me' && method === 'GET') {
-      return json(res, 200, { user: user ? publicUser(user) : null, needsSetup: !auth.hasUsers() });
+      return json(res, 200, {
+        user: user ? publicUser(user) : null,
+        needsSetup: !auth.hasUsers(),
+        defaultPassword: user ? auth.usesDefaultPassword(user.id) : false,
+      });
     }
     if (path === '/api/setup' && method === 'POST') {
       // só funciona enquanto não existe nenhum usuário: cria o primeiro admin

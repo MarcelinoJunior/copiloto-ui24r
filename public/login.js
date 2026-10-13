@@ -37,7 +37,7 @@ $('#form').addEventListener('submit', async (e) => {
   const username = $('#username').value.trim();
   const password = $('#password').value;
   if (!/^[A-Za-z0-9]{3,32}$/.test(username)) return showError('Usuário: só letras e números, de 3 a 32 caracteres.');
-  if (!/^[A-Za-z0-9]{6,64}$/.test(password)) return showError('Senha: só letras e números, com pelo menos 6 caracteres.');
+  if (!/^[A-Za-z0-9]{5,64}$/.test(password)) return showError('Senha: só letras e números, com pelo menos 5 caracteres.');
   if (setup && password !== $('#password2').value) return showError('As senhas não conferem.');
   $('#submit').disabled = true;
   try {

@@ -12,7 +12,7 @@
 - **Painel do canal:** clique no nome do canal (com **Expandir canal** ligado) e veja todos os volumes dele: master do salão, envio para a saída atual, efeitos 1–4 e os outros auxiliares.
 - **Modos de visualização:** quantos faders cabem na tela (8, 12, 16, 24…), quais canais aparecem e em que ordem. Cada pessoa cria os seus, e eles ficam salvos no servidor (SQLite).
 - **Presets por saída** ("Louvor – mais batera", "Pregação"…) com fade suave.
-- **Pessoas e permissões:** um **admin** cadastra as pessoas e escolhe quais saídas cada uma pode usar, para ninguém mexer no auxiliar do outro. Usuário e senha simples (letras e números, senha com 6 ou mais caracteres).
+- **Pessoas e permissões:** um **admin** cadastra as pessoas e escolhe quais saídas cada uma pode usar, para ninguém mexer no auxiliar do outro. Usuário e senha simples (letras e números, senha com 5 ou mais caracteres).
 - **Conexão:** IP da mesa, saúde da conexão (tempo de resposta, perda, dados chegando) e troca entre mesa real e **simulador**.
 - **Duas fontes de nível:**
   - **VU pela rede** (padrão, sem cabo);
@@ -49,7 +49,7 @@ npm start
 
 Abra http://localhost:8080.
 
-1. **Primeiro acesso:** a tela pede para criar o usuário **admin**.
+1. **Primeiro acesso:** entre com usuário **admin** e senha **admin** (criado automaticamente na primeira vez). **Troque a senha** em Conta/Pessoas: o projeto é público e todo mundo conhece a senha padrão. Enquanto ela não for trocada, aparece um aviso vermelho.
 2. Em **Pessoas**, cadastre quem vai operar e marque as saídas de cada um (ex.: "live" só com o AUX 7+8).
 3. Em **Conexão**, confira o IP da mesa (padrão `192.168.0.122`; no hotspot da Ui24R costuma ser `10.10.1.1`) e a saúde da conexão. O PC precisa estar na mesma rede da mesa.
 4. Na **Mixagem**, escolha a **Saída** (ex.: AUX 7+8 · LIVE), deixe em **Observar**, faça a mixagem como sempre e clique em **Gravar alvo** num momento em que estiver soando bem.
@@ -87,6 +87,7 @@ npm run diagnostico
 | `mixer.ip` | `192.168.0.122` | IP da mesa (dá para trocar na tela Conexão) |
 | `server.host` | `127.0.0.1` | Use `0.0.0.0` para abrir o painel de celulares/tablets na mesma rede (todos precisam de login) |
 | `server.port` | `8080` | Porta do painel (ou `PORT=8081 npm start`) |
+| (variável) `COPILOTO_DATA` | `./data` | Outra pasta de dados, ex.: para rodar uma cópia de teste isolada |
 | `streamAuxes` | `[7]` | Saída que já começa em `initialMode` e que aparece primeiro |
 | `initialMode` | `observar` | Modo inicial dessa saída; as outras começam desligadas |
 | `leveler.*` | | Limites e velocidades do automático (tolerância, quanto pode subir/descer, pausa depois que o operador mexe, fade dos presets, "efeito acompanha"…) |
