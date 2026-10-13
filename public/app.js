@@ -1,5 +1,7 @@
-// Tela de mixagem do Copiloto Ui24R. Recebe o estado do servidor por WebSocket e manda comandos.
-// Mostra UMA saída por vez (ex.: AUX 7+8 da live, ou o master), com todos os canais e o master dela no canto.
+// Tela de mixagem do Copiloto Ui24R.
+// Cada pessoa vê UMA saída (ex.: AUX 7+8 da live, ou o master): os canais escolhidos no modo de
+// visualização, os efeitos e o master daquela saída no canto. Clicar no nome do canal (com
+// "Expandir canal" ligado) abre todos os volumes daquele canal.
 
 const STATUS_LABEL = {
   desabilitado: 'manual',
@@ -24,13 +26,14 @@ const FX_STATUS_LABEL = {
 };
 
 const MODE_HELP = {
-  desligado: 'Desligado: só mostra os níveis. Os faders daqui funcionam como na mesa.',
-  observar: 'Observar: calcula as correções mas NÃO mexe na mesa.',
-  automatico: 'Automático: ajustando envios e efeitos devagar, dentro dos limites.',
+  desligado: 'Desligado nesta saída: só mostra os níveis. Os faders daqui funcionam como na mesa.',
+  observar: 'Observar nesta saída: calcula as correções mas NÃO mexe na mesa.',
+  automatico: 'Automático nesta saída: ajustando envios e efeitos devagar, dentro dos limites.',
 };
 
 const MASTER_BUS = 0;
 const METER_MIN = -60;
+const STRIP_GAP = 2;
 /** Posição do fader (0..1000) para cada dB, parecida com a escala da Ui24R. */
 const FADER_MAP = [
   [-80, 1],
@@ -50,31 +53,11 @@ const SEND_THROTTLE_MS = 80;
 const $ = (sel, root = document) => root.querySelector(sel);
 let socket;
 let state;
-let view; // { bus, node, body, chGroup, fxGroup, masterGroup, strips: Map, rows: Map }
-
-// ---------- conexão com o programa ----------
-
-function connect() {
-  socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  socket.onmessage = (ev) => {
-    state = JSON.parse(ev.data);
-    render();
-  };
-  socket.onclose = () => {
-    setPill('erro', 'painel sem conexão com o programa');
-    setTimeout(connect, 1500);
-  };
-}
-
-function send(cmd) {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(cmd));
-}
-
-function setPill(cls, text) {
-  const el = $('#conn');
-  el.className = `pill ${cls}`;
-  el.textContent = text;
-}
+let me;
+let views = [];
+let currentView;
+let view; // tela da saída atual: { bus, node, ..., strips: Map, rows: Map }
+let toastTimer;
 
 // ---------- utilidades ----------
 
@@ -111,6 +94,71 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 }
 
+function toast(text) {
+  const el = $('#toast');
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), 5000);
+}
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'content-type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    location.href = '/login.html';
+    throw new Error('Faça login.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? 'Erro.');
+  return data;
+}
+
+function savePrefs(patch) {
+  me.prefs = { ...me.prefs, ...patch };
+  api('PUT', '/api/prefs', patch).catch(() => undefined);
+}
+
+// ---------- conexão com o programa ----------
+
+function connect() {
+  socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+  let first = true;
+  socket.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'erro') return toast(msg.text);
+    state = msg;
+    if (first) {
+      first = false;
+      // volta para a última saída que esta pessoa usou (se ainda tiver acesso)
+      const last = Number(me.prefs.bus);
+      if (Number.isInteger(last) && last !== state.bus?.bus && state.buses.some((b) => b.id === last)) send({ type: 'view', bus: last });
+    }
+    render();
+  };
+  socket.onclose = (ev) => {
+    if (ev.code === 4401) {
+      location.href = '/login.html';
+      return;
+    }
+    setPill('erro', 'painel sem conexão com o programa');
+    setTimeout(connect, 1500);
+  };
+}
+
+function send(cmd) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(cmd));
+}
+
+function setPill(cls, text) {
+  const el = $('#conn');
+  el.className = `pill ${cls}`;
+  el.textContent = text;
+}
+
 // ---------- render geral ----------
 
 function render() {
@@ -118,7 +166,6 @@ function render() {
   const isSim = s.source?.kind === 'simulador';
   document.body.classList.toggle('is-sim', isSim);
 
-  // selo de conexão: deixa explícito se é simulador ou mesa real
   if (isSim) {
     setPill('simulador', 'SIMULADOR (mesa falsa)');
   } else {
@@ -129,8 +176,9 @@ function render() {
     setPill(cls, txt);
   }
 
-  document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === s.mode));
-  $('#mode-help').textContent = MODE_HELP[s.mode];
+  const mode = s.bus?.mode ?? 'desligado';
+  document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  $('#mode-help').textContent = s.bus ? MODE_HELP[mode] : '';
 
   $('#sim').hidden = !isSim;
   if (s.sim) document.querySelectorAll('[data-scene]').forEach((b) => b.classList.toggle('active', b.dataset.scene === s.sim.scene));
@@ -138,13 +186,13 @@ function render() {
   renderBusSelect(s);
   renderPresets(s);
 
-  const bus = s.controlled[0];
-  if (view && (!bus || view.bus !== bus.bus)) {
+  if (view && (!s.bus || view.bus !== s.bus.bus)) {
     view.node.remove();
     view = undefined;
   }
-  if (bus) renderBus(bus, s);
-  $('#no-bus').hidden = Boolean(bus) || !s.mixer;
+  if (s.bus) renderBus(s.bus, s);
+  $('#no-bus').hidden = Boolean(s.bus) || !s.mixer;
+  renderDetail(s);
 
   const last = s.events[0];
   $('#last-event').textContent = last ? `${new Date(last.t).toLocaleTimeString('pt-BR')}  ${last.text}` : '—';
@@ -155,27 +203,28 @@ function render() {
 
 function renderBusSelect(s) {
   const sel = $('#bus-select');
-  const current = s.controlled[0]?.bus;
-  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.stereo]), current]);
+  const current = s.bus?.bus;
+  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.stereo, b.mode]), current]);
   if (sel.dataset.sig === sig) return;
   sel.dataset.sig = sig;
-  const opts = s.buses.map((b) => {
-    const label = b.id === MASTER_BUS ? 'MASTER · salão' : `${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`;
-    return `<option value="${b.id}" ${b.id === current ? 'selected' : ''}>${escapeHtml(label)}</option>`;
-  });
-  if (current === undefined) opts.unshift('<option value="" selected disabled>— escolha —</option>');
-  sel.innerHTML = opts.join('');
+  const icon = { automatico: ' ●auto', observar: ' ◐obs', desligado: '' };
+  sel.innerHTML = s.buses
+    .map((b) => {
+      const label = b.id === MASTER_BUS ? 'MASTER · salão' : `${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`;
+      return `<option value="${b.id}" ${b.id === current ? 'selected' : ''}>${escapeHtml(label + icon[b.mode])}</option>`;
+    })
+    .join('');
   sel.classList.toggle('is-master', current === MASTER_BUS);
 }
 
 function renderPresets(s) {
   const sel = $('#preset-select');
-  const sig = JSON.stringify([s.presets, s.activePresetId]);
+  const sig = JSON.stringify([s.presets, s.activePresetId, s.bus?.bus]);
   if (sel.dataset.sig !== sig) {
     sel.dataset.sig = sig;
     const active = s.presets.some((p) => p.id === s.activePresetId);
     sel.innerHTML =
-      `<option value="" ${active ? '' : 'selected'} disabled>${s.presets.length ? '— carregar —' : 'nenhum ainda'}</option>` +
+      `<option value="" ${active ? '' : 'selected'} disabled>${s.presets.length ? '— carregar —' : 'nenhum'}</option>` +
       s.presets
         .map((p) => `<option value="${p.id}" ${p.id === s.activePresetId ? 'selected' : ''}>${escapeHtml(p.name)}</option>`)
         .join('');
@@ -190,6 +239,14 @@ function busHelp(bus) {
   return `faders = <strong>envios de cada canal para ${escapeHtml(bus.label)}</strong>${bus.stereo ? ' (os dois lados juntos)' : ''} · o salão não muda`;
 }
 
+/** Canais que este modo de visualização mostra, na ordem do modo. */
+function visibleChannels(bus) {
+  const cfg = currentView?.config;
+  const byKey = new Map(bus.channels.map((c) => [c.key, c]));
+  if (cfg?.channels) return cfg.channels.map((k) => byKey.get(k)).filter(Boolean);
+  return bus.channels.filter((c) => c.key.startsWith('i') || cfg?.showLinePlayer);
+}
+
 function renderBus(bus, s) {
   if (!view) {
     const node = $('#bus-tpl').content.firstElementChild.cloneNode(true);
@@ -198,27 +255,31 @@ function renderBus(bus, s) {
       bus: bus.bus,
       node,
       body: $('tbody', node),
+      scroll: $('.ch-scroll', node),
       chGroup: $('.ch-group', node),
       fxGroup: $('.fx-group', node),
       masterGroup: $('.master-group', node),
       strips: new Map(),
       rows: new Map(),
+      order: '',
     };
+    $('.bank-prev', node).addEventListener('click', () => bankStep(-1));
+    $('.bank-next', node).addEventListener('click', () => bankStep(1));
+    view.scroll.addEventListener('scroll', () => updateBankLabel());
+    new ResizeObserver(() => layoutStrips()).observe(view.scroll);
   }
   const isMaster = bus.bus === MASTER_BUS;
   view.node.classList.toggle('is-master', isMaster);
   $('.bus-title', view.node).textContent = isMaster ? 'MASTER — salão' : `${bus.label} — ${bus.name}${bus.stereo ? ' (estéreo)' : ''}`;
   $('.bus-help', view.node).innerHTML = busHelp(bus);
 
-  const showAll = $('#show-all').checked;
-  let visible = 0;
+  const visible = visibleChannels(bus);
+  const visibleKeys = new Set(visible.map((c) => c.key));
   for (const ch of bus.channels) {
-    // os canais de entrada (1-24) sempre aparecem; line e player só em "Exibir"
-    const hidden = !showAll && !ch.key.startsWith('i');
     const strip = getStrip(ch.key, () => createChannelStrip(bus, ch), view.chGroup);
     updateChannelStrip(strip, ch, s);
-    strip.el.hidden = hidden;
-    if (!hidden) visible++;
+    strip.el.hidden = !visibleKeys.has(ch.key);
+    strip.el.classList.toggle('selected', s.detail?.key === ch.key);
 
     let row = view.rows.get(ch.key);
     if (!row) {
@@ -227,12 +288,19 @@ function renderBus(bus, s) {
       view.body.append(row.tr);
     }
     updateRow(row, ch, s);
-    row.tr.hidden = hidden;
+    row.tr.hidden = !visibleKeys.has(ch.key);
+  }
+  // ordem dos canais = ordem do modo de visualização
+  const order = visible.map((c) => c.key).join(',');
+  if (order !== view.order) {
+    view.order = order;
+    for (const c of visible) view.chGroup.append(view.strips.get(c.key).el);
+    view.visibleCount = visible.length;
+    layoutStrips();
   }
 
-  // o grupo de canais nunca encolhe abaixo de 44 px por canal: em tela estreita, rola para o lado
-  view.chGroup.style.minWidth = `${visible * 44}px`;
-
+  const showFx = currentView?.config.showFxReturns !== false;
+  view.fxGroup.hidden = !showFx;
   for (const fx of bus.fx) {
     const strip = getStrip(fx.key, () => createFxStrip(bus, fx), view.fxGroup);
     updateFxStrip(strip, fx, s);
@@ -252,9 +320,46 @@ function getStrip(id, create, parent) {
   return strip;
 }
 
+// ---------- quantos faders na tela (bancos) ----------
+
+function layoutStrips() {
+  if (!view) return;
+  const n = currentView?.config.faders ?? 0;
+  const count = view.visibleCount ?? 0;
+  const banked = n > 0 && count > 0;
+  view.scroll.classList.toggle('banked', banked);
+  if (banked) {
+    const w = Math.max(30, (view.scroll.clientWidth - (n - 1) * STRIP_GAP) / n);
+    view.scroll.style.setProperty('--strip-w', `${w}px`);
+    view.chGroup.style.minWidth = '';
+  } else {
+    view.scroll.style.removeProperty('--strip-w');
+    view.chGroup.style.minWidth = `${count * 44}px`; // em tela estreita, rola em vez de espremer
+  }
+  $('.bank', view.node).hidden = !(banked && count > n);
+  updateBankLabel();
+}
+
+function bankStep(dir) {
+  const n = currentView?.config.faders ?? 0;
+  if (!view || !n) return;
+  const w = parseFloat(view.scroll.style.getPropertyValue('--strip-w')) + STRIP_GAP;
+  view.scroll.scrollBy({ left: dir * n * w, behavior: 'smooth' });
+}
+
+function updateBankLabel() {
+  if (!view) return;
+  const n = currentView?.config.faders ?? 0;
+  const count = view.visibleCount ?? 0;
+  if (!n || count <= n) return;
+  const w = parseFloat(view.scroll.style.getPropertyValue('--strip-w')) + STRIP_GAP;
+  const first = Math.round(view.scroll.scrollLeft / w) + 1;
+  $('.bank-label', view.node).textContent = `canais ${first}–${Math.min(count, first + n - 1)} de ${count}`;
+}
+
 // ---------- faders ----------
 
-/** Liga um fader (vertical ou mini): enquanto o usuário arrasta, o painel não sobrescreve a posição. */
+/** Liga um fader: enquanto o usuário arrasta, o painel não sobrescreve a posição. */
 function bindFader(ctrl, onValue) {
   const f = ctrl.fader;
   let lastSent = 0;
@@ -298,19 +403,22 @@ function setFader(ctrl, db) {
   ctrl.readout.textContent = fmtSend(db);
 }
 
+function scaleHtml() {
+  return `<div class="scale">${SCALE_MARKS.map((d) => `<span style="bottom: calc(7px + (100% - 14px) * ${dbToPos(d) / 1000})">${d > 0 ? '+' : ''}${d}</span>`).join('')}</div>`;
+}
+
 // ---------- faixas verticais ----------
 
 function stripSkeleton({ cls = '', name = '', key = '', toggleLabel = 'AUTO', toggleTitle = '', dest = '' }) {
   const el = document.createElement('div');
   el.className = `strip ${cls}`;
   el.innerHTML = `
-    <div class="strip-name"></div>
-    <div class="strip-key"></div>
-    <span class="status"></span>
+    <button class="strip-name" type="button"></button>
+    <div class="strip-sub"><span class="strip-key"></span> <span class="status"></span></div>
     <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
-      <div class="scale">${SCALE_MARKS.map((d) => `<span style="bottom: calc(7px + (100% - 14px) * ${dbToPos(d) / 1000})">${d > 0 ? '+' : ''}${d}</span>`).join('')}</div>
+      ${scaleHtml()}
       <input type="range" class="fader" min="0" max="1000" step="1">
     </div>
     <div class="send-db"></div>
@@ -362,68 +470,43 @@ function createChannelStrip(bus, ch) {
   const strip = stripSkeleton({
     name: ch.name,
     key: ch.key,
-    toggleTitle: 'Liga/desliga o controle automático deste canal',
+    toggleTitle: 'Liga/desliga o automático deste canal nesta saída',
     dest: isMaster ? 'fader do canal no master (salão)' : `envio do canal para ${bus.label}`,
   });
-  const extra = document.createElement('div');
-  extra.innerHTML = `
-    <div class="small-label target-label">alvo</div>
-    <div class="target-ctl"><button data-act="t-" title="Alvo −1 dB">−</button><span class="target-db"></span><button data-act="t+" title="Alvo +1 dB">+</button></div>
-    <div class="fx-sends" title="Quanto deste canal vai para cada efeito"></div>
-    <div class="sim-ctl" title="Simula o músico mudando o volume">fonte <button data-act="src-">−</button><button data-act="src+">+</button></div>`;
-  strip.el.append(...extra.children);
-  strip.targetDb = $('.target-db', strip.el);
-  strip.fxBox = $('.fx-sends', strip.el);
-  strip.fxCtrls = new Map();
-  strip.chKey = ch.key;
-
   strip.toggle.addEventListener('click', () =>
     send({ type: 'setEnabled', bus: bus.bus, key: ch.key, enabled: !strip.toggle.classList.contains('on') }),
   );
-  strip.el.addEventListener('click', (e) => {
-    const act = e.target.dataset?.act;
-    if (act === 't-') send({ type: 'nudgeTarget', bus: bus.bus, key: ch.key, delta: -1 });
-    if (act === 't+') send({ type: 'nudgeTarget', bus: bus.bus, key: ch.key, delta: 1 });
-    if (act === 'src-') send({ type: 'sim.source', key: ch.key, delta: -6 });
-    if (act === 'src+') send({ type: 'sim.source', key: ch.key, delta: 6 });
+  strip.name.addEventListener('click', () => {
+    if (!$('#expand').checked) return toast('Ligue "Expandir canal" (barra de cima) para abrir os controles do canal.');
+    openDetail(ch.key);
   });
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: ch.key, db }));
   return strip;
 }
 
-/** Mini faders "canal → efeito". Laranja = esse efeito também toca no salão. */
-function updateFxSends(strip, s) {
-  const sends = s.fxSends[strip.chKey] ?? {};
-  for (const fx of s.fxInfo) {
-    let ctrl = strip.fxCtrls.get(fx.key);
-    if (!ctrl) {
-      const el = document.createElement('div');
-      el.className = 'fx-send';
-      el.innerHTML = `<div class="lbl"><span class="nm"></span><span class="val"></span></div>
-        <input type="range" min="0" max="1000" step="1">`;
-      strip.fxBox.append(el);
-      ctrl = { el, fader: $('input', el), readout: $('.val', el), name: $('.nm', el) };
-      bindFader(ctrl, (db) => send({ type: 'setFxSend', fx: fx.key, key: strip.chKey, db }));
-      strip.fxCtrls.set(fx.key, ctrl);
-    }
-    ctrl.name.textContent = fx.key.toUpperCase();
-    ctrl.el.classList.toggle('room', fx.inRoom);
-    ctrl.el.title = fx.inRoom
-      ? `${fx.name}: toca no SALÃO e na live — mexer aqui muda os dois`
-      : `${fx.name}: efeito só da live — mexer aqui não muda o salão`;
-    ctrl.fader.setAttribute('aria-label', `Envio de ${strip.name.textContent} para ${fx.name}`);
-    setFader(ctrl, sends[fx.key]);
+/** Diminui a fonte do nome até caber em 2 linhas sem quebrar palavras (11px → 7px). */
+function fitName(el) {
+  let size = 11;
+  el.style.fontSize = `${size}px`;
+  while (size > 7 && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)) {
+    size -= 0.5;
+    el.style.fontSize = `${size}px`;
   }
 }
 
 function updateChannelStrip(strip, ch, s) {
   strip.el.classList.toggle('off', !ch.enabled);
-  strip.name.textContent = ch.name;
+  if (strip.name.textContent !== ch.name || strip.fitW !== strip.name.clientWidth) {
+    strip.name.textContent = ch.name;
+    strip.name.title = ch.name;
+    strip.fitW = strip.name.clientWidth;
+    if (!strip.el.hidden) fitName(strip.name);
+  }
   strip.toggle.classList.toggle('on', ch.enabled);
 
   let label = STATUS_LABEL[ch.status] ?? ch.status;
   if (ch.status === 'manual') label = `oper. ${ch.manualForSec}s`;
-  if (ch.status === 'corrigindo' && s.mode !== 'automatico') label = 'corrigiria';
+  if (ch.status === 'corrigindo' && s.bus.mode !== 'automatico') label = 'corrigiria';
   strip.status.textContent = label;
   strip.status.className = `status ${ch.status}`;
 
@@ -433,9 +516,7 @@ function updateChannelStrip(strip, ch, s) {
   setFader(strip, ch.sendDB);
 
   const applied = ch.sendDB !== undefined && ch.baseSendDB !== undefined ? ch.sendDB - ch.baseSendDB : 0;
-  setDelta(strip.delta, s.mode === 'automatico' ? applied : ch.suggestedDeltaDB);
-  strip.targetDb.textContent = ch.targetDB === undefined || ch.targetDB === null ? '—' : fmt(ch.targetDB);
-  updateFxSends(strip, s);
+  setDelta(strip.delta, s.bus.mode === 'automatico' ? applied : ch.suggestedDeltaDB);
 }
 
 function createFxStrip(bus, fx) {
@@ -448,6 +529,7 @@ function createFxStrip(bus, fx) {
     toggleTitle: 'Efeito acompanha os canais: quando um canal desce nesta saída, o efeito dele desce junto',
     dest: isMaster ? 'retorno do efeito no master' : `retorno do efeito em ${bus.label}`,
   });
+  strip.name.disabled = true;
   strip.badge = document.createElement('span');
   strip.el.insertBefore(strip.badge, strip.toggle);
   strip.toggle.addEventListener('click', () =>
@@ -459,12 +541,11 @@ function createFxStrip(bus, fx) {
 
 function updateFxStrip(strip, fx, s) {
   strip.name.textContent = fx.name;
-  const inRoom = s.fxInfo.find((f) => f.key === fx.key)?.inRoom;
-  strip.badge.className = `fx-badge ${inRoom ? 'room' : 'live'}`;
-  strip.badge.textContent = inRoom ? 'salão+live' : 'só live';
+  strip.badge.className = `fx-badge ${fx.inRoom ? 'room' : 'live'}`;
+  strip.badge.textContent = fx.inRoom ? 'salão+live' : 'só live';
   strip.toggle.classList.toggle('on', fx.follow);
   let label = FX_STATUS_LABEL[fx.status] ?? fx.status;
-  if (fx.status === 'acompanhando' && s.mode !== 'automatico') label = 'acomp.?';
+  if (fx.status === 'acompanhando' && s.bus.mode !== 'automatico') label = 'acomp.?';
   strip.status.textContent = label;
   strip.status.className = `status ${fx.status}`;
   const instant = fx.rawDB !== undefined && fx.sendDB !== undefined ? fx.rawDB + fx.sendDB : METER_MIN;
@@ -478,10 +559,11 @@ function createMasterStrip(bus) {
   const strip = stripSkeleton({
     cls: `master ${isMaster ? 'is-master' : ''}`,
     name: isMaster ? 'MASTER' : bus.label,
-    key: isMaster ? 'salão' : 'master do aux',
+    key: isMaster ? 'salão' : 'master',
     toggleLabel: 'GERAL',
     dest: isMaster ? 'volume geral do salão' : `volume geral de ${bus.label}`,
   });
+  strip.name.disabled = true;
   strip.toggle.disabled = true;
   strip.toggle.title = 'Volume geral desta saída: não muda o equilíbrio entre os canais';
   bindFader(strip, (db) => send({ type: 'setBusMaster', bus: bus.bus, db }));
@@ -494,6 +576,144 @@ function updateMasterStrip(strip, bus) {
   setMeter(strip, bus.outDB);
   setFader(strip, bus.masterDB);
 }
+
+// ---------- painel do canal ----------
+
+const detailCtrls = new Map(); // id -> { el, fader, readout, ... }
+
+function openDetail(key) {
+  send({ type: 'view', detail: key });
+  $('#detail').hidden = false;
+}
+
+function closeDetail() {
+  send({ type: 'view', detail: null });
+  $('#detail').hidden = true;
+}
+
+function detailFader(id, { title, sub, badge, badgeCls, locked, lockText, onValue }) {
+  let c = detailCtrls.get(id);
+  if (!c) {
+    const el = document.createElement('div');
+    el.className = 'dfader';
+    el.innerHTML = `
+      <div class="dfader-title"></div>
+      <div class="dfader-sub"></div>
+      <span class="fx-badge"></span>
+      <div class="dfader-body">${scaleHtml()}<input type="range" class="fader" min="0" max="1000" step="1"></div>
+      <div class="send-db"></div>
+      <div class="dfader-lock small"></div>`;
+    c = { el, fader: $('.fader', el), readout: $('.send-db', el) };
+    bindFader(c, (db) => c.onValue?.(db));
+    detailCtrls.set(id, c);
+  }
+  c.onValue = onValue;
+  $('.dfader-title', c.el).textContent = title;
+  $('.dfader-sub', c.el).textContent = sub ?? '';
+  const b = $('.fx-badge', c.el);
+  b.hidden = !badge;
+  b.textContent = badge ?? '';
+  b.className = `fx-badge ${badgeCls ?? ''}`;
+  c.fader.disabled = Boolean(locked);
+  c.el.classList.toggle('locked', Boolean(locked));
+  $('.dfader-lock', c.el).textContent = locked ? lockText ?? 'sem acesso' : '';
+  c.fader.setAttribute('aria-label', `${title} ${sub ?? ''}`);
+  return c;
+}
+
+function renderDetail(s) {
+  const d = s.detail;
+  // o painel só fecha pelo usuário (×, Esc, troca de saída); sem dados ainda = aguardando o servidor
+  if (!d || $('#detail').hidden) return;
+  $('#d-name').textContent = d.name;
+  $('#d-sub').textContent = `${d.key} · ${STATUS_LABEL[d.status] ?? d.status}${d.levelDB !== undefined ? ` · nível ${fmt(d.levelDB)} dB` : ''}`;
+  $('#d-auto').checked = d.enabled;
+  $('#d-target').textContent = d.targetDB === undefined ? '—' : `${fmt(d.targetDB)} dB`;
+  $('.sim-ctl-d').hidden = s.source.kind !== 'simulador';
+
+  const used = [];
+  const add = (id, opts, db) => {
+    const c = detailFader(id, opts);
+    setFader(c, db);
+    used.push(c.el);
+  };
+  add(
+    'master',
+    {
+      title: 'MASTER',
+      sub: 'som do salão',
+      badge: 'salão',
+      badgeCls: 'room',
+      locked: !d.master.allowed,
+      lockText: 'sem acesso ao master',
+      onValue: (db) => send({ type: 'setSend', bus: MASTER_BUS, key: d.key, db }),
+    },
+    d.master.db,
+  );
+  if (d.busSend) {
+    add(
+      'bus',
+      {
+        title: d.busSend.label,
+        sub: 'esta saída',
+        badge: 'você está aqui',
+        badgeCls: 'live',
+        onValue: (db) => send({ type: 'setSend', bus: d.busSend.bus, key: d.key, db }),
+      },
+      d.busSend.db,
+    );
+  }
+  for (const fx of d.fx) {
+    add(
+      fx.key,
+      {
+        title: fx.key.toUpperCase(),
+        sub: fx.name,
+        badge: fx.inRoom ? 'salão+live' : 'só live',
+        badgeCls: fx.inRoom ? 'room' : 'live',
+        locked: !fx.allowed,
+        lockText: 'toca no salão: só admin/master',
+        onValue: (db) => send({ type: 'setFxSend', fx: fx.key, key: d.key, db }),
+      },
+      fx.db,
+    );
+  }
+  const box = $('#d-faders');
+  if (box.children.length !== used.length || used.some((el, i) => box.children[i] !== el)) box.replaceChildren(...used);
+
+  // outros auxes liberados: sliders horizontais compactos
+  const others = $('#d-others');
+  $('#d-others-wrap').hidden = d.otherAuxes.length === 0;
+  const sig = d.key + d.otherAuxes.map((o) => o.bus).join(',');
+  if (others.dataset.sig !== sig) {
+    others.dataset.sig = sig;
+    others.innerHTML = '';
+    for (const o of d.otherAuxes) {
+      const row = document.createElement('div');
+      row.className = 'other-aux';
+      row.innerHTML = `<span class="oa-name"></span><input type="range" min="0" max="1000" step="1"><span class="oa-val num"></span>`;
+      $('.oa-name', row).textContent = `${o.label} · ${o.name}`;
+      const ctrl = { fader: $('input', row), readout: $('.oa-val', row), bus: o.bus };
+      bindFader(ctrl, (db) => send({ type: 'setSend', bus: ctrl.bus, key: d.key, db }));
+      row.ctrl = ctrl;
+      others.append(row);
+    }
+  }
+  [...others.children].forEach((row, i) => setFader(row.ctrl, d.otherAuxes[i]?.db));
+}
+
+$('#d-close').addEventListener('click', closeDetail);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#detail').hidden) closeDetail();
+});
+$('#d-auto').addEventListener('change', (e) => {
+  const d = state?.detail;
+  if (d && state.bus) send({ type: 'setEnabled', bus: state.bus.bus, key: d.key, enabled: e.target.checked });
+});
+$('#d-tminus').addEventListener('click', () => state?.detail && send({ type: 'nudgeTarget', bus: state.bus.bus, key: state.detail.key, delta: -1 }));
+$('#d-tplus').addEventListener('click', () => state?.detail && send({ type: 'nudgeTarget', bus: state.bus.bus, key: state.detail.key, delta: 1 }));
+$('#d-srcminus').addEventListener('click', () => state?.detail && send({ type: 'sim.source', key: state.detail.key, delta: -6 }));
+$('#d-srcplus').addEventListener('click', () => state?.detail && send({ type: 'sim.source', key: state.detail.key, delta: 6 }));
 
 // ---------- vista tabela ----------
 
@@ -511,20 +731,14 @@ function createRow(bus, ch) {
       <span class="target-db"></span>
       <button class="small" data-act="t+">+1</button>
       <button class="small" data-act="clear" title="Esquecer o alvo deste canal">×</button>
-    </td>
-    <td class="sim-col">
-      fonte <button class="small" data-act="src-">−6</button><button class="small" data-act="src+">+6</button>
     </td>`;
   $('.key', tr).textContent = ch.key;
   $('.en', tr).addEventListener('change', (e) => send({ type: 'setEnabled', bus, key: ch.key, enabled: e.target.checked }));
   tr.addEventListener('click', (e) => {
     const act = e.target.dataset?.act;
-    const key = ch.key;
-    if (act === 't-') send({ type: 'nudgeTarget', bus, key, delta: -1 });
-    if (act === 't+') send({ type: 'nudgeTarget', bus, key, delta: 1 });
-    if (act === 'clear') send({ type: 'clearTarget', bus, key });
-    if (act === 'src-') send({ type: 'sim.source', key, delta: -6 });
-    if (act === 'src+') send({ type: 'sim.source', key, delta: 6 });
+    if (act === 't-') send({ type: 'nudgeTarget', bus, key: ch.key, delta: -1 });
+    if (act === 't+') send({ type: 'nudgeTarget', bus, key: ch.key, delta: 1 });
+    if (act === 'clear') send({ type: 'clearTarget', bus, key: ch.key });
   });
   return {
     tr,
@@ -545,19 +759,16 @@ function updateRow(row, ch, s) {
   row.tr.classList.toggle('off', !ch.enabled);
   row.en.checked = ch.enabled;
   row.name.textContent = ch.name;
-
   let label = STATUS_LABEL[ch.status] ?? ch.status;
   if (ch.status === 'manual') label += ` ${ch.manualForSec}s`;
-  if (ch.status === 'corrigindo' && s.mode !== 'automatico') label = 'corrigiria';
+  if (ch.status === 'corrigindo' && s.bus.mode !== 'automatico') label = 'corrigiria';
   row.status.textContent = label;
   row.status.className = `status ${ch.status}`;
-
   const silent = ch.status === 'silencio' || ch.rawDB === undefined || ch.rawDB <= -79;
   const instant = !silent && ch.sendDB !== undefined ? ch.rawDB + ch.sendDB : METER_MIN;
   row.fill.style.width = `${meterPct(instant)}%`;
   row.avg.style.display = ch.contributionDB === undefined ? 'none' : '';
   row.avg.style.left = `${meterPct(ch.contributionDB ?? METER_MIN)}%`;
-
   const hasTarget = ch.targetDB !== undefined && ch.targetDB !== null;
   row.target.style.display = hasTarget ? '' : 'none';
   row.band.style.display = hasTarget ? '' : 'none';
@@ -567,65 +778,133 @@ function updateRow(row, ch, s) {
     row.band.style.left = `${lo}%`;
     row.band.style.width = `${meterPct(ch.targetDB + s.deadbandDB) - lo}%`;
   }
-
   row.send.textContent = `${fmtSend(ch.sendDB)} dB`;
   const applied = ch.sendDB !== undefined && ch.baseSendDB !== undefined ? ch.sendDB - ch.baseSendDB : 0;
-  const shown = s.mode === 'automatico' ? applied : ch.suggestedDeltaDB;
+  const shown = s.bus.mode === 'automatico' ? applied : ch.suggestedDeltaDB;
   row.delta.textContent = Math.abs(shown) < 0.05 ? '—' : `${fmt(shown, true)} dB`;
   row.delta.className = `num delta ${shown < -0.05 ? 'down' : shown > 0.05 ? 'up' : ''}`;
   row.targetDb.textContent = hasTarget ? fmt(ch.targetDB) : '—';
 }
 
-// ---------- preferências locais (só deste navegador) ----------
+// ---------- modos de visualização (salvos no servidor) ----------
 
-function pref(key, fallback) {
+function tableMode() {
   try {
-    return localStorage.getItem(`copiloto.${key}`) ?? fallback;
+    return localStorage.getItem('copiloto.table') === '1';
   } catch {
-    return fallback;
+    return false;
   }
 }
 
-function setPref(key, value) {
+function applyView(v) {
+  currentView = v;
+  document.body.dataset.view = tableMode() ? 'tabela' : 'mesa';
+  if (view) view.order = ''; // força reordenar/re-layout
+  if (state) render();
+  layoutStrips();
+}
+
+function renderViewSelect() {
+  $('#view-select').innerHTML = views
+    .map((v) => `<option value="${v.id}" ${v.id === currentView?.id ? 'selected' : ''}>${escapeHtml(v.name)}${v.builtin ? '' : ' ★'}</option>`)
+    .join('');
+}
+
+async function loadViews(selectId) {
+  const data = await api('GET', '/api/views');
+  views = data.views;
+  const id = selectId ?? currentView?.id ?? data.currentId;
+  applyView(views.find((v) => v.id === id) ?? views[0]);
+  renderViewSelect();
+}
+
+$('#view-select').addEventListener('change', (e) => {
+  const v = views.find((x) => x.id === e.target.value);
+  if (!v) return;
+  applyView(v);
+  savePrefs({ viewId: v.id });
+});
+
+let editing; // modo sendo editado
+
+function openViewEditor() {
+  editing = currentView;
+  const cfg = editing.config;
+  $('#vf-name').value = editing.builtin ? `${editing.name} (cópia)` : editing.name;
+  $('#vf-faders').value = String(cfg.faders);
+  $('#vf-all').checked = !cfg.channels;
+  $('#vf-fx').checked = cfg.showFxReturns;
+  $('#vf-lp').checked = cfg.showLinePlayer;
+  $('#vf-table').checked = tableMode();
+  const chans = state?.bus?.channels ?? [];
+  const selected = new Set(cfg.channels ?? chans.filter((c) => c.key.startsWith('i')).map((c) => c.key));
+  $('#vf-channels').innerHTML = chans
+    .map((c) => `<label><input type="checkbox" value="${c.key}" ${selected.has(c.key) ? 'checked' : ''}> <span class="muted">${c.key}</span> ${escapeHtml(c.name)}</label>`)
+    .join('');
+  $('#vf-channels').classList.toggle('disabled', $('#vf-all').checked);
+  $('#vf-save').textContent = editing.builtin ? 'Salvar como meu modo' : 'Salvar';
+  $('#vf-saveas').hidden = editing.builtin;
+  $('#vf-delete').hidden = editing.builtin;
+  $('#vf-error').hidden = true;
+  $('#view-dialog').showModal();
+}
+
+function formConfig() {
+  const channels = $('#vf-all').checked ? null : [...$('#vf-channels').querySelectorAll('input:checked')].map((i) => i.value);
+  return {
+    faders: Number($('#vf-faders').value),
+    channels,
+    showFxReturns: $('#vf-fx').checked,
+    showLinePlayer: $('#vf-lp').checked,
+  };
+}
+
+async function saveView(asNew) {
   try {
-    localStorage.setItem(`copiloto.${key}`, value);
-  } catch {
-    // sem localStorage: só não lembra a preferência
+    try {
+      localStorage.setItem('copiloto.table', $('#vf-table').checked ? '1' : '0');
+    } catch {
+      // sem localStorage
+    }
+    const body = { name: $('#vf-name').value.trim(), config: formConfig() };
+    const res = editing.builtin || asNew ? await api('POST', '/api/views', body) : await api('PUT', `/api/views/${editing.id}`, body);
+    $('#view-dialog').close();
+    await loadViews(res.view.id);
+    savePrefs({ viewId: res.view.id });
+  } catch (err) {
+    $('#vf-error').textContent = err.message;
+    $('#vf-error').hidden = false;
   }
 }
 
-function setView(v) {
-  document.body.dataset.view = v;
-  document.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
-  setPref('view', v);
-}
+$('#view-edit').addEventListener('click', openViewEditor);
+$('#vf-all').addEventListener('change', (e) => $('#vf-channels').classList.toggle('disabled', e.target.checked));
+$('#vf-cancel').addEventListener('click', () => $('#view-dialog').close());
+$('#vf-save').addEventListener('click', () => saveView(false));
+$('#vf-saveas').addEventListener('click', () => saveView(true));
+$('#vf-delete').addEventListener('click', async () => {
+  if (!confirm(`Apagar o modo "${editing.name}"?`)) return;
+  try {
+    await api('DELETE', `/api/views/${editing.id}`);
+    $('#view-dialog').close();
+    await loadViews('padrao');
+    savePrefs({ viewId: 'padrao' });
+  } catch (err) {
+    $('#vf-error').textContent = err.message;
+    $('#vf-error').hidden = false;
+  }
+});
 
-function bindToggle(id, cls, key, fallback) {
-  const box = $(`#${id}`);
-  box.checked = pref(key, fallback) === '1';
-  document.body.classList.toggle(cls, box.checked);
-  box.addEventListener('change', () => {
-    document.body.classList.toggle(cls, box.checked);
-    setPref(key, box.checked ? '1' : '0');
-    if (state) render();
-  });
-}
-
-setView(pref('view', 'mesa') === 'tabela' ? 'tabela' : 'mesa');
-bindToggle('show-fx', 'show-fx', 'showFx', '1');
-bindToggle('show-target', 'show-target', 'showTarget', '1');
-bindToggle('show-all', 'show-all', 'showAll', '0');
-
-// ---------- controles da barra superior ----------
-
-document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+// ---------- barra superior ----------
 
 document.querySelectorAll('[data-mode]').forEach((b) =>
   b.addEventListener('click', () => {
-    if (b.dataset.mode === 'automatico' && state?.mode !== 'automatico' && state?.source?.kind === 'mesa') {
-      if (!confirm('Ligar o modo AUTOMÁTICO? O software vai mexer na saída selecionada da mesa real.')) return;
+    const bus = state?.bus;
+    if (!bus) return;
+    if (b.dataset.mode === 'automatico' && bus.mode !== 'automatico' && state.source.kind === 'mesa') {
+      if (!confirm(`Ligar o AUTOMÁTICO em ${bus.label}? O software vai mexer nessa saída da mesa real.`)) return;
     }
-    send({ type: 'setMode', mode: b.dataset.mode });
+    send({ type: 'setMode', bus: bus.bus, mode: b.dataset.mode });
   }),
 );
 
@@ -635,28 +914,35 @@ $('#bus-select').addEventListener('change', (e) => {
     e.target.dataset.sig = ''; // volta a seleção anterior no próximo render
     return;
   }
-  send({ type: 'setBuses', buses: [id] });
+  $('#detail').hidden = true;
+  send({ type: 'view', bus: id, detail: null });
+  savePrefs({ bus: id });
 });
 
 document.querySelectorAll('[data-scene]').forEach((b) =>
   b.addEventListener('click', () => send({ type: 'sim.scene', scene: b.dataset.scene })),
 );
 $('#capture').addEventListener('click', () => {
-  if (confirm('Gravar o nível atual de cada canal que está tocando como alvo?')) send({ type: 'capture' });
+  if (state?.bus && confirm(`Gravar o nível atual de cada canal que está tocando como alvo de ${state.bus.label}?`)) {
+    send({ type: 'capture', bus: state.bus.bus });
+  }
 });
 $('#restore').addEventListener('click', () => {
-  if (confirm('Voltar os envios para a mixagem original (ou do preset carregado)?')) send({ type: 'restore' });
+  if (state?.bus && confirm(`Voltar os envios de ${state.bus.label} para a mixagem original (ou do preset carregado)?`)) {
+    send({ type: 'restore', bus: state.bus.bus });
+  }
 });
 $('#preset-select').addEventListener('change', (e) => {
-  if (e.target.value) send({ type: 'preset.load', id: e.target.value });
+  if (e.target.value && state?.bus) send({ type: 'preset.load', bus: state.bus.bus, id: e.target.value });
 });
 $('#preset-new').addEventListener('click', () => {
-  const name = prompt('Nome do preset (ex.: "Louvor - mais batera"):');
-  if (name?.trim()) send({ type: 'preset.save', name: name.trim() });
+  if (!state?.bus) return;
+  const name = prompt(`Nome do preset para ${state.bus.label} (ex.: "Louvor - mais batera"):`);
+  if (name?.trim()) send({ type: 'preset.save', bus: state.bus.bus, name: name.trim() });
 });
 $('#preset-update').addEventListener('click', () => {
   const p = state?.presets.find((x) => x.id === state.activePresetId);
-  if (p && confirm(`Sobrescrever o preset "${p.name}" com a mixagem atual?`)) send({ type: 'preset.save', name: p.name, id: p.id });
+  if (p && confirm(`Sobrescrever o preset "${p.name}" com a mixagem atual?`)) send({ type: 'preset.save', bus: state.bus.bus, name: p.name, id: p.id });
 });
 $('#preset-delete').addEventListener('click', () => {
   const p = state?.presets.find((x) => x.id === state.activePresetId);
@@ -664,10 +950,34 @@ $('#preset-delete').addEventListener('click', () => {
 });
 $('#sim-reset').addEventListener('click', () => send({ type: 'sim.reset' }));
 
-// fecha o menu "Exibir" ao clicar fora
-document.addEventListener('click', (e) => {
-  const menu = $('.menu');
-  if (menu.open && !menu.contains(e.target)) menu.open = false;
+$('#expand').addEventListener('change', (e) => {
+  savePrefs({ expand: e.target.checked });
+  if (!e.target.checked) closeDetail();
+});
+$('#logout').addEventListener('click', async () => {
+  await api('POST', '/api/logout').catch(() => undefined);
+  location.href = '/login.html';
 });
 
-connect();
+// fecha menus ao clicar fora
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('details.menu[open]').forEach((m) => {
+    if (!m.contains(e.target)) m.open = false;
+  });
+});
+
+// ---------- início ----------
+
+(async () => {
+  const data = await api('GET', '/api/me');
+  me = data.user;
+  if (!me) {
+    location.href = '/login.html';
+    return;
+  }
+  $('#user-name').textContent = `${me.username}${me.role === 'admin' ? ' (admin)' : ''}`;
+  $('#nav-admin').textContent = me.role === 'admin' ? 'Pessoas' : 'Conta';
+  $('#expand').checked = me.prefs.expand !== false;
+  await loadViews(me.prefs.viewId);
+  connect();
+})().catch((err) => toast(err.message));

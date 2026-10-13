@@ -10,7 +10,7 @@
   <header class="top">
     <div class="brand">
       <h1>Copiloto Ui24R</h1>
-      <nav class="nav"><a href="/">Mixagem</a><a href="conexao.html" class="active" aria-current="page">Conexão</a></nav>
+      <nav class="nav"><a href="/">Mixagem</a><a href="conexao.html" class="active" aria-current="page">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
     </div>
     <span id="quality" class="quality">…</span>
   </header>
@@ -40,6 +40,35 @@
           <button type="button" id="use-sim">Usar o simulador</button>
         </div>
         <p class="muted small">Alvos e presets do simulador ficam separados dos da mesa real.</p>
+      </div>
+    </div>
+  </section>
+
+  <p id="admin-note" class="setup-msg" hidden>Só o <strong>admin</strong> pode trocar a mesa ou a fonte de nível. Você está vendo as informações.</p>
+  <p id="error" class="form-error" role="alert" hidden></p>
+
+  <section class="card">
+    <h2>Medição de nível</h2>
+    <p class="muted small">
+      De onde o software lê o volume de cada canal. O <strong>controle</strong> (mexer em envios e faders) é sempre pela <strong>rede</strong>:
+      pelo USB a Ui24R só manda áudio.
+    </p>
+    <div class="level-grid">
+      <div class="source real" id="lv-vu">
+        <h3>VU da mesa (rede) <span class="now" hidden>EM USO</span></h3>
+        <p class="muted small">Usa os medidores que a própria mesa manda pela rede. Não precisa de cabo nem de driver.</p>
+        <div class="row"><button type="button" id="use-vu">Usar o VU da rede</button></div>
+      </div>
+      <div class="source sim" id="lv-usb">
+        <h3>Áudio USB (conexão física) <span class="now" hidden>EM USO</span></h3>
+        <p class="muted small">Mede o áudio de cada canal que chega pelo cabo USB (driver da Soundcraft + ffmpeg). Mais preciso.</p>
+        <div class="row"><button type="button" id="detect">Procurar a Ui24R no USB</button><span id="usb-state" class="small"></span></div>
+        <div id="usb-result"></div>
+        <form id="usb-form" class="usb-form" hidden>
+          <select id="usb-device"></select>
+          <label class="small">canais <input id="usb-channels" type="number" min="2" max="32" value="24" style="width:64px"></label>
+          <button type="submit" class="primary">Usar este áudio USB</button>
+        </form>
       </div>
     </div>
   </section>

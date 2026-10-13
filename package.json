@@ -2,14 +2,15 @@
   "name": "copiloto-ui24r",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Copiloto de som para a Soundcraft Ui24R: ajuste automático dos auxiliares da transmissão ao vivo",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "start": "tsx src/main.ts",
-    "sim": "tsx src/main.ts --sim",
+    "start": "tsx --disable-warning=ExperimentalWarning src/main.ts",
+    "sim": "tsx --disable-warning=ExperimentalWarning src/main.ts --sim",
     "diagnostico": "tsx src/diagnostico.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

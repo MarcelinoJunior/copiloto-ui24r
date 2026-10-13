@@ -9,14 +9,14 @@
 <body class="mix-page">
   <header class="topbar">
     <strong class="logo">Copiloto</strong>
-    <nav class="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="conexao.html">Conexão</a></nav>
+    <nav class="nav" id="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="conexao.html">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
 
-    <label class="field" title="Qual saída da mesa aparece e é controlada">
+    <label class="field" title="Qual saída da mesa você está vendo e mixando">
       <span>Saída</span>
       <select id="bus-select"></select>
     </label>
 
-    <div class="seg modes" role="radiogroup" aria-label="Modo">
+    <div class="seg modes" role="radiogroup" aria-label="Modo do automático nesta saída" title="Modo do automático NESTA saída">
       <button data-mode="desligado" title="Só mostra os níveis">Desligado</button>
       <button data-mode="observar" title="Calcula as correções mas NÃO mexe na mesa">Observar</button>
       <button data-mode="automatico" title="Ajusta os envios e efeitos devagar, dentro dos limites">Automático</button>
@@ -25,28 +25,33 @@
     <button id="capture" class="primary small-btn" title="Use quando a mixagem estiver soando bem: o nível atual de cada canal vira o alvo">Gravar alvo</button>
     <button id="restore" class="danger small-btn" title="Volta os envios para a mixagem original (ou do preset carregado)">Voltar ao original</button>
 
-    <div class="field presets">
+    <div class="field">
       <span>Preset</span>
-      <select id="preset-select" title="Carregar preset (com fade suave)"></select>
-      <button id="preset-new" class="icon-btn" title="Salvar a mixagem atual como novo preset">+</button>
+      <select id="preset-select" title="Carregar preset desta saída (com fade suave)"></select>
+      <button id="preset-new" class="icon-btn" title="Salvar a mixagem atual desta saída como novo preset">+</button>
       <button id="preset-update" class="icon-btn" title="Atualizar o preset ativo com a mixagem atual">↻</button>
       <button id="preset-delete" class="icon-btn" title="Apagar o preset ativo">×</button>
     </div>
 
-    <details class="menu">
-      <summary>Exibir</summary>
-      <div class="menu-body">
-        <label><input type="checkbox" id="show-fx" checked> envios de efeito por canal</label>
-        <label><input type="checkbox" id="show-all"> line, player e canais sem envio</label>
-        <label><input type="checkbox" id="show-target" checked> ajuste de alvo (− / +)</label>
-        <div class="seg views">
-          <button data-view="mesa">Mesa</button>
-          <button data-view="tabela">Tabela</button>
-        </div>
-      </div>
-    </details>
+    <div class="field">
+      <span>Visualização</span>
+      <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
+      <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
+    </div>
+
+    <label class="toggle-btn" title="Clicar no nome do canal abre todos os volumes dele: master, esta saída e efeitos 1 a 4">
+      <input type="checkbox" id="expand"> Expandir canal
+    </label>
 
     <a id="conn" class="pill" href="conexao.html" title="Abrir a tela de conexão">…</a>
+
+    <details class="menu user-menu">
+      <summary id="user-name">…</summary>
+      <div class="menu-body right">
+        <a href="admin.html" id="menu-account">Minha senha / pessoas</a>
+        <button id="logout" class="ghost">Sair</button>
+      </div>
+    </details>
   </header>
 
   <section id="sim" class="simbar" hidden>
@@ -61,25 +66,88 @@
   </section>
 
   <main id="mixer" class="mixer"></main>
-  <p id="no-bus" class="empty-state" hidden>Escolha uma <strong>Saída</strong> lá em cima (ex.: AUX 7+8 da live).</p>
+  <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>
 
   <footer class="statusline">
     <span id="mode-help" class="muted"></span>
+    <span id="toast" class="toast" role="alert" hidden></span>
     <details class="history">
       <summary id="last-event">—</summary>
       <ul id="events"></ul>
     </details>
   </footer>
 
+  <!-- painel do canal: todos os volumes de um canal -->
+  <aside id="detail" class="detail" hidden aria-label="Controles do canal">
+    <div class="detail-head">
+      <div>
+        <h2 id="d-name"></h2>
+        <span class="muted small" id="d-sub"></span>
+      </div>
+      <button id="d-close" class="icon-btn" title="Fechar (Esc)">×</button>
+    </div>
+    <div class="detail-row">
+      <label class="toggle-btn"><input type="checkbox" id="d-auto"> AUTO nesta saída</label>
+      <span class="small muted">Alvo do automático:</span>
+      <button class="icon-btn" id="d-tminus" title="Alvo −1 dB">−</button>
+      <strong id="d-target" class="num">—</strong>
+      <button class="icon-btn" id="d-tplus" title="Alvo +1 dB">+</button>
+      <span class="sim-ctl-d">Simular músico: <button class="icon-btn" id="d-srcminus">−6</button><button class="icon-btn" id="d-srcplus">+6</button></span>
+    </div>
+    <div id="d-faders" class="detail-faders"></div>
+    <div id="d-others-wrap" class="detail-others">
+      <h3>Outros auxiliares deste canal</h3>
+      <div id="d-others"></div>
+    </div>
+  </aside>
+
+  <!-- editor de modos de visualização -->
+  <dialog id="view-dialog" class="dialog">
+    <form method="dialog" id="view-form">
+      <h2>Modo de visualização</h2>
+      <label class="stack">Nome <input id="vf-name" maxlength="40" required></label>
+      <label class="stack">Quantos faders você quer ver na tela?
+        <select id="vf-faders">
+          <option value="0">Todos os escolhidos (cabem na tela)</option>
+          <option value="4">4</option><option value="6">6</option><option value="8">8</option>
+          <option value="10">10</option><option value="12">12</option><option value="16">16</option>
+          <option value="20">20</option><option value="24">24</option><option value="32">32</option>
+        </select>
+      </label>
+      <p class="muted small">Se houver mais canais que faders na tela, use ◀ ▶ (ou role para o lado) para trocar de banco.</p>
+      <fieldset>
+        <legend>Canais que aparecem</legend>
+        <label><input type="checkbox" id="vf-all"> Todos os canais de entrada</label>
+        <div id="vf-channels" class="vf-channels"></div>
+      </fieldset>
+      <label><input type="checkbox" id="vf-fx"> Mostrar os retornos dos efeitos (FX 1–4)</label>
+      <label><input type="checkbox" id="vf-lp"> Mostrar line in e player</label>
+      <label><input type="checkbox" id="vf-table"> Ver como tabela (só neste navegador)</label>
+      <p id="vf-error" class="form-error" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="vf-delete" class="danger">Apagar</button>
+        <span class="spacer"></span>
+        <button type="button" id="vf-cancel">Cancelar</button>
+        <button type="button" id="vf-saveas">Salvar como novo</button>
+        <button type="button" id="vf-save" class="primary">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
   <template id="bus-tpl">
     <section class="bus">
       <div class="bus-head">
         <strong class="bus-title"></strong>
         <span class="bus-help"></span>
+        <span class="bank" hidden>
+          <button class="icon-btn bank-prev" title="Canais anteriores">◀</button>
+          <span class="bank-label"></span>
+          <button class="icon-btn bank-next" title="Próximos canais">▶</button>
+        </span>
         <span class="legend"><i class="lg lg-fill"></i>agora <i class="lg lg-avg"></i>média <i class="lg lg-target"></i>alvo</span>
       </div>
       <div class="strips mixer-view">
-        <div class="group ch-group"></div>
+        <div class="ch-scroll"><div class="group ch-group"></div></div>
         <div class="group fx-group"></div>
         <div class="group master-group"></div>
       </div>
@@ -87,14 +155,9 @@
         <table>
           <thead>
             <tr>
-              <th>Auto</th>
-              <th>Canal</th>
-              <th>Estado</th>
+              <th>Auto</th><th>Canal</th><th>Estado</th>
               <th class="meter-col">Peso na saída (nível + envio) · alvo</th>
-              <th>Envio</th>
-              <th>Correção</th>
-              <th>Alvo</th>
-              <th class="sim-col">Simular</th>
+              <th>Envio</th><th>Correção</th><th>Alvo</th>
             </tr>
           </thead>
           <tbody></tbody>

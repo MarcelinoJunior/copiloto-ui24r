@@ -1,10 +1,14 @@
+import { canUseBus, type User } from './auth.js';
 import type { AppConfig } from './config.js';
 import type { ConnectionStore } from './connection-store.js';
 import { ConnectionHealth, type HealthSnapshot, isValidHost } from './health.js';
 import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
+import { detectUsbAudio, UsbAudioCapture, type UsbDetection } from './levels/usb-audio.js';
+import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
 import {
   type BusInfo,
+  type ChannelVu,
   type ConnectionState,
   type MixerAdapter,
   type MixerInfo,
@@ -13,58 +17,10 @@ import {
   busLabel,
   primaryBus,
 } from './mixer/types.js';
-import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
 import type { PresetStore } from './preset-store.js';
 import type { SessionLog } from './session-log.js';
 import type { PersistedState, StateStore } from './state-store.js';
-import { round1 } from './util/db.js';
-
-export interface EventEntry {
-  t: number;
-  text: string;
-  /** eventos com a mesma chave em sequência são agrupados (ex.: arrastar um fader) */
-  mergeKey?: string;
-}
-
-export interface BusChoice {
-  id: number;
-  label: string;
-  name: string;
-  stereo: boolean;
-  selected: boolean;
-}
-
-export interface ControlledBus {
-  bus: number;
-  label: string;
-  name: string;
-  stereo: boolean;
-  outDB?: number;
-  masterDB?: number;
-  channels: ChannelSnapshot[];
-  fx: FxSnapshot[];
-}
-
-export interface AppSnapshot {
-  connection: ConnectionState;
-  connectionDetail?: string;
-  mixer?: MixerInfo;
-  mode: Mode;
-  deadbandDB: number;
-  buses: BusChoice[];
-  controlled: ControlledBus[];
-  /** efeitos da mesa e se o retorno deles vai para o salão (master) */
-  fxInfo: { key: string; name: string; inRoom: boolean }[];
-  /** envio de cada canal para cada efeito: fxSends[canal][efeito] (null = -∞) */
-  fxSends: Record<string, Record<string, number | null>>;
-  presets: { id: string; name: string; savedAt: number }[];
-  activePresetId?: string;
-  events: EventEntry[];
-  sim?: { scene: Scene; offsets: Record<string, number> };
-  health: HealthSnapshot;
-  /** de onde vêm os dados: mesa real (com IP) ou simulador */
-  source: { kind: SourceKind; ip: string };
-}
+import { FLOOR_DB, round1 } from './util/db.js';
 
 export type SourceKind = 'mesa' | 'simulador';
 
@@ -82,14 +38,98 @@ export interface MixerTarget {
   profiles: Record<SourceKind, Profile>;
 }
 
+/** O que cada pessoa conectada está olhando (cada uma vê a sua saída). */
+export interface ClientView {
+  bus?: number;
+  /** canal aberto no painel do canal */
+  detail?: string;
+}
+
+export interface ClientCtx {
+  user: User;
+  view: ClientView;
+}
+
+export interface EventEntry {
+  t: number;
+  text: string;
+  /** eventos com a mesma chave em sequência são agrupados (ex.: arrastar um fader) */
+  mergeKey?: string;
+}
+
+export interface BusChoice {
+  id: number;
+  label: string;
+  name: string;
+  stereo: boolean;
+  mode: Mode;
+}
+
+export interface ViewedBus {
+  bus: number;
+  label: string;
+  name: string;
+  stereo: boolean;
+  mode: Mode;
+  outDB?: number;
+  masterDB?: number;
+  channels: ChannelSnapshot[];
+  fx: FxSnapshot[];
+}
+
+/** Painel do canal: todos os volumes daquele canal. */
+export interface ChannelDetail {
+  key: string;
+  name: string;
+  /** fader do canal no master (som do salão) */
+  master: { db: number | null; allowed: boolean };
+  /** envio do canal para a saída que a pessoa está vendo (se for um aux) */
+  busSend?: { bus: number; label: string; db: number | null };
+  fx: { key: string; name: string; db: number | null; inRoom: boolean; allowed: boolean }[];
+  /** outros auxes liberados para a pessoa */
+  otherAuxes: { bus: number; label: string; name: string; db: number | null }[];
+  levelDB?: number;
+  enabled: boolean;
+  targetDB?: number;
+  status: string;
+}
+
+export interface LevelSourceInfo {
+  kind: 'vu' | 'usb';
+  device?: string;
+  channels: number;
+  usbState?: string;
+  usbError?: string;
+  usbAgeMs?: number;
+  detection?: UsbDetection;
+}
+
+export interface AppSnapshot {
+  connection: ConnectionState;
+  connectionDetail?: string;
+  mixer?: MixerInfo;
+  source: { kind: SourceKind; ip: string };
+  user: { username: string; role: string };
+  deadbandDB: number;
+  buses: BusChoice[];
+  bus?: ViewedBus;
+  detail?: ChannelDetail;
+  presets: { id: string; name: string; savedAt: number }[];
+  activePresetId?: string;
+  events: EventEntry[];
+  sim?: { scene: Scene; offsets: Record<string, number> };
+  health: HealthSnapshot;
+  levelSource: LevelSourceInfo;
+}
+
 /** dB vindo do painel: null representa -∞ (JSON não tem -Infinity). */
 type WireDB = number | null;
 
 export type Command =
-  | { type: 'setMode'; mode: Mode }
-  | { type: 'setBuses'; buses: number[] }
-  | { type: 'capture'; bus?: number }
-  | { type: 'restore' }
+  | { type: 'view'; bus?: number; detail?: string | null }
+  | { type: 'setMode'; bus: number; mode: Mode }
+  | { type: 'capture'; bus: number }
+  | { type: 'restore'; bus: number }
   | { type: 'setEnabled'; bus: number; key: string; enabled: boolean }
   | { type: 'nudgeTarget'; bus: number; key: string; delta: number }
   | { type: 'clearTarget'; bus: number; key: string }
@@ -97,8 +137,8 @@ export type Command =
   | { type: 'setBusMaster'; bus: number; db: WireDB }
   | { type: 'setFxSend'; fx: string; key: string; db: WireDB }
   | { type: 'setFxFollow'; bus: number; key: string; follow: boolean }
-  | { type: 'preset.save'; name: string; id?: string }
-  | { type: 'preset.load'; id: string }
+  | { type: 'preset.save'; bus: number; name: string; id?: string }
+  | { type: 'preset.load'; bus: number; id: string }
   | { type: 'preset.delete'; id: string }
   | { type: 'sim.scene'; scene: Scene }
   | { type: 'sim.source'; key: string; delta: number }
@@ -106,7 +146,13 @@ export type Command =
   | { type: 'conn.test'; ip: string }
   | { type: 'conn.setIp'; ip: string }
   | { type: 'conn.useSim' }
-  | { type: 'conn.reconnect' };
+  | { type: 'conn.reconnect' }
+  | { type: 'level.detect' }
+  | { type: 'level.useVu' }
+  | { type: 'level.useUsb'; device: string; channels: number };
+
+/** Erro de comando: vira mensagem para quem pediu. */
+export class CommandError extends Error {}
 
 interface BusController {
   bus: number;
@@ -114,6 +160,7 @@ interface BusController {
   follower: FxFollower;
   unsubs: Unsubscribe[];
   masterDB?: number;
+  mode: Mode;
 }
 
 interface Fade {
@@ -125,20 +172,22 @@ interface Fade {
   durationMs: number;
 }
 
-const MAX_EVENTS = 60;
+const MAX_EVENTS = 80;
 const EVENT_MERGE_MS = 4000;
 const LEVEL_LOG_EVERY_MS = 2000;
 const CONNECT_TIMEOUT_MS = 10000;
 const RETRY_MS = 5000;
 const FADE_STEP_MS = 100;
+const ACTOR_MEMORY_MS = 3000;
+const USB_STALE_MS = 500;
 /** Retorno de efeito acima disso no master = o efeito toca no salão. */
 const IN_ROOM_THRESHOLD_DB = -60;
+const MODES: Mode[] = ['desligado', 'observar', 'automatico'];
 
-/** Liga a mesa (real ou simulada), os niveladores, os efeitos, os presets e o log do culto. */
+/** Liga a mesa (real ou simulada), os niveladores de TODAS as saídas, efeitos, presets, permissões e o log. */
 export class App {
   private readonly controllers = new Map<number, BusController>();
   private persisted: PersistedState = { auxes: {} };
-  private mode: Mode;
   private connection: ConnectionState = 'conectando';
   private connectionDetail?: string;
   private mixer?: MixerInfo;
@@ -147,8 +196,9 @@ export class App {
   /** `${fxKey}:${channelKey}` -> dB */
   private readonly fxSends = new Map<string, number>();
   private readonly fxInRoom = new Map<string, boolean>();
+  /** quem mexeu num fader pelo painel há pouco (para o log dizer quem foi) */
+  private readonly actors = new Map<string, { name: string; t: number }>();
   private outLevels = new Map<number, number>();
-  private activePresetId?: string;
   private wired = false;
   private dirty = false;
   private lastLevelLog = 0;
@@ -162,6 +212,10 @@ export class App {
   /** muda a cada troca de mesa; laços de conexão antigos param sozinhos */
   private generation = 0;
   private readonly health: ConnectionHealth;
+  private levelSource: { kind: 'vu' | 'usb'; device?: string; channels: number } = { kind: 'vu', channels: 24 };
+  private usbCapture?: UsbAudioCapture;
+  private usbLevels?: number[];
+  private usbDetection?: UsbDetection;
 
   constructor(
     private readonly cfg: AppConfig,
@@ -169,7 +223,6 @@ export class App {
     private readonly log: SessionLog,
     private readonly connStore: ConnectionStore,
   ) {
-    this.mode = cfg.initialMode;
     this.kind = target.kind;
     this.ip = target.ip;
     this.store = target.profiles[this.kind].store;
@@ -178,9 +231,11 @@ export class App {
     this.adapter = this.attach(target.create(this.kind, this.ip));
   }
 
+  // ---------- ciclo de vida e conexão ----------
+
   private attach(adapter: MixerAdapter): MixerAdapter {
     adapter.onStatus((state, detail) => {
-      if (adapter !== this.adapter) return; // adaptador antigo (endereço trocado)
+      if (adapter !== this.adapter) return; // adaptador antigo (mesa trocada)
       if (state !== this.connection) this.event(`Mesa: ${state}${detail ? ` (${detail})` : ''}`);
       this.connection = state;
       this.connectionDetail = detail;
@@ -193,7 +248,7 @@ export class App {
   }
 
   async start(): Promise<void> {
-    this.log.write('inicio', { mode: this.mode, leveler: this.cfg.leveler });
+    this.log.write('inicio', { leveler: this.cfg.leveler });
     this.timers.push(setInterval(() => this.tick(), this.cfg.leveler.tickMs));
     this.timers.push(setInterval(() => this.runFades(), FADE_STEP_MS));
     this.timers.push(setInterval(() => this.persistIfDirty(), 5000));
@@ -205,6 +260,7 @@ export class App {
     this.stopped = true;
     this.timers.forEach(clearInterval);
     this.health.stop();
+    this.usbCapture?.stop();
     this.persistIfDirty();
     this.log.write('fim', {});
     await safeDisconnect(this.adapter);
@@ -252,7 +308,6 @@ export class App {
     this.outLevels = new Map();
     this.wired = false;
     this.mixer = undefined;
-    this.activePresetId = undefined;
     const old = this.adapter;
     this.kind = kind;
     this.ip = ip;
@@ -266,12 +321,11 @@ export class App {
     await safeDisconnect(old);
   }
 
-  /** Assinaturas globais (uma vez só) e depois as saídas escolhidas. */
+  /** Assinaturas globais e um controlador para CADA saída (master + auxes). */
   private wire(): void {
     if (this.wired) return;
     this.wired = true;
     this.persisted = this.store.load();
-    this.activePresetId = this.persisted.activePresetId;
     const channels = this.adapter.listChannels();
 
     for (const fx of this.adapter.listFxReturns()) {
@@ -299,8 +353,9 @@ export class App {
       if (adapter !== this.adapter) return;
       this.health.onVu();
       this.outLevels = frame.busOut;
+      const channelsVu = this.levelsFromSource(frame.channels);
       for (const c of this.controllers.values()) {
-        for (const [key, vu] of frame.channels) {
+        for (const [key, vu] of channelsVu) {
           if (key.startsWith('f')) c.follower.onVu(key, vu.post);
           else c.leveler.onVu(key, vu, frame.t);
         }
@@ -308,58 +363,27 @@ export class App {
       }
     });
 
-    this.selectBuses(this.persisted.buses ?? this.cfg.streamAuxes, false);
+    for (const bus of this.allBuses()) this.addController(bus.id);
+
+    const saved = this.persisted.levelSource;
+    if (saved?.kind === 'usb' && saved.device && this.kind === 'mesa') {
+      this.startUsb(saved.device, saved.channels ?? 24, false);
+    }
   }
 
-  // ---------- escolha das saídas controladas ----------
-
-  private busInfo(id: number): BusInfo | undefined {
-    return this.adapter.listBuses().find((b) => b.id === id);
-  }
-
-  /** Normaliza a escolha: par estéreo vira o aux "dono" (7 em 7+8), matrizes ficam de fora. */
-  private normalizeBuses(ids: number[]): number[] {
-    const out = new Set<number>();
-    for (const id of ids) {
-      const info = this.busInfo(id);
-      if (!info || info.isMatrix) continue;
-      out.add(primaryBus(info));
-    }
-    return [...out].sort((a, b) => a - b);
-  }
-
-  private selectBuses(ids: number[], announce = true): void {
-    const wanted = new Set(this.normalizeBuses(ids));
-    for (const [bus, c] of this.controllers) {
-      if (wanted.has(bus)) continue;
-      this.persistController(c);
-      c.unsubs.forEach((u) => u());
-      this.controllers.delete(bus);
-      for (const [id, f] of this.fades) if (f.bus === bus) this.fades.delete(id);
-      if (announce) this.event(`Parei de controlar ${this.labelOf(bus)}`);
-    }
-    for (const bus of wanted) {
-      if (this.controllers.has(bus)) continue;
-      this.addController(bus);
-      if (announce) {
-        this.event(
-          bus === MASTER_BUS
-            ? 'Controlando o MASTER: atenção, isso muda o som do SALÃO'
-            : `Controlando ${this.labelOf(bus)} (${this.adapter.busName(bus)})`,
-        );
-      }
-    }
-    this.persisted.buses = [...wanted];
-    this.dirty = true;
-    this.log.write('saidas', { buses: [...wanted] });
+  /** Saídas controláveis: master + auxes (par estéreo conta uma vez; matriz fica de fora). */
+  private allBuses(): BusInfo[] {
+    return this.adapter.listBuses().filter((b) => !b.isMatrix && primaryBus(b) === b.id);
   }
 
   private addController(bus: number): void {
+    const mode =
+      this.persisted.modes?.[String(bus)] ?? (this.cfg.streamAuxes.includes(bus) ? this.cfg.initialMode : 'desligado');
     const leveler = new AuxLeveler(bus, this.cfg.leveler);
     const follower = new FxFollower(bus, this.cfg.leveler);
-    leveler.setMode(this.mode);
-    follower.setMode(this.mode);
-    const c: BusController = { bus, leveler, follower, unsubs: [] };
+    leveler.setMode(mode);
+    follower.setMode(mode);
+    const c: BusController = { bus, leveler, follower, unsubs: [], mode };
     this.controllers.set(bus, c);
 
     const saved = this.persisted.auxes[String(bus)] ?? {};
@@ -391,16 +415,58 @@ export class App {
   }
 
   private labelOf(bus: number): string {
-    return busLabel(this.busInfo(bus), bus);
+    return busLabel(this.adapter.listBuses().find((b) => b.id === bus), bus);
   }
 
-  // ---------- ciclo ----------
+  // ---------- fonte de nível: VU (rede) ou áudio USB (físico) ----------
+
+  /** Com a fonte USB ativa e recente, o nível das entradas vem do áudio USB; o resto continua do VU. */
+  private levelsFromSource(vu: Map<string, ChannelVu>): Map<string, ChannelVu> {
+    const usb = this.usbLevels;
+    const fresh = usb && this.usbCapture?.lastLevelsAt !== undefined && Date.now() - this.usbCapture.lastLevelsAt < USB_STALE_MS;
+    if (this.levelSource.kind !== 'usb' || !fresh) return vu;
+    const out = new Map(vu);
+    const master = this.controllers.get(MASTER_BUS);
+    const masterSends = new Map(master?.leveler.snapshot(Date.now()).map((s) => [s.key, s.sendDB]) ?? []);
+    usb.forEach((db, idx) => {
+      const key = `i${idx + 1}`;
+      const fader = masterSends.get(key);
+      const postFader = fader === undefined ? FLOOR_DB : Math.max(FLOOR_DB, Math.min(0, db + fader));
+      out.set(key, { pre: db, post: db, postFader });
+    });
+    return out;
+  }
+
+  private startUsb(device: string, channels: number, announce = true): void {
+    this.usbCapture?.stop();
+    this.usbLevels = undefined;
+    this.levelSource = { kind: 'usb', device, channels };
+    this.usbCapture = new UsbAudioCapture({ device, channels }, (levels) => (this.usbLevels = levels));
+    this.usbCapture.start();
+    if (announce) this.event(`Nível pelo ÁUDIO USB: "${device}" (${channels} canais). Controle continua pela rede.`);
+    this.persisted.levelSource = { kind: 'usb', device, channels };
+    this.dirty = true;
+  }
+
+  private useVu(): void {
+    this.usbCapture?.stop();
+    this.usbCapture = undefined;
+    this.usbLevels = undefined;
+    this.levelSource = { kind: 'vu', channels: this.levelSource.channels };
+    this.persisted.levelSource = { kind: 'vu' };
+    this.dirty = true;
+    this.event('Nível pelo VU da mesa (rede).');
+  }
+
+  // ---------- ciclo de controle ----------
 
   private operatorMoved(bus: number, key: string, name: string, change: { fromDB: number; toDB: number }): void {
     this.dirty = true;
     this.fades.delete(`${bus}:${key}`); // o operador manda: cancela fade em andamento
-    this.event(`Operador: ${name} → ${this.labelOf(bus)} ${fmt(change.toDB)} dB`, `op:${bus}:${key}`);
-    this.log.write('operador', { bus, key, ...change });
+    const actor = this.actors.get(`${bus}:${key}`);
+    const who = actor && Date.now() - actor.t < ACTOR_MEMORY_MS ? actor.name : 'Na mesa';
+    this.event(`${who}: ${name} → ${this.labelOf(bus)} ${fmt(change.toDB)} dB`, `op:${bus}:${key}`);
+    this.log.write('operador', { bus, key, quem: who, ...change });
   }
 
   private tick(): void {
@@ -414,12 +480,13 @@ export class App {
     if (now - this.lastLevelLog >= LEVEL_LOG_EVERY_MS) {
       this.lastLevelLog = now;
       for (const c of this.controllers.values()) {
+        if (c.mode === 'desligado') continue;
         const active = c.leveler
           .snapshot(now)
           .filter((s) => s.status !== 'silencio' && s.status !== 'sem-envio' && s.status !== 'desabilitado')
           .map((s) => [s.key, s.levelDB, s.sendDB, s.targetDB, s.status]);
         const fx = c.follower.snapshot().map((f) => [f.key, f.sendDB, f.followDeltaDB, f.status]);
-        this.log.write('niveis', { bus: c.bus, mode: this.mode, out: c.leveler.outDB, ch: active, fx });
+        this.log.write('niveis', { bus: c.bus, mode: c.mode, out: c.leveler.outDB, ch: active, fx });
       }
     }
   }
@@ -453,195 +520,252 @@ export class App {
     this.apply(actions);
   }
 
+  // ---------- permissões ----------
+
+  private requireBus(ctx: ClientCtx, bus: number): BusController {
+    const c = this.controllers.get(bus);
+    if (!c) throw new CommandError('Essa saída não existe (ou a mesa ainda não conectou).');
+    if (!canUseBus(ctx.user, bus)) throw new CommandError(`Você não tem acesso a ${this.labelOf(bus)}. Peça ao admin.`);
+    return c;
+  }
+
+  private requireAdmin(ctx: ClientCtx): void {
+    if (ctx.user.role !== 'admin') throw new CommandError('Só o admin pode fazer isso.');
+  }
+
+  /**
+   * Envio canal → efeito vale para salão E para todas as saídas que tocam aquele efeito.
+   * Pode mexer: admin, quem tem o master, ou — se o efeito NÃO toca no salão — quem tem
+   * acesso a alguma saída onde o retorno desse efeito está aberto.
+   */
+  private canEditFx(user: User, fxKey: string): boolean {
+    if (user.role === 'admin' || canUseBus(user, MASTER_BUS)) return true;
+    if (this.fxInRoom.get(fxKey)) return false;
+    return [...this.controllers.values()].some(
+      (c) => c.bus !== MASTER_BUS && canUseBus(user, c.bus) && c.follower.snapshot().some((f) => f.key === fxKey && f.sendDB !== undefined),
+    );
+  }
+
+  private remember(ctx: ClientCtx, bus: number, key: string): void {
+    this.actors.set(`${bus}:${key}`, { name: ctx.user.username, t: Date.now() });
+  }
+
   // ---------- comandos do painel ----------
 
-  handle(cmd: Command): void {
+  /** Executa um comando de uma pessoa. Lança CommandError com a explicação quando não pode. */
+  handle(cmd: Command, ctx: ClientCtx): void {
     const now = Date.now();
-    const c = 'bus' in cmd && cmd.bus !== undefined ? this.controllers.get(cmd.bus) : undefined;
+    const who = ctx.user.username;
 
     switch (cmd.type) {
-      case 'setMode':
-        if (!['desligado', 'observar', 'automatico'].includes(cmd.mode)) return;
-        this.mode = cmd.mode;
-        for (const x of this.controllers.values()) {
-          x.leveler.setMode(cmd.mode);
-          x.follower.setMode(cmd.mode);
+      case 'view': {
+        if (cmd.bus !== undefined) {
+          if (!this.controllers.has(cmd.bus) || !canUseBus(ctx.user, cmd.bus)) throw new CommandError('Saída indisponível para você.');
+          if (ctx.view.bus !== cmd.bus) ctx.view.detail = undefined;
+          ctx.view.bus = cmd.bus;
         }
-        this.event(`Modo: ${cmd.mode}`);
-        this.log.write('modo', { mode: cmd.mode });
-        break;
-      case 'setBuses':
-        if (Array.isArray(cmd.buses)) this.selectBuses(cmd.buses.filter((b) => Number.isInteger(b)));
-        break;
-      case 'capture':
-        for (const x of this.controllers.values()) {
-          if (cmd.bus !== undefined && x.bus !== cmd.bus) continue;
-          const n = x.leveler.captureTargets(now);
-          x.follower.resetReferences();
-          this.event(`Mixagem atual de ${this.labelOf(x.bus)} gravada como alvo (${n} canais)`);
-          this.log.write('captura', { bus: x.bus, canais: n, alvos: x.leveler.exportPersisted() });
-        }
+        if (cmd.detail !== undefined) ctx.view.detail = cmd.detail && /^[ilp]\d{1,2}$/.test(cmd.detail) ? cmd.detail : undefined;
+        return;
+      }
+      case 'setMode': {
+        const c = this.requireBus(ctx, cmd.bus);
+        if (!MODES.includes(cmd.mode)) throw new CommandError('Modo inválido.');
+        c.mode = cmd.mode;
+        c.leveler.setMode(cmd.mode);
+        c.follower.setMode(cmd.mode);
+        (this.persisted.modes ??= {})[String(cmd.bus)] = cmd.mode;
         this.dirty = true;
-        break;
-      case 'restore':
-        for (const x of this.controllers.values()) {
-          const actions = x.leveler.restoreBase();
-          this.apply(actions);
-          this.event(`${this.labelOf(x.bus)}: envios voltaram para a mixagem original (${actions.length} canais)`);
-        }
-        break;
+        this.event(`${who}: ${this.labelOf(cmd.bus)} em modo ${cmd.mode}`);
+        this.log.write('modo', { bus: cmd.bus, mode: cmd.mode, quem: who });
+        return;
+      }
+      case 'capture': {
+        const c = this.requireBus(ctx, cmd.bus);
+        const n = c.leveler.captureTargets(now);
+        c.follower.resetReferences();
+        this.dirty = true;
+        this.event(`${who}: mixagem atual de ${this.labelOf(c.bus)} gravada como alvo (${n} canais)`);
+        this.log.write('captura', { bus: c.bus, canais: n, quem: who, alvos: c.leveler.exportPersisted() });
+        return;
+      }
+      case 'restore': {
+        const c = this.requireBus(ctx, cmd.bus);
+        const actions = c.leveler.restoreBase();
+        this.apply(actions);
+        this.event(`${who}: ${this.labelOf(c.bus)} voltou para a mixagem original (${actions.length} canais)`);
+        return;
+      }
       case 'setEnabled':
-        c?.leveler.setEnabled(cmd.key, cmd.enabled);
+        this.requireBus(ctx, cmd.bus).leveler.setEnabled(cmd.key, cmd.enabled);
         this.dirty = true;
-        break;
+        return;
       case 'nudgeTarget':
-        c?.leveler.nudgeTarget(cmd.key, clampDelta(cmd.delta));
+        this.requireBus(ctx, cmd.bus).leveler.nudgeTarget(cmd.key, clampDelta(cmd.delta));
         this.dirty = true;
-        break;
+        return;
       case 'clearTarget':
-        c?.leveler.setTarget(cmd.key, undefined);
+        this.requireBus(ctx, cmd.bus).leveler.setTarget(cmd.key, undefined);
         this.dirty = true;
-        break;
+        return;
       case 'setSend':
         // Fader do painel = operador mexendo: NÃO marcamos como nosso, então o nivelador
         // trata como intervenção (pausa o canal e aprende o novo alvo).
-        if (c) this.adapter.setSendDB(cmd.bus, cmd.key, fromWire(cmd.db));
-        break;
+        this.requireBus(ctx, cmd.bus);
+        if (!/^[ilpf]\d{1,2}$/.test(cmd.key)) throw new CommandError('Canal inválido.');
+        this.remember(ctx, cmd.bus, cmd.key);
+        this.adapter.setSendDB(cmd.bus, cmd.key, fromWire(cmd.db));
+        return;
       case 'setBusMaster':
-        if (c) {
-          this.adapter.setBusMasterDB(cmd.bus, fromWire(cmd.db));
-          this.event(`Volume geral de ${this.labelOf(cmd.bus)} → ${fmt(fromWire(cmd.db))} dB`, `master:${cmd.bus}`);
-        }
-        break;
+        this.requireBus(ctx, cmd.bus);
+        this.adapter.setBusMasterDB(cmd.bus, fromWire(cmd.db));
+        this.event(`${who}: volume geral de ${this.labelOf(cmd.bus)} → ${fmt(fromWire(cmd.db))} dB`, `master:${cmd.bus}`);
+        return;
       case 'setFxSend': {
         const fx = this.adapter.listFxReturns().find((f) => f.key === cmd.fx);
         const ch = this.adapter.listChannels().find((x) => x.key === cmd.key);
-        if (!fx || !ch) return;
+        if (!fx || !ch) throw new CommandError('Efeito ou canal inválido.');
+        if (!this.canEditFx(ctx.user, fx.key)) {
+          throw new CommandError(`${fx.name} também toca no salão/em outras saídas: só o admin ou quem tem o master pode mexer.`);
+        }
         const db = fromWire(cmd.db);
         this.adapter.setFxSendDB(fx.number, ch.key, db);
         const where = this.fxInRoom.get(fx.key) ? 'salão + live' : 'só live';
-        this.event(`Efeito: ${ch.name} → ${fx.name} ${fmt(db)} dB (${where})`, `fx:${fx.key}:${ch.key}`);
-        this.log.write('efeito', { fx: fx.key, key: ch.key, db: Number.isFinite(db) ? db : null });
-        break;
+        this.event(`${who}: ${ch.name} → ${fx.name} ${fmt(db)} dB (${where})`, `fx:${fx.key}:${ch.key}`);
+        this.log.write('efeito', { fx: fx.key, key: ch.key, db: Number.isFinite(db) ? db : null, quem: who });
+        return;
       }
       case 'setFxFollow':
-        c?.follower.setFollow(cmd.key, cmd.follow);
+        this.requireBus(ctx, cmd.bus).follower.setFollow(cmd.key, cmd.follow);
         this.dirty = true;
-        break;
+        return;
       case 'preset.save':
-        this.savePreset(cmd.name, cmd.id);
-        break;
+        this.savePreset(this.requireBus(ctx, cmd.bus), cmd.name, cmd.id, who);
+        return;
       case 'preset.load':
-        this.loadPreset(cmd.id);
-        break;
+        this.loadPreset(this.requireBus(ctx, cmd.bus), cmd.id, who);
+        return;
       case 'preset.delete': {
         const p = this.presets.get(cmd.id);
-        if (!p) return;
+        if (!p) throw new CommandError('Preset não encontrado.');
+        const buses = Object.keys(p.auxes).map(Number);
+        if (!buses.every((b) => canUseBus(ctx.user, b))) throw new CommandError('Esse preset inclui saídas que você não tem acesso.');
         this.presets.delete(cmd.id);
-        if (this.activePresetId === cmd.id) this.activePresetId = undefined;
+        for (const [bus, id] of Object.entries(this.persisted.activePresets ?? {})) {
+          if (id === cmd.id) delete this.persisted.activePresets![bus];
+        }
         this.dirty = true;
-        this.event(`Preset "${p.name}" apagado`);
-        break;
+        this.event(`${who}: preset "${p.name}" apagado`);
+        return;
       }
       case 'sim.scene':
         this.sim()?.setScene(cmd.scene);
         this.event(`[simulador] Momento: ${cmd.scene}`);
-        break;
+        return;
       case 'sim.source':
         this.sim()?.changeSource(cmd.key, clampDelta(cmd.delta));
         this.event(`[simulador] ${cmd.key}: fonte ${cmd.delta > 0 ? '+' : ''}${cmd.delta} dB`);
-        break;
+        return;
       case 'sim.reset':
         this.sim()?.resetSources();
-        break;
+        return;
       case 'conn.test': {
+        this.requireAdmin(ctx);
         const ip = String(cmd.ip ?? '').trim();
-        if (!isValidHost(ip)) {
-          this.event(`Endereço inválido: "${ip}"`);
-          return;
-        }
-        // testar a mesa real funciona mesmo estando no simulador
-        void this.health.test(ip);
-        break;
+        if (!isValidHost(ip)) throw new CommandError(`Endereço inválido: "${ip}"`);
+        void this.health.test(ip); // funciona mesmo estando no simulador
+        return;
       }
       case 'conn.setIp': {
+        this.requireAdmin(ctx);
         const ip = String(cmd.ip ?? '').trim();
-        if (!isValidHost(ip)) {
-          this.event(`Endereço inválido: "${ip}"`);
-          return;
-        }
+        if (!isValidHost(ip)) throw new CommandError(`Endereço inválido: "${ip}"`);
         this.connStore.saveIp(ip);
-        this.event(`Usando a MESA REAL em ${ip}. Conectando…`);
+        this.event(`${who}: usando a MESA REAL em ${ip}. Conectando…`);
         void this.switchMixer('mesa', ip);
-        break;
+        return;
       }
       case 'conn.useSim':
+        this.requireAdmin(ctx);
         if (this.kind === 'simulador') return;
-        this.event('Usando o SIMULADOR (mesa falsa). Nada é enviado para a Ui24R.');
+        this.usbCapture?.stop();
+        this.event(`${who}: usando o SIMULADOR (mesa falsa). Nada é enviado para a Ui24R.`);
         void this.switchMixer('simulador', this.ip);
-        break;
+        return;
       case 'conn.reconnect':
+        this.requireAdmin(ctx);
         this.event(this.kind === 'mesa' ? `Reconectando na mesa real em ${this.ip}…` : 'Reiniciando o simulador…');
         void this.switchMixer(this.kind, this.ip);
-        break;
+        return;
+      case 'level.detect':
+        this.requireAdmin(ctx);
+        void detectUsbAudio().then((d) => {
+          this.usbDetection = d;
+          this.event(
+            d.ui24Devices.length
+              ? `USB: encontrei ${d.ui24Devices.map((x) => x.name).join(', ')}`
+              : 'USB: nenhuma Ui24R encontrada no USB',
+          );
+        });
+        return;
+      case 'level.useVu':
+        this.requireAdmin(ctx);
+        this.useVu();
+        return;
+      case 'level.useUsb': {
+        this.requireAdmin(ctx);
+        if (this.kind !== 'mesa') throw new CommandError('Áudio USB só faz sentido com a mesa real.');
+        const device = String(cmd.device ?? '').trim();
+        const channels = Math.round(Number(cmd.channels));
+        if (!device || device.length > 200 || /["\r\n]/.test(device)) throw new CommandError('Escolha um dispositivo de áudio.');
+        if (!(channels >= 2 && channels <= 32)) throw new CommandError('Número de canais entre 2 e 32.');
+        this.startUsb(device, channels);
+        return;
+      }
     }
   }
 
-  // ---------- presets ----------
+  // ---------- presets (por saída) ----------
 
-  private savePreset(name: string, id?: string): void {
+  private savePreset(c: BusController, name: string, id: string | undefined, who: string): void {
     const cleanName = String(name ?? '').trim().slice(0, 40);
-    if (!cleanName || this.controllers.size === 0) return;
+    if (!cleanName) throw new CommandError('Dê um nome ao preset.');
     const existing = id ? this.presets.get(id) : undefined;
-    // mantém no preset as saídas que não estão sendo controladas agora
+    if (id && !existing) throw new CommandError('Preset não encontrado.');
     const auxes = { ...(existing?.auxes ?? {}) };
-    for (const c of this.controllers.values()) {
-      auxes[String(c.bus)] = { channels: c.leveler.exportPreset(), fx: c.follower.exportSends() };
-      // a mixagem salva vira a referência dos efeitos (eles param de compensar a partir daqui)
-      c.leveler.resetReferences();
-      c.follower.resetReferences();
-    }
+    auxes[String(c.bus)] = { channels: c.leveler.exportPreset(), fx: c.follower.exportSends() };
+    // a mixagem salva vira a referência dos efeitos (eles param de compensar a partir daqui)
+    c.leveler.resetReferences();
+    c.follower.resetReferences();
     const preset = this.presets.save({ id, name: cleanName, savedAt: Date.now(), auxes });
-    this.activePresetId = preset.id;
+    (this.persisted.activePresets ??= {})[String(c.bus)] = preset.id;
     this.dirty = true;
-    this.event(`Preset "${preset.name}" ${id ? 'atualizado' : 'salvo'}`);
-    this.log.write('preset-salvo', { id: preset.id, name: preset.name });
+    this.event(`${who}: preset "${preset.name}" ${id ? 'atualizado' : 'salvo'} (${this.labelOf(c.bus)})`);
+    this.log.write('preset-salvo', { id: preset.id, name: preset.name, bus: c.bus, quem: who });
   }
 
-  private loadPreset(id: string): void {
+  private loadPreset(c: BusController, id: string, who: string): void {
     const preset = this.presets.get(id);
-    if (!preset) return;
+    const data = preset?.auxes[String(c.bus)];
+    if (!preset || !data) throw new CommandError('Esse preset não tem dados para esta saída.');
     const now = Date.now();
     const durationMs = Math.max(0, this.cfg.leveler.presetFadeSec * 1000);
     const until = now + durationMs + 1500;
-    let applied = 0;
-
-    for (const c of this.controllers.values()) {
-      const data = preset.auxes[String(c.bus)];
-      if (!data) continue;
-      applied++;
-      const current = new Map(c.leveler.snapshot(now).map((s) => [s.key, s.sendDB ?? Number.NEGATIVE_INFINITY]));
-      const currentFx = new Map(c.follower.snapshot().map((f) => [f.key, f.sendDB ?? Number.NEGATIVE_INFINITY]));
-      for (const [key, p] of Object.entries(data.channels)) {
-        c.leveler.holdForTransition(key, until);
-        this.startFade(c.bus, key, current.get(key), p.sendDB, now, durationMs);
-      }
-      for (const [key, db] of Object.entries(data.fx)) {
-        c.follower.holdForTransition(key, until);
-        this.startFade(c.bus, key, currentFx.get(key), db, now, durationMs);
-      }
-      c.leveler.applyPreset(data.channels);
-      c.follower.resetReferences(data.fx);
+    const current = new Map(c.leveler.snapshot(now).map((s) => [s.key, s.sendDB ?? Number.NEGATIVE_INFINITY]));
+    const currentFx = new Map(c.follower.snapshot().map((f) => [f.key, f.sendDB ?? Number.NEGATIVE_INFINITY]));
+    for (const [key, p] of Object.entries(data.channels)) {
+      c.leveler.holdForTransition(key, until);
+      this.startFade(c.bus, key, current.get(key), p.sendDB, now, durationMs);
     }
-
-    if (applied === 0) {
-      this.event(`Preset "${preset.name}" não tem dados para as saídas controladas agora`);
-      return;
+    for (const [key, db] of Object.entries(data.fx)) {
+      c.follower.holdForTransition(key, until);
+      this.startFade(c.bus, key, currentFx.get(key), db, now, durationMs);
     }
-    this.activePresetId = preset.id;
+    c.leveler.applyPreset(data.channels);
+    c.follower.resetReferences(data.fx);
+    (this.persisted.activePresets ??= {})[String(c.bus)] = preset.id;
     this.dirty = true;
-    this.event(`Preset "${preset.name}" carregado (fade de ${this.cfg.leveler.presetFadeSec} s)`);
-    this.log.write('preset', { id: preset.id, name: preset.name });
+    this.event(`${who}: preset "${preset.name}" carregado em ${this.labelOf(c.bus)} (fade de ${this.cfg.leveler.presetFadeSec} s)`);
+    this.log.write('preset', { id: preset.id, name: preset.name, bus: c.bus, quem: who });
   }
 
   private startFade(bus: number, key: string, from: number | undefined, to: number | null, now: number, durationMs: number): void {
@@ -651,59 +775,114 @@ export class App {
     this.fades.set(`${bus}:${key}`, { bus, key, fromDB, toDB, start: now, durationMs: Math.max(1, durationMs) });
   }
 
-  // ---------- estado para o painel ----------
+  // ---------- estado para o painel (por pessoa) ----------
 
-  snapshot(): AppSnapshot {
-    const now = Date.now();
-    const buses = this.wired ? this.adapter.listBuses() : [];
-    const choices: BusChoice[] = buses
-      .filter((b) => !b.isMatrix && (b.linkedWith === undefined || b.id === primaryBus(b)))
+  /** Saídas que esta pessoa pode usar (para o seletor e para o admin escolher permissões). */
+  busChoices(user?: User): BusChoice[] {
+    if (!this.wired) return [];
+    return this.allBuses()
+      .filter((b) => !user || canUseBus(user, b.id))
       .map((b) => ({
         id: b.id,
         label: busLabel(b, b.id),
         name: b.name,
         stereo: b.linkedWith !== undefined,
-        selected: this.controllers.has(b.id),
+        mode: this.controllers.get(b.id)?.mode ?? 'desligado',
       }));
+  }
 
-    const fxReturns = this.wired ? this.adapter.listFxReturns() : [];
-    const fxSends: Record<string, Record<string, number | null>> = {};
-    for (const [id, db] of this.fxSends) {
-      const [fx, ch] = id.split(':');
-      (fxSends[ch] ??= {})[fx] = Number.isFinite(db) ? round1(db) : null;
+  /** Saída que a pessoa vê quando ainda não escolheu: a da live (config), senão a primeira liberada. */
+  private defaultBus(user: User): number | undefined {
+    const allowed = this.busChoices(user).map((b) => b.id);
+    return this.cfg.streamAuxes.find((b) => allowed.includes(b)) ?? allowed.find((b) => b !== MASTER_BUS) ?? allowed[0];
+  }
+
+  snapshotFor(ctx: ClientCtx): AppSnapshot {
+    const now = Date.now();
+    const user = ctx.user;
+    const buses = this.busChoices(user);
+    if (ctx.view.bus === undefined || !buses.some((b) => b.id === ctx.view.bus)) ctx.view.bus = this.defaultBus(user);
+    const c = ctx.view.bus === undefined ? undefined : this.controllers.get(ctx.view.bus);
+    const info = c ? this.adapter.listBuses().find((b) => b.id === c.bus) : undefined;
+
+    let bus: ViewedBus | undefined;
+    if (c) {
+      const out = this.outLevels.get(c.bus);
+      bus = {
+        bus: c.bus,
+        label: busLabel(info, c.bus),
+        name: this.adapter.busName(c.bus),
+        stereo: info?.linkedWith !== undefined,
+        mode: c.mode,
+        outDB: out === undefined ? undefined : round1(out),
+        masterDB: c.masterDB === undefined || !Number.isFinite(c.masterDB) ? undefined : round1(c.masterDB),
+        channels: c.leveler.snapshot(now),
+        fx: c.follower.snapshot().map((f) => ({ ...f, inRoom: this.fxInRoom.get(f.key) ?? false })),
+      };
     }
+
+    const presets = this.presets
+      .list()
+      .filter((p) => c && p.auxes[String(c.bus)])
+      .map((p) => ({ id: p.id, name: p.name, savedAt: p.savedAt }));
 
     return {
       connection: this.connection,
       connectionDetail: this.connectionDetail,
       mixer: this.mixer,
-      mode: this.mode,
+      source: { kind: this.kind, ip: this.ip },
+      user: { username: user.username, role: user.role },
       deadbandDB: this.cfg.leveler.deadbandDB,
-      buses: choices,
-      controlled: [...this.controllers.values()]
-        .sort((a, b) => a.bus - b.bus)
-        .map((c) => {
-          const info = buses.find((b) => b.id === c.bus);
-          const out = this.outLevels.get(c.bus);
-          return {
-            bus: c.bus,
-            label: busLabel(info, c.bus),
-            name: this.adapter.busName(c.bus),
-            stereo: info?.linkedWith !== undefined,
-            outDB: out === undefined ? undefined : round1(out),
-            masterDB: c.masterDB === undefined || !Number.isFinite(c.masterDB) ? undefined : round1(c.masterDB),
-            channels: c.leveler.snapshot(now),
-            fx: c.follower.snapshot(),
-          };
-        }),
-      fxInfo: fxReturns.map((f) => ({ key: f.key, name: f.name, inRoom: this.fxInRoom.get(f.key) ?? false })),
-      fxSends,
-      presets: this.presets.list().map((p) => ({ id: p.id, name: p.name, savedAt: p.savedAt })),
-      activePresetId: this.activePresetId,
+      buses,
+      bus,
+      detail: c && ctx.view.detail ? this.channelDetail(ctx, c, ctx.view.detail, now) : undefined,
+      presets,
+      activePresetId: c ? this.persisted.activePresets?.[String(c.bus)] : undefined,
       events: this.events.slice(-MAX_EVENTS).reverse(),
       sim: this.sim()?.simState(),
       health: this.health.snapshot(),
-      source: { kind: this.kind, ip: this.ip },
+      levelSource: {
+        kind: this.levelSource.kind,
+        device: this.levelSource.device,
+        channels: this.levelSource.channels,
+        usbState: this.usbCapture?.state,
+        usbError: this.usbCapture?.lastError,
+        usbAgeMs: this.usbCapture?.lastLevelsAt === undefined ? undefined : now - this.usbCapture.lastLevelsAt,
+        detection: this.usbDetection,
+      },
+    };
+  }
+
+  private channelDetail(ctx: ClientCtx, c: BusController, key: string, now: number): ChannelDetail | undefined {
+    const ch = c.leveler.snapshot(now).find((s) => s.key === key);
+    if (!ch) return undefined;
+    const sendOf = (bus: number) => {
+      const s = this.controllers.get(bus)?.leveler.snapshot(now).find((x) => x.key === key);
+      return s?.sendDB ?? null;
+    };
+    const otherAuxes = this.busChoices(ctx.user)
+      .filter((b) => b.id !== MASTER_BUS && b.id !== c.bus)
+      .map((b) => ({ bus: b.id, label: b.label, name: b.name, db: sendOf(b.id) }));
+    return {
+      key,
+      name: ch.name,
+      master: { db: sendOf(MASTER_BUS), allowed: canUseBus(ctx.user, MASTER_BUS) },
+      busSend: c.bus === MASTER_BUS ? undefined : { bus: c.bus, label: this.labelOf(c.bus), db: ch.sendDB ?? null },
+      fx: this.adapter.listFxReturns().map((fx) => {
+        const db = this.fxSends.get(`${fx.key}:${key}`);
+        return {
+          key: fx.key,
+          name: fx.name,
+          db: db === undefined || !Number.isFinite(db) ? null : round1(db),
+          inRoom: this.fxInRoom.get(fx.key) ?? false,
+          allowed: this.canEditFx(ctx.user, fx.key),
+        };
+      }),
+      otherAuxes,
+      levelDB: ch.rawDB,
+      enabled: ch.enabled,
+      targetDB: ch.targetDB,
+      status: ch.status,
     };
   }
 
@@ -729,13 +908,13 @@ export class App {
   private persistController(c: BusController): void {
     this.persisted.auxes[String(c.bus)] = c.leveler.exportPersisted();
     (this.persisted.fxFollow ??= {})[String(c.bus)] = c.follower.exportFollow();
+    (this.persisted.modes ??= {})[String(c.bus)] = c.mode;
   }
 
   private persistIfDirty(): void {
     if (!this.dirty || !this.wired) return;
     this.dirty = false;
     for (const c of this.controllers.values()) this.persistController(c);
-    this.persisted.activePresetId = this.activePresetId;
     this.store.save(this.persisted);
   }
 }

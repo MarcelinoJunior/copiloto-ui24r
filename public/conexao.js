@@ -16,10 +16,16 @@ let ipTouched = false;
 function connect() {
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   socket.onmessage = (ev) => {
-    state = JSON.parse(ev.data);
+    const msg = JSON.parse(ev.data);
+    if (msg.type === 'erro') return showError(msg.text);
+    state = msg;
     render(state);
   };
-  socket.onclose = () => {
+  socket.onclose = (ev) => {
+    if (ev.code === 4401) {
+      location.href = '/login.html';
+      return;
+    }
     const q = $('#quality');
     q.className = 'quality q-bad';
     q.textContent = 'Painel sem conexão com o programa';
@@ -29,6 +35,15 @@ function connect() {
 
 function send(cmd) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(cmd));
+}
+
+let errorTimer;
+function showError(text) {
+  const el = $('#error');
+  el.textContent = text;
+  el.hidden = !text;
+  clearTimeout(errorTimer);
+  if (text) errorTimer = setTimeout(() => (el.hidden = true), 6000);
 }
 
 const ms = (v) => (v === undefined || v === null ? '—' : `${v < 10 ? v.toFixed(1) : Math.round(v)} ms`);
@@ -48,6 +63,13 @@ function escapeHtml(text) {
 function render(s) {
   const h = s.health;
   const isSim = s.source.kind === 'simulador';
+  const isAdmin = s.user.role === 'admin';
+  $('#admin-note').hidden = isAdmin;
+  $('#nav-admin').textContent = isAdmin ? 'Pessoas' : 'Conta';
+  document.querySelectorAll('#ip-form button, #ip, #use-sim, #use-vu, #detect, #usb-form button').forEach((el) => {
+    if (!isAdmin) el.disabled = true;
+  });
+  renderLevels(s, isAdmin);
 
   const [label, cls] = QUALITY[h.quality] ?? ['—', ''];
   const q = $('#quality');
@@ -85,6 +107,8 @@ function render(s) {
   $('#t-rec').textContent = String(h.reconnects);
 
   renderSpark(h.ping.samples, isSim);
+  // operador só vê: reaplica o bloqueio depois dos ajustes acima
+  if (!isAdmin) document.querySelectorAll('#ip-form button, #ip, #use-sim, #use-vu, #detect, #usb-form button').forEach((el) => (el.disabled = true));
 
   $('#pc').innerHTML = h.pc.length
     ? h.pc
@@ -106,6 +130,53 @@ function render(s) {
     out.textContent = t.ok
       ? `✓ ${t.ip} respondeu: ${t.results.map((r) => (r === null ? 'sem resposta' : ms(r))).join(' · ')}`
       : `✗ ${t.ip} não respondeu. Confira o IP e se o PC está no mesmo Wi-Fi da mesa.`;
+  }
+}
+
+function renderLevels(s, isAdmin) {
+  const lv = s.levelSource;
+  const usb = lv.kind === 'usb';
+  $('#lv-vu').classList.toggle('active', !usb);
+  $('#lv-usb').classList.toggle('active', usb);
+  $('#lv-vu .now').hidden = usb;
+  $('#lv-usb .now').hidden = !usb;
+  if (isAdmin) $('#use-vu').disabled = !usb;
+
+  const st = $('#usb-state');
+  if (usb) {
+    const age = lv.usbAgeMs;
+    st.textContent =
+      lv.usbState === 'capturando' && age !== undefined && age < 1000
+        ? `capturando "${lv.device}" (${lv.channels} canais)`
+        : `${lv.usbState ?? '—'}${lv.usbError ? `: ${lv.usbError}` : ''}`;
+    st.className = `small ${lv.usbState === 'capturando' ? 'ok-text' : 'form-error'}`;
+  } else {
+    st.textContent = '';
+  }
+
+  const d = lv.detection;
+  const out = $('#usb-result');
+  const sig = JSON.stringify(d ?? null);
+  if (out.dataset.sig === sig) return;
+  out.dataset.sig = sig;
+  if (!d) {
+    out.innerHTML = '<p class="muted small">Ainda não procurei. Ligue o cabo USB da mesa e clique em "Procurar".</p>';
+    $('#usb-form').hidden = true;
+    return;
+  }
+  const found = d.ui24Devices.length
+    ? `<ul class="usb-list">${d.ui24Devices.map((x) => `<li>✓ <strong>${escapeHtml(x.name)}</strong> <span class="muted">(${escapeHtml(x.kind)}, ${escapeHtml(x.status)})</span></li>`).join('')}</ul>`
+    : '<p class="small">✗ Nenhuma Ui24R encontrada no USB.</p>';
+  const ff = d.ffmpeg.found ? `<p class="small">✓ ffmpeg: ${escapeHtml(d.ffmpeg.version ?? '')}</p>` : '<p class="small">✗ ffmpeg não instalado.</p>';
+  const notes = d.notes.length ? `<ul class="notes">${d.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : '';
+  out.innerHTML = found + ff + notes;
+  const devices = d.captureDevices;
+  $('#usb-form').hidden = devices.length === 0;
+  if (devices.length) {
+    const guess = devices.find((x) => /soundcraft|ui24/i.test(x)) ?? devices[0];
+    $('#usb-device').innerHTML = devices
+      .map((x) => `<option ${x === guess ? 'selected' : ''}>${escapeHtml(x)}</option>`)
+      .join('');
   }
 }
 
@@ -147,6 +218,17 @@ $('#ip-form').addEventListener('submit', (e) => {
     send({ type: 'conn.setIp', ip });
     ipTouched = false;
   }
+});
+
+$('#use-vu').addEventListener('click', () => send({ type: 'level.useVu' }));
+$('#detect').addEventListener('click', () => {
+  $('#usb-result').innerHTML = '<p class="muted small">Procurando…</p>';
+  $('#usb-result').dataset.sig = '';
+  send({ type: 'level.detect' });
+});
+$('#usb-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  send({ type: 'level.useUsb', device: $('#usb-device').value, channels: Number($('#usb-channels').value) });
 });
 
 connect();

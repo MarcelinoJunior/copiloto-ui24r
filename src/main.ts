@@ -1,5 +1,8 @@
 import { resolve } from 'node:path';
 import { App, type Profile, type SourceKind } from './app.js';
+import { AuthService } from './auth.js';
+import { openDatabase } from './db.js';
+import { ViewStore } from './views.js';
 import { loadConfig } from './config.js';
 import { ConnectionStore } from './connection-store.js';
 import { SimulatorAdapter } from './mixer/simulator.js';
@@ -43,7 +46,12 @@ const app = new App(
   connStore,
 );
 
-const stopServer = await startServer(app, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
+// Banco local (SQLite): usuários, permissões e modos de visualização.
+const db = openDatabase(resolve('data', 'copiloto.db'));
+const auth = new AuthService(db);
+const views = new ViewStore(db);
+
+const stopServer = await startServer({ app, auth, views }, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\nA porta ${cfg.server.port} já está em uso: o Copiloto já está aberto em outra janela?`);
     console.error(`Feche a outra janela ou use outra porta, ex.: PORT=${cfg.server.port + 1} npm start\n`);
@@ -63,7 +71,7 @@ console.log(
     : `  Fonte:   MESA REAL em ${ip} — troque o IP na tela Conexão`,
 );
 console.log(`  Modo:    ${cfg.initialMode}`);
-console.log(`  Painel:  ${panel}`);
+console.log(`  Painel:  ${panel}${auth.hasUsers() ? '' : '   ← primeiro acesso: crie o usuário admin'}`);
 console.log(`  Conexão: ${panel}/conexao.html`);
 console.log(`  Log:     ${log.file}`);
 console.log('  Ctrl+C para sair (os envios ficam como estão).');

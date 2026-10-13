@@ -1,16 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { PersistedChannel } from './leveler/aux-leveler.js';
+import type { Mode, PersistedChannel } from './leveler/aux-leveler.js';
 
 /**
- * Alvos, canais habilitados e "efeito acompanha", por saída (chave "0" = master, "7" = aux 7),
- * e quais saídas estão sendo controladas. Sobrevive a reinícios do programa.
+ * Estado da mixagem por saída (chave "0" = master, "7" = aux 7): alvos, canais com AUTO,
+ * "efeito acompanha", modo de cada saída, preset ativo e a fonte de nível (VU ou USB).
+ * Sobrevive a reinícios do programa.
  */
 export interface PersistedState {
   auxes: Record<string, Record<string, PersistedChannel>>;
-  buses?: number[];
   fxFollow?: Record<string, Record<string, boolean>>;
-  activePresetId?: string;
+  modes?: Record<string, Mode>;
+  activePresets?: Record<string, string>;
+  levelSource?: { kind: 'vu' | 'usb'; device?: string; channels?: number };
 }
 
 export class StateStore {

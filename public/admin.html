@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pessoas · Copiloto</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="conn-page">
+  <header class="top">
+    <div class="brand">
+      <h1>Copiloto Ui24R</h1>
+      <nav class="nav"><a href="/">Mixagem</a><a href="conexao.html">Conexão</a><a href="admin.html" class="active" aria-current="page">Pessoas</a></nav>
+    </div>
+    <span class="muted" id="me"></span>
+  </header>
+
+  <section class="card">
+    <h2>Pessoas e acesso aos auxiliares</h2>
+    <p class="muted small">
+      Cada pessoa só vê e mexe nas saídas marcadas. Assim, quem cuida da live não mexe no retorno de quem está no palco.
+      <strong>Admin</strong> tem acesso a tudo e cadastra as pessoas. Senhas: só letras e números, pelo menos 6 caracteres.
+    </p>
+    <p id="error" class="form-error" role="alert" hidden></p>
+    <div class="table-wrap">
+      <table class="users">
+        <thead><tr><th>Usuário</th><th>Papel</th><th>Saídas liberadas</th><th>Nova senha</th><th></th></tr></thead>
+        <tbody id="users"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Cadastrar pessoa</h2>
+    <form id="new-user" class="row new-user" novalidate>
+      <label>Usuário <input name="username" autocomplete="off" autocapitalize="off" spellcheck="false" required></label>
+      <label>Senha <input name="password" type="password" autocomplete="new-password" required></label>
+      <label>Papel
+        <select name="role"><option value="operador">Operador</option><option value="admin">Admin</option></select>
+      </label>
+      <div class="bus-checks" id="new-buses"></div>
+      <button type="submit" class="primary">Cadastrar</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Minha senha</h2>
+    <form id="my-pass" class="row new-user" novalidate>
+      <label>Senha atual <input name="current" type="password" autocomplete="current-password" required></label>
+      <label>Nova senha <input name="password" type="password" autocomplete="new-password" required></label>
+      <button type="submit">Trocar minha senha</button>
+      <span id="pass-ok" class="ok-text" hidden>Senha trocada.</span>
+    </form>
+  </section>
+
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar · Copiloto</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <h1>Copiloto Ui24R</h1>
+    <p class="muted small">Auxílio à operação da Soundcraft Ui24R em equipes reduzidas.</p>
+
+    <p id="setup-msg" class="setup-msg" hidden>
+      <strong>Primeiro acesso.</strong> Crie o usuário <strong>admin</strong>: ele cadastra as outras pessoas
+      e escolhe quais auxiliares cada uma pode usar.
+    </p>
+
+    <form id="form" novalidate>
+      <label for="username">Usuário</label>
+      <input id="username" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+      <label for="password">Senha</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <label for="password2" class="setup-only" hidden>Repita a senha</label>
+      <input id="password2" name="password2" type="password" autocomplete="new-password" class="setup-only" hidden>
+      <p class="muted small">Usuário e senha: só letras e números. Senha com pelo menos 6 caracteres.</p>
+      <p id="error" class="form-error" role="alert" hidden></p>
+      <button type="submit" class="primary" id="submit">Entrar</button>
+    </form>
+  </main>
+  <script src="login.js"></script>
+</body>
+</html>
