@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conexão · Copiloto</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="conn-page">
+  <header class="top">
+    <div class="brand">
+      <h1>Copiloto Ui24R</h1>
+      <nav class="nav"><a href="/">Mixagem</a><a href="conexao.html" class="active" aria-current="page">Conexão</a></nav>
+    </div>
+    <span id="quality" class="quality">…</span>
+  </header>
+
+  <section class="card">
+    <h2>Endereço da mesa</h2>
+    <form id="ip-form" class="row ip-form">
+      <label for="ip">IP ou nome da Ui24R</label>
+      <input id="ip" name="ip" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.0.122">
+      <button type="button" id="test">Testar</button>
+      <button type="submit" class="primary">Salvar e conectar</button>
+      <button type="button" id="reconnect" class="ghost">Reconectar</button>
+    </form>
+    <p class="muted small" id="ip-help">
+      "Testar" verifica se a mesa responde nesse endereço, sem mudar a conexão atual.
+      Dicas: no Wi-Fi próprio da Ui24R (hotspot) o endereço costuma ser <code>10.10.1.1</code>;
+      na rede da igreja, veja o IP no roteador ou em Settings › Network da mesa.
+    </p>
+    <p id="test-result" class="test-result" hidden></p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Saúde da conexão</h2>
+      <span class="muted small" id="target"></span>
+    </div>
+    <ul id="reasons" class="reasons"></ul>
+    <div class="tiles">
+      <div class="tile"><span class="tl">Estado</span><span class="tv" id="t-state">—</span><span class="ts" id="t-since"></span></div>
+      <div class="tile"><span class="tl">Tempo de resposta</span><span class="tv" id="t-ping">—</span><span class="ts" id="t-ping-stats"></span></div>
+      <div class="tile"><span class="tl">Perda (últimos 60 s)</span><span class="tv" id="t-loss">—</span><span class="ts">testes de rede sem resposta</span></div>
+      <div class="tile"><span class="tl">Último dado da mesa</span><span class="tv" id="t-age">—</span><span class="ts">ideal: abaixo de 0,5 s</span></div>
+      <div class="tile"><span class="tl">VU recebido</span><span class="tv" id="t-vu">—</span><span class="ts">leituras por segundo</span></div>
+      <div class="tile"><span class="tl">Mensagens da mesa</span><span class="tv" id="t-msg">—</span><span class="ts">por segundo</span></div>
+      <div class="tile"><span class="tl">Reconexões</span><span class="tv" id="t-rec">—</span><span class="ts">desde que o programa abriu</span></div>
+    </div>
+
+    <h3>Tempo de resposta — últimos 2 minutos</h3>
+    <div class="spark-wrap">
+      <div id="spark" class="spark" role="img" aria-label="Gráfico do tempo de resposta"></div>
+      <div class="spark-axis muted small"><span id="spark-max"></span><span>agora →</span></div>
+    </div>
+    <p class="muted small">Barra vermelha = teste sem resposta. Mede a ida e volta na rede até a mesa (porta 80, a da interface web).</p>
+  </section>
+
+  <section class="card two-col">
+    <div>
+      <h2>Este computador</h2>
+      <ul id="pc" class="plain"></ul>
+      <p class="muted small">O PC precisa estar na mesma rede da mesa (os três primeiros números do IP iguais, ex.: 192.168.0.x).</p>
+    </div>
+    <div>
+      <h2>Histórico da conexão</h2>
+      <ul id="history" class="plain history"></ul>
+    </div>
+  </section>
+
+  <script src="conexao.js"></script>
+</body>
+</html>

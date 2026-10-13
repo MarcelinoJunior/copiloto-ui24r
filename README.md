@@ -24,18 +24,45 @@ Ui24R ──(Wi-Fi, WebSocket)──► Copiloto (Node.js neste PC) ──► Pa
 
 Como o VU é medido *antes* do envio, mexer no envio não muda a medição. Por isso o controle não oscila.
 
+### Qual saída o software controla ("Controlando")
+
+No topo do painel você escolhe as saídas, e pode escolher mais de uma:
+
+- **AUX** (ex.: **AUX 7+8 · LIVE**): o software mexe nos **envios** de cada canal para aquele aux. É o mesmo que você vê na Ui24R ao selecionar o aux. **O salão não muda.**
+- **Par estéreo** (dois auxes em link na mesa) aparece como **uma opção só**, por exemplo AUX 7+8, e os dois lados mudam juntos.
+- **MASTER**: o software mexe nos **faders dos canais no master**, ou seja, **no som do salão**. Pede confirmação e fica destacado em vermelho.
+
 ### O painel (vista "Mesa")
 
-Cada canal aparece como na Ui24R, com **fader vertical** e medidor:
+Cada canal aparece como na Ui24R, com **fader vertical** e medidor. Embaixo de cada fader está escrito o que ele controla (ex.: "envio → AUX 7+8" ou "fader no master").
 
-- **Fader** = envio daquele canal para o aux da live. Ele se move sozinho quando o automático corrige (o botão do fader fica laranja por um instante). Se você arrastar, vale como se tivesse mexido na mesa: o canal fica em "operador" por 30 s e o alvo passa a ser o seu.
+- **Fader do canal** = envio daquele canal para a saída escolhida. Ele se move sozinho quando o automático corrige (o botão do fader fica laranja por um instante). Se você arrastar, vale como se tivesse mexido na mesa: o canal fica em "operador" por 30 s e o alvo passa a ser o seu.
 - **Medidor**: verde = nível agora; linha azul = média; linha branca = alvo; faixa clara = tolerância.
 - **AUTO**: liga/desliga o controle automático só daquele canal.
 - **Alvo − / +**: muda em 1 dB o nível que o automático persegue, sem mexer no fader na hora.
-- **Faixas rosa (FX 1–4)**: retorno de cada efeito na live. **ACOMP.** liga o "efeito acompanha" (abaixo).
-- **LIVE (master)**: volume geral da transmissão. Não muda o equilíbrio entre os canais.
+- **Envios de efeito por canal** (mini faders embaixo de cada canal): quanto daquele canal vai para cada efeito (reverb, delay...).
+  - **Rosa** = efeito só da live: mexer não muda o salão.
+  - **Laranja** = o efeito também toca no salão: mexer muda o salão **e** a live. Na Ui24R o mesmo efeito alimenta os dois.
+  - **Dica:** para ajustar o efeito de cada canal só na live, reserve um dos 4 efeitos para a live. Deixe o retorno dele no master em -∞ e mande só para o aux da live.
+- **Faixas rosa (FX 1–4)**: retorno de cada efeito na saída. **ACOMP.** liga o "efeito acompanha" (abaixo). O selo diz se o efeito toca no "salão + live" ou "só live".
+- **Faixa do master do aux** (à direita): volume geral daquela saída. Não muda o equilíbrio entre os canais.
 
-A vista **Tabela** mostra as mesmas informações em linhas.
+A vista **Tabela** mostra os canais em linhas.
+
+### Tela "Conexão"
+
+Em **Conexão** (no topo, ou clicando no selo verde da mesa):
+
+- **Endereço da mesa**: digite o IP. **Testar** verifica se a mesa responde nesse endereço sem mudar a conexão atual. **Salvar e conectar** troca de mesa na hora, sem reiniciar o programa. O endereço fica salvo em `data/conexao.json` e tem prioridade sobre o `config/config.json`.
+- **Saúde da conexão**: um selo (boa / instável / ruim / sem conexão) com o motivo, e estes indicadores:
+  - **tempo de resposta** da mesa na rede: atual, média, melhor e pior;
+  - **perda** nos testes de rede;
+  - **idade do último dado** recebido: se passar de 1 s, o software está "cego";
+  - VU e mensagens por segundo;
+  - reconexões.
+- **Gráfico** do tempo de resposta nos últimos 2 minutos.
+- **Este computador**: os IPs do PC, avisando se ele está na **mesma rede da mesa**.
+- **Histórico** da conexão.
 
 ### Presets
 
@@ -93,7 +120,7 @@ Abra http://localhost:8080. O simulador imita uma banda (pastor, ministro, backs
    npm run diagnostico
    ```
    Ele lista os auxes com nome, quantos canais enviam para cada um e a tabela de envios dos auxes 7, 8 e 9. Se dois auxes vizinhos têm valores idênticos, estão em **link estéreo**: use só o primeiro (ímpar).
-3. Ajuste `streamAuxes` em [config/config.json](config/config.json), por exemplo `[7]`.
+3. Se o IP da mesa não for 192.168.0.122, troque na tela **Conexão** do painel. Depois escolha a saída da live em **Controlando** (ex.: AUX 7+8).
 4. Rode:
    ```bash
    npm start
@@ -111,7 +138,7 @@ Abra http://localhost:8080. O simulador imita uma banda (pastor, ministro, backs
 | `mixer.ip` | `192.168.0.122` | IP da mesa |
 | `server.host` | `127.0.0.1` | Use `0.0.0.0` para abrir o painel de um celular/tablet na mesma rede |
 | `server.port` | `8080` | Porta do painel |
-| `streamAuxes` | `[7]` | Auxes da transmissão |
+| `streamAuxes` | `[7]` | Saída controlada na primeira vez que o programa abre (depois vale o que você escolher no painel) |
 | `initialMode` | `observar` | Modo ao abrir o programa |
 | `leveler.gateDB` | `-50` | Abaixo disso o canal é considerado em silêncio |
 | `leveler.averagingSec` | `4` | Janela da média de nível (maior = reage mais devagar e respeita mais a dinâmica da música) |
@@ -137,6 +164,7 @@ A interface da Ui24R **não tem senha**. Não exponha a mesa na internet (Cloudf
 
 - [x] **1. Equilíbrio automático do aux da live** (VU → envios)
 - [x] Vista "Mesa" com faders verticais, presets com fade, "efeito acompanha", master da live
+- [x] Escolha das saídas (aux, par estéreo, master), envio de efeito por canal, tela de Conexão
 - [ ] 2. Troca automática de preset por momento do culto (pelos canais ativos ou por cues da mesa)
 - [ ] 3. Relatório pós-culto com IA local e gratuita (Ollama) a partir dos logs em `data/sessoes/`
 - [ ] 4. Alertas: clipping, microfone aberto sem uso, aux da live alto demais
@@ -156,6 +184,9 @@ src/
   leveler/gated-level.ts   média de nível que ignora silêncio
   leveler/fx-follower.ts   "efeito acompanha": retorno de FX segue os canais
   preset-store.ts          presets (data/presets.json)
+  health.ts                saúde da conexão (tempo de resposta, perda, dados)
+  connection-store.ts      endereço da mesa escolhido no painel (data/conexao.json)
+public/conexao.html        tela "Conexão"
   mixer/types.ts           contrato comum (mesa real ou simulador)
   mixer/soundcraft-adapter.ts  Ui24R real (biblioteca soundcraft-ui-connection)
   mixer/simulator.ts       mesa falsa para testes

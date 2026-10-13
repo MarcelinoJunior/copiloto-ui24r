@@ -52,7 +52,7 @@ export class SoundcraftAdapter implements MixerAdapter {
   constructor(private readonly ip: string) {
     this.ui = new SoundcraftUI(ip);
     this.ui.status$.subscribe((event) => {
-      const detail = event.type === ConnectionStatus.Error ? String((event as { payload?: unknown }).payload ?? '') : undefined;
+      const detail = event.type === ConnectionStatus.Error ? errorText((event as { payload?: unknown }).payload) : undefined;
       this.statusCb?.(STATUS_MAP[event.type] ?? 'erro', detail);
     });
   }
@@ -134,6 +134,10 @@ export class SoundcraftAdapter implements MixerAdapter {
 
   busName(bus: number): string {
     return this.buses.find((b) => b.id === bus)?.name ?? (bus === MASTER_BUS ? 'Master' : `AUX ${bus}`);
+  }
+
+  onRawMessage(cb: () => void): void {
+    this.ui.store.messages$.subscribe(() => cb());
   }
 
   onVu(cb: (frame: VuFrame) => void): void {
@@ -231,6 +235,13 @@ export class SoundcraftAdapter implements MixerAdapter {
 function setFader(fader: Pick<Fader, 'setFaderLevelDB' | 'setFaderLevel'>, db: number): void {
   if (Number.isFinite(db)) fader.setFaderLevelDB(db);
   else fader.setFaderLevel(0); // -∞: fader todo para baixo
+}
+
+/** O erro do WebSocket vem como um evento sem texto útil; extrai o que der. */
+function errorText(payload: unknown): string {
+  const p = payload as { message?: string; error?: { message?: string; code?: string } } | undefined;
+  const msg = p?.error?.code ?? p?.error?.message ?? p?.message;
+  return msg ? `falha no WebSocket (${msg})` : 'falha no WebSocket: a mesa não respondeu nesse endereço';
 }
 
 function toDbVu(vu: InputChannelVuData): ChannelVu {

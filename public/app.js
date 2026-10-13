@@ -117,7 +117,10 @@ function escapeHtml(text) {
 function render() {
   const s = state;
   document.body.classList.toggle('is-sim', Boolean(s.sim));
-  setConn(s.connection, s.connection === 'conectado' ? 'mesa conectada' : `mesa: ${s.connection}`);
+  const h = s.health;
+  const pingTxt = h?.ping.lastMs === undefined ? '' : h.ping.lastMs === null ? ' · sem resposta' : ` · ${Math.round(h.ping.lastMs)} ms`;
+  const pillClass = s.connection !== 'conectado' ? s.connection : h?.quality === 'boa' ? 'conectado' : 'conectando';
+  setConn(pillClass, s.connection === 'conectado' ? `mesa conectada${pingTxt}${h && h.quality !== 'boa' ? ' · instável' : ''}` : `mesa: ${s.connection}`);
   $('#mixer-info').textContent = s.mixer
     ? `${s.mixer.kind === 'simulador' ? 'SIMULADOR' : s.mixer.address} · ${s.mixer.model} · fw ${s.mixer.firmware}`
     : s.connectionDetail ?? '';

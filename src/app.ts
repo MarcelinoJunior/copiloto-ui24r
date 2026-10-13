@@ -1,4 +1,6 @@
 import type { AppConfig } from './config.js';
+import type { ConnectionStore } from './connection-store.js';
+import { ConnectionHealth, type HealthSnapshot, isValidHost } from './health.js';
 import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
 import {
@@ -59,6 +61,14 @@ export interface AppSnapshot {
   activePresetId?: string;
   events: EventEntry[];
   sim?: { scene: Scene; offsets: Record<string, number> };
+  health: HealthSnapshot;
+}
+
+export interface MixerTarget {
+  kind: 'mesa' | 'simulador';
+  ip: string;
+  /** cria o adaptador para um endereço (o simulador ignora o endereço) */
+  create: (ip: string) => MixerAdapter;
 }
 
 /** dB vindo do painel: null representa -∞ (JSON não tem -Infinity). */
@@ -81,7 +91,10 @@ export type Command =
   | { type: 'preset.delete'; id: string }
   | { type: 'sim.scene'; scene: Scene }
   | { type: 'sim.source'; key: string; delta: number }
-  | { type: 'sim.reset' };
+  | { type: 'sim.reset' }
+  | { type: 'conn.test'; ip: string }
+  | { type: 'conn.setIp'; ip: string }
+  | { type: 'conn.reconnect' };
 
 interface BusController {
   bus: number;
@@ -129,20 +142,41 @@ export class App {
   private lastLevelLog = 0;
   private timers: NodeJS.Timeout[] = [];
   private stopped = false;
+  private adapter: MixerAdapter;
+  private ip: string;
+  /** muda a cada troca de endereço; laços de conexão antigos param sozinhos */
+  private generation = 0;
+  private readonly health: ConnectionHealth;
 
   constructor(
     private readonly cfg: AppConfig,
-    private readonly adapter: MixerAdapter,
+    private readonly target: MixerTarget,
     private readonly store: StateStore,
     private readonly presets: PresetStore,
     private readonly log: SessionLog,
+    private readonly connStore: ConnectionStore,
   ) {
     this.mode = cfg.initialMode;
+    this.ip = target.ip;
+    this.health = new ConnectionHealth(
+      { kind: target.kind, ip: target.ip },
+      target.kind === 'simulador' ? async () => Math.round((1 + Math.random() * 4) * 10) / 10 : undefined,
+    );
+    this.adapter = this.attach(target.create(target.ip));
+  }
+
+  private attach(adapter: MixerAdapter): MixerAdapter {
     adapter.onStatus((state, detail) => {
+      if (adapter !== this.adapter) return; // adaptador antigo (endereço trocado)
       if (state !== this.connection) this.event(`Mesa: ${state}${detail ? ` (${detail})` : ''}`);
       this.connection = state;
       this.connectionDetail = detail;
+      this.health.onState(state, detail);
     });
+    adapter.onRawMessage(() => {
+      if (adapter === this.adapter) this.health.onMessage();
+    });
+    return adapter;
   }
 
   async start(): Promise<void> {
@@ -150,37 +184,69 @@ export class App {
     this.timers.push(setInterval(() => this.tick(), this.cfg.leveler.tickMs));
     this.timers.push(setInterval(() => this.runFades(), FADE_STEP_MS));
     this.timers.push(setInterval(() => this.persistIfDirty(), 5000));
-    void this.connectLoop();
+    this.health.start();
+    void this.connectLoop(this.generation);
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
     this.timers.forEach(clearInterval);
+    this.health.stop();
     this.persistIfDirty();
     this.log.write('fim', {});
-    await this.adapter.disconnect().catch(() => undefined);
+    await safeDisconnect(this.adapter);
     await this.log.close();
   }
 
-  private async connectLoop(): Promise<void> {
-    while (!this.stopped) {
+  private async connectLoop(gen: number): Promise<void> {
+    while (!this.stopped && gen === this.generation) {
       try {
-        this.connection = 'conectando';
+        this.setConnection('conectando');
         const info = await withTimeout(this.adapter.connect(), CONNECT_TIMEOUT_MS);
+        if (gen !== this.generation) return;
         this.mixer = info;
-        this.connection = 'conectado';
+        this.setConnection('conectado');
         this.event(`Conectado: ${info.model} em ${info.address} (firmware ${info.firmware})`);
         this.log.write('mesa', { ...info });
         this.wire();
         return;
       } catch (err) {
-        this.connection = 'erro';
-        this.connectionDetail = err instanceof Error ? err.message : String(err);
-        this.event(`Não consegui conectar na mesa (${this.connectionDetail}). Tentando de novo em 5 s…`);
-        await this.adapter.disconnect().catch(() => undefined);
+        if (gen !== this.generation) return;
+        const detail = err instanceof Error ? err.message : String(err);
+        this.setConnection('erro', detail);
+        this.event(`Não consegui conectar na mesa em ${this.ip} (${detail}). Tentando de novo em 5 s…`);
+        await safeDisconnect(this.adapter);
         await sleep(RETRY_MS);
       }
     }
+  }
+
+  private setConnection(state: ConnectionState, detail?: string): void {
+    this.connection = state;
+    this.connectionDetail = detail;
+    this.health.onState(state, detail);
+  }
+
+  /** Troca o endereço da mesa: desliga tudo da conexão antiga e conecta no novo. */
+  private async switchMixer(ip: string): Promise<void> {
+    this.persistIfDirty();
+    this.generation++;
+    for (const c of this.controllers.values()) c.unsubs.forEach((u) => u());
+    this.controllers.clear();
+    this.fades.clear();
+    this.fxSends.clear();
+    this.fxInRoom.clear();
+    this.outLevels = new Map();
+    this.wired = false;
+    this.mixer = undefined;
+    const old = this.adapter;
+    this.ip = ip;
+    this.adapter = this.attach(this.target.create(ip));
+    this.health.setTarget({ kind: this.target.kind, ip });
+    this.log.write('endereco', { ip });
+    void this.connectLoop(this.generation);
+    // Desligar uma conexão que está tentando reconectar pode nunca terminar: não esperamos por ela.
+    await safeDisconnect(old);
   }
 
   /** Assinaturas globais (uma vez só) e depois as saídas escolhidas. */
@@ -203,14 +269,18 @@ export class App {
       );
     }
 
-    this.adapter.onChannelName((key, name) => {
+    const adapter = this.adapter;
+    adapter.onChannelName((key, name) => {
+      if (adapter !== this.adapter) return;
       for (const c of this.controllers.values()) {
         c.leveler.setName(key, name);
         c.follower.setName(key, name);
       }
     });
 
-    this.adapter.onVu((frame) => {
+    adapter.onVu((frame) => {
+      if (adapter !== this.adapter) return;
+      this.health.onVu();
       this.outLevels = frame.busOut;
       for (const c of this.controllers.values()) {
         for (const [key, vu] of frame.channels) {
@@ -467,6 +537,38 @@ export class App {
       case 'sim.reset':
         this.sim()?.resetSources();
         break;
+      case 'conn.test': {
+        const ip = String(cmd.ip ?? '').trim();
+        if (!isValidHost(ip)) {
+          this.event(`Endereço inválido: "${ip}"`);
+          return;
+        }
+        if (this.target.kind === 'simulador') {
+          this.event('No simulador não há rede para testar. Rode "npm start" para usar a mesa de verdade.');
+          return;
+        }
+        void this.health.test(ip);
+        break;
+      }
+      case 'conn.setIp': {
+        const ip = String(cmd.ip ?? '').trim();
+        if (!isValidHost(ip)) {
+          this.event(`Endereço inválido: "${ip}"`);
+          return;
+        }
+        if (this.target.kind === 'simulador') {
+          this.event('No simulador o endereço não é usado. Rode "npm start" para usar a mesa de verdade.');
+          return;
+        }
+        this.connStore.saveIp(ip);
+        this.event(`Endereço da mesa alterado para ${ip}. Conectando…`);
+        void this.switchMixer(ip);
+        break;
+      }
+      case 'conn.reconnect':
+        this.event(`Reconectando em ${this.ip}…`);
+        void this.switchMixer(this.ip);
+        break;
     }
   }
 
@@ -585,6 +687,7 @@ export class App {
       activePresetId: this.activePresetId,
       events: this.events.slice(-MAX_EVENTS).reverse(),
       sim: this.sim()?.simState(),
+      health: this.health.snapshot(),
     };
   }
 
@@ -655,4 +758,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       },
     );
   });
+}
+
+/** Desliga um adaptador sem travar o programa se a mesa não responder. */
+function safeDisconnect(adapter: MixerAdapter): Promise<void> {
+  return withTimeout(adapter.disconnect(), 3000).catch(() => undefined);
 }

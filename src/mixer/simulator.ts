@@ -157,6 +157,10 @@ export class SimulatorAdapter implements MixerAdapter {
     this.vuCb = cb;
   }
 
+  onRawMessage(): void {
+    // no simulador não há mensagens de rede; o VU já conta como dado recebido
+  }
+
   watchSend(bus: number, key: string, cb: (info: SendInfo) => void): Unsubscribe {
     const id = `send:${bus}:${key}`;
     cb(this.getSend(bus, key));

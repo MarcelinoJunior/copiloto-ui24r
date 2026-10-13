@@ -32,6 +32,7 @@ export function startServer(app: App, host: string, port: number): Promise<() =>
   });
 
   const wss = new WebSocketServer({ server, path: '/ws' });
+  wss.on('error', () => undefined); // erros de "listen" já são tratados abaixo
   wss.on('connection', (socket) => {
     socket.send(JSON.stringify(app.snapshot()));
     socket.on('message', (raw) => {

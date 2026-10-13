@@ -85,6 +85,8 @@ export interface MixerAdapter {
   onChannelName(cb: (key: string, name: string) => void): void;
   /** VU de entradas e de retornos de efeito (chaves "f1".."f4"). */
   onVu(cb: (frame: VuFrame) => void): void;
+  /** Qualquer mensagem recebida da mesa (para medir a saúde da conexão). */
+  onRawMessage(cb: () => void): void;
   /** Envio de um canal (ou retorno de efeito, "fN") para um bus. No master, é o fader do canal. */
   watchSend(bus: number, key: string, cb: (info: SendInfo) => void): Unsubscribe;
   setSendDB(bus: number, key: string, db: number): void;
