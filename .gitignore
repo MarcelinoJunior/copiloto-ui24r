@@ -4,5 +4,3 @@ data/
 .env
 
 # anotações locais do assistente de desenvolvimento (não vão para o repositório)
-CLAUDE.md
-.claude/
