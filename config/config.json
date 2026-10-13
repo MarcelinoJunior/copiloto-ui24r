@@ -21,6 +21,10 @@
     "maxBoostDB": 4,
     "maxSendDB": 6,
     "manualHoldSec": 30,
-    "learnFromOperator": true
+    "learnFromOperator": true,
+    "fxRateDBps": 3,
+    "fxMaxCutDB": 20,
+    "fxMaxBoostDB": 6,
+    "presetFadeSec": 3
   }
 }

@@ -2,9 +2,11 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import type { PersistedChannel } from './leveler/aux-leveler.js';
 
-/** Alvos e canais habilitados, por aux. Sobrevive a reinícios do programa. */
+/** Alvos, canais habilitados e "efeito acompanha", por aux. Sobrevive a reinícios do programa. */
 export interface PersistedState {
   auxes: Record<string, Record<string, PersistedChannel>>;
+  fxFollow?: Record<string, Record<string, boolean>>;
+  activePresetId?: string;
 }
 
 export class StateStore {

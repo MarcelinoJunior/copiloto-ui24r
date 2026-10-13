@@ -10,6 +10,7 @@ export type ChannelStatus =
   | 'sem-envio' // envio mutado ou todo para baixo
   | 'sem-alvo' // ainda não sabemos o nível desejado
   | 'manual' // operador mexeu há pouco; esperando
+  | 'transicao' // carregando um preset (fade em andamento)
   | 'silencio' // canal não está tocando
   | 'aguardando' // começou a tocar há pouco
   | 'ok' // dentro da tolerância
@@ -21,7 +22,7 @@ export interface SendAction {
   key: string;
   fromDB: number;
   toDB: number;
-  reason: 'correcao' | 'restaurar';
+  reason: 'correcao' | 'restaurar' | 'efeito' | 'preset';
 }
 
 export interface ChannelSnapshot {
@@ -48,6 +49,22 @@ export interface PersistedChannel {
   targetDB?: number;
 }
 
+/** O que um preset guarda de cada canal. */
+export interface PresetChannel {
+  sendDB: number | null; // null = envio todo para baixo (-∞)
+  targetDB?: number;
+}
+
+/** Informação que o "efeito acompanha" precisa de cada canal. */
+export interface ChannelOffset {
+  key: string;
+  levelDB?: number;
+  /** quanto o envio está acima/abaixo da referência (mixagem gravada); -Infinity se fechado */
+  offsetDB: number;
+  /** tocou nos últimos segundos */
+  recent: boolean;
+}
+
 interface ChannelState {
   key: string;
   name: string;
@@ -59,6 +76,9 @@ interface ChannelState {
   lastCommandedDB?: number;
   lastCommandT: number;
   manualUntil: number;
+  transitionUntil: number;
+  /** envio na mixagem de referência (gravada/preset); usado pelo "efeito acompanha" */
+  refSendDB?: number;
   correcting: boolean;
   level: GatedLevel;
   rawDB?: number;
@@ -109,6 +129,7 @@ export class AuxLeveler {
       targetDB: persisted?.targetDB,
       lastCommandT: 0,
       manualUntil: 0,
+      transitionUntil: 0,
       correcting: false,
       level: new GatedLevel(this.cfg.averagingSec, this.cfg.gateDB, this.cfg.releaseSec),
       status: 'sem-alvo',
@@ -148,6 +169,7 @@ export class AuxLeveler {
 
     if (prevDB === undefined) {
       ch.baseSendDB = info.db;
+      ch.refSendDB = info.db;
       return undefined;
     }
     if (prevDB === info.db) return undefined;
@@ -161,12 +183,13 @@ export class AuxLeveler {
     // Foi o operador (ou outro app) que mexeu: a escolha dele vira a nova referência.
     ch.baseSendDB = info.db;
     ch.correcting = false;
-    if (this.mode !== 'desligado') {
-      ch.manualUntil = now + this.cfg.manualHoldSec * 1000;
-      const delta = info.db - prevDB;
-      if (this.cfg.learnFromOperator && ch.targetDB !== undefined && Number.isFinite(delta)) {
-        ch.targetDB = round1(ch.targetDB + delta);
-      }
+    ch.transitionUntil = 0;
+    if (this.mode !== 'desligado') ch.manualUntil = now + this.cfg.manualHoldSec * 1000;
+    // Aprende em qualquer modo: assim o alvo sempre reflete a mixagem que o operador quer
+    // (importante para presets montados com o automático desligado).
+    const delta = info.db - prevDB;
+    if (this.cfg.learnFromOperator && ch.targetDB !== undefined && Number.isFinite(delta)) {
+      ch.targetDB = round1(ch.targetDB + delta);
     }
     return { fromDB: prevDB, toDB: info.db };
   }
@@ -208,6 +231,8 @@ export class AuxLeveler {
         ch.status = 'sem-envio';
       } else if (ch.targetDB === undefined) {
         ch.status = 'sem-alvo';
+      } else if (now < ch.transitionUntil) {
+        ch.status = 'transicao';
       } else if (now < ch.manualUntil) {
         ch.status = 'manual';
       } else if (!ch.level.isActive(now) || level === undefined) {
@@ -270,7 +295,56 @@ export class AuxLeveler {
       ch.correcting = false;
       captured++;
     }
+    this.resetReferences();
     return captured;
+  }
+
+  /** A mixagem atual vira a referência do "efeito acompanha" (efeitos param de compensar). */
+  resetReferences(): void {
+    for (const ch of this.channels.values()) if (ch.send) ch.refSendDB = ch.send.db;
+  }
+
+  /** Quanto cada canal está acima/abaixo da referência, para o "efeito acompanha". */
+  offsets(now: number, recentSec = 20): ChannelOffset[] {
+    return [...this.channels.values()].map((ch) => {
+      const send = ch.send;
+      const open = send && !send.muted && Number.isFinite(send.db);
+      const ref = ch.refSendDB;
+      const offsetDB =
+        !open || ref === undefined || !Number.isFinite(ref) ? Number.NEGATIVE_INFINITY : send.db - ref;
+      return { key: ch.key, levelDB: ch.level.levelDB, offsetDB, recent: ch.level.silentForSec(now) <= recentSec };
+    });
+  }
+
+  /** Tira o canal do controle automático durante um fade (carregamento de preset). */
+  holdForTransition(key: string, until: number): void {
+    const ch = this.channels.get(key);
+    if (!ch) return;
+    ch.transitionUntil = until;
+    ch.correcting = false;
+  }
+
+  /** Preset carregado: alvos, limites e referência passam a ser os do preset. */
+  applyPreset(channels: Record<string, PresetChannel>): void {
+    for (const [key, p] of Object.entries(channels)) {
+      const ch = this.channels.get(key);
+      if (!ch) continue;
+      const send = p.sendDB ?? Number.NEGATIVE_INFINITY;
+      ch.baseSendDB = send;
+      ch.refSendDB = send;
+      if (p.targetDB !== undefined) ch.targetDB = p.targetDB;
+      ch.correcting = false;
+    }
+  }
+
+  exportPreset(): Record<string, PresetChannel> {
+    const out: Record<string, PresetChannel> = {};
+    for (const ch of this.channels.values()) {
+      if (!ch.send) continue;
+      const db = ch.send.muted || !Number.isFinite(ch.send.db) ? null : ch.send.db;
+      out[ch.key] = { sendDB: db, targetDB: ch.targetDB };
+    }
+    return out;
   }
 
   /** Botão de pânico: volta todos os envios para a mixagem original do operador. */

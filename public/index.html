@@ -16,15 +16,28 @@
   </header>
 
   <section class="controls">
-    <div class="modes" role="radiogroup" aria-label="Modo">
-      <button data-mode="desligado">Desligado</button>
-      <button data-mode="observar">Observar</button>
-      <button data-mode="automatico">Automático</button>
+    <div class="row">
+      <div class="seg modes" role="radiogroup" aria-label="Modo">
+        <button data-mode="desligado">Desligado</button>
+        <button data-mode="observar">Observar</button>
+        <button data-mode="automatico">Automático</button>
+      </div>
+      <div class="actions">
+        <button id="capture" class="primary" title="Use quando a live estiver soando bem: o nível atual de cada canal vira o alvo">Gravar mixagem atual como alvo</button>
+        <button id="restore" class="danger" title="Volta todos os envios para a mixagem original/preset">Voltar ao original</button>
+      </div>
+      <div class="seg views" aria-label="Vista">
+        <button data-view="mesa">Mesa</button>
+        <button data-view="tabela">Tabela</button>
+      </div>
     </div>
     <p id="mode-help" class="muted"></p>
-    <div class="actions">
-      <button id="capture" class="primary" title="Use quando a live estiver soando bem: o nível atual de cada canal vira o alvo">Gravar mixagem atual como alvo</button>
-      <button id="restore" class="danger" title="Volta todos os envios para a mixagem original do operador">Voltar envios ao original</button>
+    <div class="row presets">
+      <strong>Presets</strong>
+      <div id="preset-list" class="preset-list"></div>
+      <button id="preset-new" title="Salva a mixagem atual da live (envios, efeitos e alvos) como um novo preset">+ Salvar novo</button>
+      <button id="preset-update" title="Sobrescreve o preset ativo com a mixagem atual">Atualizar ativo</button>
+      <button id="preset-delete" class="ghost" title="Apaga o preset ativo">Apagar ativo</button>
       <label class="toggle"><input type="checkbox" id="show-all"> mostrar canais sem envio</label>
     </div>
   </section>
@@ -36,7 +49,7 @@
     <button data-scene="pregacao">Pregação</button>
     <button data-scene="avisos">Avisos</button>
     <button id="sim-reset">Zerar volumes dos músicos</button>
-    <span class="muted">Use os botões "fonte" e "operador" em cada canal para testar.</span>
+    <span class="muted">"fonte ±6" em cada canal simula o músico mudando o volume dele.</span>
   </section>
 
   <main id="auxes"></main>
@@ -50,24 +63,37 @@
     <article class="aux">
       <header>
         <h2 class="aux-title"></h2>
-        <div class="aux-out"><span class="muted">saída</span> <div class="meter small"><div class="fill"></div></div> <span class="aux-out-db num"></span></div>
+        <span class="muted legend">
+          <i class="lg lg-fill"></i> agora
+          <i class="lg lg-avg"></i> média
+          <i class="lg lg-target"></i> alvo
+        </span>
       </header>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th title="Controle automático ligado para este canal">Auto</th>
-              <th>Canal</th>
-              <th>Estado</th>
-              <th class="meter-col">Peso na live (nível + envio) · alvo</th>
-              <th>Envio</th>
-              <th title="Quanto o software está/estaria mexendo em relação ao envio original">Correção</th>
-              <th>Alvo</th>
-              <th class="sim-col">Simular</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <div class="mixer-view">
+        <div class="strips">
+          <div class="group ch-group"></div>
+          <div class="group fx-group"></div>
+          <div class="group master-group"></div>
+        </div>
+      </div>
+      <div class="table-view">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th title="Controle automático ligado para este canal">Auto</th>
+                <th>Canal</th>
+                <th>Estado</th>
+                <th class="meter-col">Peso na live (nível + envio) · alvo</th>
+                <th>Envio</th>
+                <th title="Quanto o software está/estaria mexendo em relação ao envio original">Correção</th>
+                <th>Alvo</th>
+                <th class="sim-col">Simular</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </article>
   </template>

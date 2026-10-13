@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import { SimulatorAdapter } from './mixer/simulator.js';
 import { SoundcraftAdapter } from './mixer/soundcraft-adapter.js';
 import type { MixerAdapter } from './mixer/types.js';
+import { PresetStore } from './preset-store.js';
 import { startServer } from './server.js';
 import { SessionLog } from './session-log.js';
 import { StateStore } from './state-store.js';
@@ -14,8 +15,9 @@ const cfg = loadConfig();
 const adapter: MixerAdapter = useSim ? new SimulatorAdapter() : new SoundcraftAdapter(cfg.mixer.ip);
 // Simulador e mesa real guardam alvos separados, para um não bagunçar o outro.
 const store = new StateStore(resolve('data', useSim ? 'estado-simulador.json' : 'estado.json'));
+const presets = new PresetStore(resolve('data', useSim ? 'presets-simulador.json' : 'presets.json'));
 const log = new SessionLog(resolve('data', 'sessoes'), useSim ? 'simulador' : 'mesa');
-const app = new App(cfg, adapter, store, log);
+const app = new App(cfg, adapter, store, presets, log);
 
 const stopServer = await startServer(app, cfg.server.host, cfg.server.port);
 await app.start();

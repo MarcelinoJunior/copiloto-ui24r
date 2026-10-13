@@ -29,6 +29,13 @@ export interface LevelerConfig {
   manualHoldSec: number;
   /** Quando o operador mexe num envio, o alvo do canal acompanha a mudança. */
   learnFromOperator: boolean;
+  /** "Efeito acompanha": velocidade máxima de ajuste do retorno do efeito (dB/s). */
+  fxRateDBps: number;
+  /** "Efeito acompanha": quanto o retorno pode descer/subir em relação à referência (dB). */
+  fxMaxCutDB: number;
+  fxMaxBoostDB: number;
+  /** Duração do fade ao carregar um preset (s). */
+  presetFadeSec: number;
 }
 
 export interface AppConfig {
@@ -53,6 +60,10 @@ export const DEFAULT_LEVELER: LevelerConfig = {
   maxSendDB: 6,
   manualHoldSec: 30,
   learnFromOperator: true,
+  fxRateDBps: 3,
+  fxMaxCutDB: 20,
+  fxMaxBoostDB: 6,
+  presetFadeSec: 3,
 };
 
 const MODES: Mode[] = ['desligado', 'observar', 'automatico'];

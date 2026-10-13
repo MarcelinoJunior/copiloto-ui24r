@@ -4,8 +4,8 @@
  * - SimulatorAdapter: uma mesa falsa para testar sem estar na igreja
  */
 
-/** i = entrada (mic/line), l = line in estéreo, p = player */
-export type ChannelKind = 'i' | 'l' | 'p';
+/** i = entrada (mic/line), l = line in estéreo, p = player, f = retorno de efeito (FX 1-4) */
+export type ChannelKind = 'i' | 'l' | 'p' | 'f';
 
 export interface ChannelInfo {
   /** Ex.: "i1", "l2", "p1" */
@@ -57,12 +57,22 @@ export interface MixerAdapter {
   connect(): Promise<MixerInfo>;
   disconnect(): Promise<void>;
   onStatus(cb: (state: ConnectionState, detail?: string) => void): void;
+  /** Canais de entrada (i, l, p). */
   listChannels(): ChannelInfo[];
+  /** Retornos de efeito (f1..f4). */
+  listFxReturns(): ChannelInfo[];
   /** Avisa sempre que o nome de um canal muda (ou é recebido pela primeira vez). */
   onChannelName(cb: (key: string, name: string) => void): void;
+  /** VU de entradas e de retornos de efeito (chaves "f1".."f4"). */
   onVu(cb: (frame: VuFrame) => void): void;
+  /** Envio de um canal (ou retorno de efeito, "fN") para um aux. */
   watchSend(aux: number, key: string, cb: (info: SendInfo) => void): void;
   setSendDB(aux: number, key: string, db: number): void;
+  /** Envio de um canal de entrada para um efeito (quanto do canal entra no reverb/delay). */
+  watchFxSend(fx: number, key: string, cb: (db: number) => void): void;
+  /** Fader master do aux (volume geral da live). */
+  watchAuxMaster(aux: number, cb: (db: number) => void): void;
+  setAuxMasterDB(aux: number, db: number): void;
   auxName(aux: number): string;
 }
 
@@ -73,7 +83,7 @@ export function channelKey(kind: ChannelKind, n: number): string {
 export function parseChannelKey(key: string): { kind: ChannelKind; number: number } {
   const kind = key[0] as ChannelKind;
   const number = Number(key.slice(1));
-  if (!['i', 'l', 'p'].includes(kind) || !Number.isInteger(number)) {
+  if (!['i', 'l', 'p', 'f'].includes(kind) || !Number.isInteger(number)) {
     throw new Error(`Chave de canal inválida: ${key}`);
   }
   return { kind, number };

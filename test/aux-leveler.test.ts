@@ -124,6 +124,28 @@ describe('AuxLeveler', () => {
     expect(s.targetDB).toBeCloseTo(before + 3, 1);
   });
 
+  it('preset: aplica alvos e limites, e pausa durante o fade', () => {
+    const l = setup();
+    let t = run(l, 'i1', -20, 0, 5);
+    l.applyPreset({ i1: { sendDB: -2, targetDB: -22 } });
+    l.holdForTransition('i1', t + 3000);
+    l.tick(t);
+    expect(snap(l, t).status).toBe('transicao');
+    expect(snap(l, t).targetDB).toBe(-22);
+    expect(snap(l, t).baseSendDB).toBe(-2);
+    expect(l.exportPreset().i1).toEqual({ sendDB: -6, targetDB: -22 });
+  });
+
+  it('aprende com o operador mesmo com o modo desligado', () => {
+    const l = setup();
+    l.setMode('desligado');
+    const t = run(l, 'i1', -20, 0, 5);
+    l.captureTargets(t);
+    l.onSend('i1', { ...SEND, db: -2 }, t);
+    expect(snap(l, t).targetDB).toBeCloseTo(-22, 1);
+    expect(snap(l, t).manualForSec).toBe(0);
+  });
+
   it('não confunde o eco da mesa com o operador', () => {
     const l = setup();
     l.markCommanded('i1', -7, 1000);

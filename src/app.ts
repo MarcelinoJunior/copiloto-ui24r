@@ -1,7 +1,9 @@
 import type { AppConfig } from './config.js';
 import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
+import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
 import type { ConnectionState, MixerAdapter, MixerInfo } from './mixer/types.js';
 import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
+import type { PresetStore } from './preset-store.js';
 import type { SessionLog } from './session-log.js';
 import type { StateStore } from './state-store.js';
 import { round1 } from './util/db.js';
@@ -9,6 +11,8 @@ import { round1 } from './util/db.js';
 export interface EventEntry {
   t: number;
   text: string;
+  /** eventos com a mesma chave em sequência são agrupados (ex.: arrastar um fader) */
+  mergeKey?: string;
 }
 
 export interface AppSnapshot {
@@ -17,10 +21,22 @@ export interface AppSnapshot {
   mixer?: MixerInfo;
   mode: Mode;
   deadbandDB: number;
-  auxes: { aux: number; name: string; outDB?: number; channels: ChannelSnapshot[] }[];
+  auxes: {
+    aux: number;
+    name: string;
+    outDB?: number;
+    masterDB?: number;
+    channels: ChannelSnapshot[];
+    fx: FxSnapshot[];
+  }[];
+  presets: { id: string; name: string; savedAt: number }[];
+  activePresetId?: string;
   events: EventEntry[];
   sim?: { scene: Scene; offsets: Record<string, number> };
 }
+
+/** dB vindo do painel: null representa -∞ (JSON não tem -Infinity). */
+type WireDB = number | null;
 
 export type Command =
   | { type: 'setMode'; mode: Mode }
@@ -29,24 +45,45 @@ export type Command =
   | { type: 'setEnabled'; aux: number; key: string; enabled: boolean }
   | { type: 'nudgeTarget'; aux: number; key: string; delta: number }
   | { type: 'clearTarget'; aux: number; key: string }
+  | { type: 'setSend'; aux: number; key: string; db: WireDB }
+  | { type: 'setAuxMaster'; aux: number; db: WireDB }
+  | { type: 'setFxFollow'; aux: number; key: string; follow: boolean }
+  | { type: 'preset.save'; name: string; id?: string }
+  | { type: 'preset.load'; id: string }
+  | { type: 'preset.delete'; id: string }
   | { type: 'sim.scene'; scene: Scene }
   | { type: 'sim.source'; key: string; delta: number }
   | { type: 'sim.reset' }
   | { type: 'sim.operator'; aux: number; key: string; delta: number };
 
+interface Fade {
+  aux: number;
+  key: string;
+  fromDB: number;
+  toDB: number;
+  start: number;
+  durationMs: number;
+}
+
 const MAX_EVENTS = 60;
+const EVENT_MERGE_MS = 4000;
 const LEVEL_LOG_EVERY_MS = 2000;
 const CONNECT_TIMEOUT_MS = 10000;
 const RETRY_MS = 5000;
+const FADE_STEP_MS = 100;
 
-/** Liga a mesa (real ou simulada), os niveladores, a persistência e o log do culto. */
+/** Liga a mesa (real ou simulada), os niveladores, os efeitos, os presets e o log do culto. */
 export class App {
   private readonly levelers: AuxLeveler[];
+  private readonly followers: FxFollower[];
+  private readonly auxMaster = new Map<number, number>();
   private mode: Mode;
   private connection: ConnectionState = 'conectando';
   private connectionDetail?: string;
   private mixer?: MixerInfo;
   private readonly events: EventEntry[] = [];
+  private readonly fades = new Map<string, Fade>();
+  private activePresetId?: string;
   private wired = false;
   private dirty = false;
   private lastLevelLog = 0;
@@ -57,11 +94,13 @@ export class App {
     private readonly cfg: AppConfig,
     private readonly adapter: MixerAdapter,
     private readonly store: StateStore,
+    private readonly presets: PresetStore,
     private readonly log: SessionLog,
   ) {
     this.mode = cfg.initialMode;
     this.levelers = cfg.streamAuxes.map((aux) => new AuxLeveler(aux, cfg.leveler));
-    this.levelers.forEach((l) => l.setMode(this.mode));
+    this.followers = cfg.streamAuxes.map((aux) => new FxFollower(aux, cfg.leveler));
+    this.setModeAll(this.mode);
     adapter.onStatus((state, detail) => {
       if (state !== this.connection) this.event(`Mesa: ${state}${detail ? ` (${detail})` : ''}`);
       this.connection = state;
@@ -72,6 +111,7 @@ export class App {
   async start(): Promise<void> {
     this.log.write('inicio', { mode: this.mode, auxes: this.cfg.streamAuxes, leveler: this.cfg.leveler });
     this.timers.push(setInterval(() => this.tick(), this.cfg.leveler.tickMs));
+    this.timers.push(setInterval(() => this.runFades(), FADE_STEP_MS));
     this.timers.push(setInterval(() => this.persistIfDirty(), 5000));
     void this.connectLoop();
   }
@@ -111,84 +151,145 @@ export class App {
     if (this.wired) return;
     this.wired = true;
     const persisted = this.store.load();
+    this.activePresetId = persisted.activePresetId;
+    const channels = this.adapter.listChannels();
+    const fxReturns = this.adapter.listFxReturns();
 
-    for (const leveler of this.levelers) {
-      const saved = persisted.auxes[String(leveler.aux)] ?? {};
-      for (const ch of this.adapter.listChannels()) {
+    this.levelers.forEach((leveler, idx) => {
+      const aux = leveler.aux;
+      const follower = this.followers[idx];
+      const saved = persisted.auxes[String(aux)] ?? {};
+      const savedFollow = persisted.fxFollow?.[String(aux)] ?? {};
+
+      for (const ch of channels) {
         leveler.ensureChannel(ch.key, ch.name, saved[ch.key]);
-        this.adapter.watchSend(leveler.aux, ch.key, (info) => {
+        this.adapter.watchSend(aux, ch.key, (info) => {
           const change = leveler.onSend(ch.key, info, Date.now());
-          if (!change) return;
-          this.dirty = true;
-          const name = leveler.channelName(ch.key);
-          this.event(`Operador mexeu em ${name} (aux ${leveler.aux}): ${fmt(change.fromDB)} → ${fmt(change.toDB)} dB`);
-          this.log.write('operador', { aux: leveler.aux, key: ch.key, ...change });
+          if (change) this.operatorMoved(aux, ch.key, leveler.channelName(ch.key), change);
         });
       }
-    }
 
-    this.adapter.onChannelName((key, name) => this.levelers.forEach((l) => l.setName(key, name)));
+      for (const fx of fxReturns) {
+        follower.ensureReturn(fx.key, fx.name, savedFollow[fx.key] ?? true);
+        this.adapter.watchSend(aux, fx.key, (info) => {
+          const change = follower.onSend(fx.key, info, Date.now());
+          if (change) this.operatorMoved(aux, fx.key, fx.name, change);
+        });
+        for (const ch of channels) {
+          this.adapter.watchFxSend(fx.number, ch.key, (db) => follower.onFxSend(fx.key, ch.key, db));
+        }
+      }
+
+      this.adapter.watchAuxMaster(aux, (db) => this.auxMaster.set(aux, db));
+    });
+
+    this.adapter.onChannelName((key, name) => {
+      this.levelers.forEach((l) => l.setName(key, name));
+      this.followers.forEach((f) => f.setName(key, name));
+    });
 
     this.adapter.onVu((frame) => {
-      for (const leveler of this.levelers) {
-        for (const [key, vu] of frame.channels) leveler.onVu(key, vu, frame.t);
+      this.levelers.forEach((leveler, idx) => {
+        const follower = this.followers[idx];
+        for (const [key, vu] of frame.channels) {
+          if (key.startsWith('f')) follower.onVu(key, vu.post);
+          else leveler.onVu(key, vu, frame.t);
+        }
         leveler.auxOutDB = frame.auxOut.get(leveler.aux);
-      }
+      });
     });
+  }
+
+  private operatorMoved(aux: number, key: string, name: string, change: { fromDB: number; toDB: number }): void {
+    this.dirty = true;
+    this.fades.delete(`${aux}:${key}`); // o operador manda: cancela fade em andamento
+    this.event(`Operador: ${name} (aux ${aux}) → ${fmt(change.toDB)} dB`, `op:${aux}:${key}`);
+    this.log.write('operador', { aux, key, ...change });
   }
 
   private tick(): void {
     if (!this.wired) return;
     const now = Date.now();
-    for (const leveler of this.levelers) this.apply(leveler, leveler.tick(now), now);
+    this.levelers.forEach((leveler, idx) => {
+      this.apply(leveler.tick(now));
+      this.apply(this.followers[idx].tick(now, leveler.offsets(now)));
+    });
 
     if (now - this.lastLevelLog >= LEVEL_LOG_EVERY_MS) {
       this.lastLevelLog = now;
-      for (const leveler of this.levelers) {
+      this.levelers.forEach((leveler, idx) => {
         const active = leveler
           .snapshot(now)
           .filter((c) => c.status !== 'silencio' && c.status !== 'sem-envio' && c.status !== 'desabilitado')
           .map((c) => [c.key, c.levelDB, c.sendDB, c.targetDB, c.status]);
-        this.log.write('niveis', { aux: leveler.aux, mode: this.mode, out: leveler.auxOutDB, ch: active });
-      }
+        const fx = this.followers[idx].snapshot().map((f) => [f.key, f.sendDB, f.followDeltaDB, f.status]);
+        this.log.write('niveis', { aux: leveler.aux, mode: this.mode, out: leveler.auxOutDB, ch: active, fx });
+      });
     }
   }
 
-  private apply(leveler: AuxLeveler, actions: SendAction[], now: number): void {
+  /** Manda envios para a mesa marcando-os como nossos (para o eco não parecer o operador). */
+  private apply(actions: SendAction[]): void {
+    const now = Date.now();
     for (const a of actions) {
-      // Marca antes de enviar: a mesa (e o simulador) podem devolver o eco na hora.
-      leveler.markCommanded(a.key, a.toDB, now);
+      this.markCommanded(a.aux, a.key, a.toDB, now);
       this.adapter.setSendDB(a.aux, a.key, a.toDB);
-      this.log.write('envio', { ...a });
+      if (a.reason !== 'preset') this.log.write('envio', { ...a });
     }
+  }
+
+  private markCommanded(aux: number, key: string, db: number, now: number): void {
+    const idx = this.levelers.findIndex((l) => l.aux === aux);
+    if (idx < 0) return;
+    if (key.startsWith('f')) this.followers[idx].markCommanded(key, db, now);
+    else this.levelers[idx].markCommanded(key, db, now);
+  }
+
+  private runFades(): void {
+    if (this.fades.size === 0) return;
+    const now = Date.now();
+    const actions: SendAction[] = [];
+    for (const [id, f] of this.fades) {
+      const progress = Math.min(1, (now - f.start) / f.durationMs);
+      let db: number;
+      if (progress >= 1) db = f.toDB;
+      else if (!Number.isFinite(f.fromDB) || !Number.isFinite(f.toDB)) continue; // abre/fecha no fim do fade
+      else db = round1(f.fromDB + (f.toDB - f.fromDB) * easeInOut(progress));
+      actions.push({ aux: f.aux, key: f.key, fromDB: f.fromDB, toDB: db, reason: 'preset' });
+      if (progress >= 1) this.fades.delete(id);
+    }
+    this.apply(actions);
   }
 
   handle(cmd: Command): void {
     const now = Date.now();
-    const leveler = 'aux' in cmd && cmd.aux !== undefined ? this.levelers.find((l) => l.aux === cmd.aux) : undefined;
+    const auxIdx = 'aux' in cmd && cmd.aux !== undefined ? this.levelers.findIndex((l) => l.aux === cmd.aux) : -1;
+    const leveler = auxIdx >= 0 ? this.levelers[auxIdx] : undefined;
+    const follower = auxIdx >= 0 ? this.followers[auxIdx] : undefined;
 
     switch (cmd.type) {
       case 'setMode':
         if (!['desligado', 'observar', 'automatico'].includes(cmd.mode)) return;
         this.mode = cmd.mode;
-        this.levelers.forEach((l) => l.setMode(cmd.mode));
+        this.setModeAll(cmd.mode);
         this.event(`Modo: ${cmd.mode}`);
         this.log.write('modo', { mode: cmd.mode });
         break;
       case 'capture': {
-        const targets = cmd.aux === undefined ? this.levelers : this.levelers.filter((l) => l.aux === cmd.aux);
-        for (const l of targets) {
+        this.levelers.forEach((l, idx) => {
+          if (cmd.aux !== undefined && l.aux !== cmd.aux) return;
           const n = l.captureTargets(now);
+          this.followers[idx].resetReferences();
           this.event(`Mixagem atual do aux ${l.aux} gravada como alvo (${n} canais)`);
           this.log.write('captura', { aux: l.aux, canais: n, alvos: l.exportPersisted() });
-        }
+        });
         this.dirty = true;
         break;
       }
       case 'restore':
         for (const l of this.levelers) {
           const actions = l.restoreBase();
-          this.apply(l, actions, now);
+          this.apply(actions);
           this.event(`Envios do aux ${l.aux} voltaram para a mixagem original (${actions.length} canais)`);
         }
         break;
@@ -204,6 +305,36 @@ export class App {
         leveler?.setTarget(cmd.key, undefined);
         this.dirty = true;
         break;
+      case 'setSend':
+        // Fader do painel = operador mexendo: NÃO marcamos como nosso, então o nivelador
+        // trata como intervenção (pausa o canal e aprende o novo alvo).
+        if (leveler) this.adapter.setSendDB(cmd.aux, cmd.key, fromWire(cmd.db));
+        break;
+      case 'setAuxMaster':
+        if (leveler) {
+          this.adapter.setAuxMasterDB(cmd.aux, fromWire(cmd.db));
+          this.event(`Volume geral da live (aux ${cmd.aux}) → ${fmt(fromWire(cmd.db))} dB`, `master:${cmd.aux}`);
+        }
+        break;
+      case 'setFxFollow':
+        follower?.setFollow(cmd.key, cmd.follow);
+        this.dirty = true;
+        break;
+      case 'preset.save':
+        this.savePreset(cmd.name, cmd.id);
+        break;
+      case 'preset.load':
+        this.loadPreset(cmd.id);
+        break;
+      case 'preset.delete': {
+        const p = this.presets.get(cmd.id);
+        if (!p) return;
+        this.presets.delete(cmd.id);
+        if (this.activePresetId === cmd.id) this.activePresetId = undefined;
+        this.dirty = true;
+        this.event(`Preset "${p.name}" apagado`);
+        break;
+      }
       case 'sim.scene':
         this.sim()?.setScene(cmd.scene);
         this.event(`[simulador] Momento: ${cmd.scene}`);
@@ -225,6 +356,62 @@ export class App {
     }
   }
 
+  private savePreset(name: string, id?: string): void {
+    const cleanName = String(name ?? '').trim().slice(0, 40);
+    if (!cleanName) return;
+    const auxes: Record<string, { channels: ReturnType<AuxLeveler['exportPreset']>; fx: Record<string, number | null> }> = {};
+    this.levelers.forEach((l, idx) => {
+      auxes[String(l.aux)] = { channels: l.exportPreset(), fx: this.followers[idx].exportSends() };
+    });
+    const preset = this.presets.save({ id, name: cleanName, savedAt: Date.now(), auxes });
+    // A mixagem salva vira a referência dos efeitos (eles param de compensar a partir daqui).
+    this.followers.forEach((f) => f.resetReferences());
+    this.levelers.forEach((l) => l.resetReferences());
+    this.activePresetId = preset.id;
+    this.dirty = true;
+    this.event(`Preset "${preset.name}" ${id ? 'atualizado' : 'salvo'}`);
+    this.log.write('preset-salvo', { id: preset.id, name: preset.name });
+  }
+
+  private loadPreset(id: string): void {
+    const preset = this.presets.get(id);
+    if (!preset) return;
+    const now = Date.now();
+    const durationMs = Math.max(0, this.cfg.leveler.presetFadeSec * 1000);
+    const until = now + durationMs + 1500;
+
+    this.levelers.forEach((leveler, idx) => {
+      const data = preset.auxes[String(leveler.aux)];
+      if (!data) return;
+      const follower = this.followers[idx];
+      const current = new Map(leveler.snapshot(now).map((c) => [c.key, c.sendDB ?? Number.NEGATIVE_INFINITY]));
+      const currentFx = new Map(follower.snapshot().map((f) => [f.key, f.sendDB ?? Number.NEGATIVE_INFINITY]));
+
+      for (const [key, p] of Object.entries(data.channels)) {
+        leveler.holdForTransition(key, until);
+        this.startFade(leveler.aux, key, current.get(key), p.sendDB, now, durationMs);
+      }
+      for (const [key, db] of Object.entries(data.fx)) {
+        follower.holdForTransition(key, until);
+        this.startFade(leveler.aux, key, currentFx.get(key), db, now, durationMs);
+      }
+      leveler.applyPreset(data.channels);
+      follower.resetReferences(data.fx);
+    });
+
+    this.activePresetId = preset.id;
+    this.dirty = true;
+    this.event(`Preset "${preset.name}" carregado (fade de ${this.cfg.leveler.presetFadeSec} s)`);
+    this.log.write('preset', { id: preset.id, name: preset.name });
+  }
+
+  private startFade(aux: number, key: string, from: number | undefined, to: number | null, now: number, durationMs: number): void {
+    const fromDB = from ?? Number.NEGATIVE_INFINITY;
+    const toDB = to ?? Number.NEGATIVE_INFINITY;
+    if (fromDB === toDB || (Number.isFinite(fromDB) && Number.isFinite(toDB) && Math.abs(fromDB - toDB) < 0.05)) return;
+    this.fades.set(`${aux}:${key}`, { aux, key, fromDB, toDB, start: now, durationMs: Math.max(1, durationMs) });
+  }
+
   snapshot(): AppSnapshot {
     const now = Date.now();
     return {
@@ -233,33 +420,59 @@ export class App {
       mixer: this.mixer,
       mode: this.mode,
       deadbandDB: this.cfg.leveler.deadbandDB,
-      auxes: this.levelers.map((l) => ({
-        aux: l.aux,
-        name: this.adapter.auxName(l.aux),
-        outDB: l.auxOutDB === undefined ? undefined : round1(l.auxOutDB),
-        channels: l.snapshot(now),
-      })),
+      auxes: this.levelers.map((l, idx) => {
+        const master = this.auxMaster.get(l.aux);
+        return {
+          aux: l.aux,
+          name: this.adapter.auxName(l.aux),
+          outDB: l.auxOutDB === undefined ? undefined : round1(l.auxOutDB),
+          masterDB: master === undefined || !Number.isFinite(master) ? undefined : round1(master),
+          channels: l.snapshot(now),
+          fx: this.followers[idx].snapshot(),
+        };
+      }),
+      presets: this.presets.list().map((p) => ({ id: p.id, name: p.name, savedAt: p.savedAt })),
+      activePresetId: this.activePresetId,
       events: this.events.slice(-MAX_EVENTS).reverse(),
       sim: this.sim()?.simState(),
     };
+  }
+
+  private setModeAll(mode: Mode): void {
+    this.levelers.forEach((l) => l.setMode(mode));
+    this.followers.forEach((f) => f.setMode(mode));
   }
 
   private sim(): SimulatorAdapter | undefined {
     return this.adapter instanceof SimulatorAdapter ? this.adapter : undefined;
   }
 
-  private event(text: string): void {
-    this.events.push({ t: Date.now(), text });
+  private event(text: string, mergeKey?: string): void {
+    const now = Date.now();
+    const last = this.events[this.events.length - 1];
+    if (mergeKey && last?.mergeKey === mergeKey && now - last.t < EVENT_MERGE_MS) {
+      last.t = now;
+      last.text = text;
+      return;
+    }
+    this.events.push({ t: now, text, mergeKey });
     if (this.events.length > MAX_EVENTS * 2) this.events.splice(0, MAX_EVENTS);
-    console.log(`[${new Date().toLocaleTimeString('pt-BR')}] ${text}`);
+    console.log(`[${new Date(now).toLocaleTimeString('pt-BR')}] ${text}`);
   }
 
   private persistIfDirty(): void {
     if (!this.dirty) return;
     this.dirty = false;
-    const state = { auxes: Object.fromEntries(this.levelers.map((l) => [String(l.aux), l.exportPersisted()])) };
-    this.store.save(state);
+    this.store.save({
+      auxes: Object.fromEntries(this.levelers.map((l) => [String(l.aux), l.exportPersisted()])),
+      fxFollow: Object.fromEntries(this.followers.map((f) => [String(f.aux), f.exportFollow()])),
+      activePresetId: this.activePresetId,
+    });
   }
+}
+
+function fromWire(db: WireDB): number {
+  return typeof db === 'number' && Number.isFinite(db) ? Math.max(-80, Math.min(10, db)) : Number.NEGATIVE_INFINITY;
 }
 
 function fmt(db: number): string {
@@ -268,6 +481,10 @@ function fmt(db: number): string {
 
 function clampDelta(delta: number): number {
   return Number.isFinite(delta) ? Math.max(-12, Math.min(12, delta)) : 0;
+}
+
+function easeInOut(x: number): number {
+  return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
 }
 
 function sleep(ms: number): Promise<void> {

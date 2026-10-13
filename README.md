@@ -24,6 +24,38 @@ Ui24R ──(Wi-Fi, WebSocket)──► Copiloto (Node.js neste PC) ──► Pa
 
 Como o VU é medido *antes* do envio, mexer no envio não muda a medição. Por isso o controle não oscila.
 
+### O painel (vista "Mesa")
+
+Cada canal aparece como na Ui24R, com **fader vertical** e medidor:
+
+- **Fader** = envio daquele canal para o aux da live. Ele se move sozinho quando o automático corrige (o botão do fader fica laranja por um instante). Se você arrastar, vale como se tivesse mexido na mesa: o canal fica em "operador" por 30 s e o alvo passa a ser o seu.
+- **Medidor**: verde = nível agora; linha azul = média; linha branca = alvo; faixa clara = tolerância.
+- **AUTO**: liga/desliga o controle automático só daquele canal.
+- **Alvo − / +**: muda em 1 dB o nível que o automático persegue, sem mexer no fader na hora.
+- **Faixas rosa (FX 1–4)**: retorno de cada efeito na live. **ACOMP.** liga o "efeito acompanha" (abaixo).
+- **LIVE (master)**: volume geral da transmissão. Não muda o equilíbrio entre os canais.
+
+A vista **Tabela** mostra as mesmas informações em linhas.
+
+### Presets
+
+Um preset guarda a mixagem inteira da live: o envio de cada canal, o retorno de cada efeito e os alvos do automático. Exemplos: "Louvor – mais batera", "Louvor – mais guitarra", "Pregação".
+
+- **+ Salvar novo**: monte a mixagem (pelos faders daqui ou na mesa) e dê um nome.
+- **Clicar no preset**: carrega com **fade de 3 s** (`presetFadeSec`). Durante o fade o automático não interfere.
+- **Atualizar ativo / Apagar ativo**: sobrescreve ou apaga o preset carregado.
+
+Os presets ficam em `data/presets.json`.
+
+### Efeito acompanha (reverb "de banheiro")
+
+Quando o envio de um canal para a live desce e o reverb continua igual, a voz fica "dentro do banheiro". Com **ACOMP.** ligado, o retorno do efeito na live desce junto, na proporção de quanto cada canal alimenta aquele efeito:
+- se o pastor é o único no reverb e desceu 4 dB, o reverb desce 4 dB;
+- se só um de três backs desceu, o reverb desce um pouco;
+- canal fechado na live tira a reverb dele da live.
+
+Vale tanto para as correções do automático quanto para os seus ajustes manuais. Só mexe no **envio do retorno de efeito para o aux da live**: o salão e o efeito em si não mudam. A referência é a mixagem gravada ("Gravar mixagem atual como alvo") ou o preset carregado. Se você mexer no fader do efeito, o novo valor vira a referência.
+
 ### Modos
 
 | Modo | O que faz |
@@ -90,6 +122,9 @@ Abra http://localhost:8080. O simulador imita uma banda (pastor, ministro, backs
 | `leveler.maxSendDB` | `6` | Teto absoluto de qualquer envio |
 | `leveler.manualHoldSec` | `30` | Pausa no canal depois que você mexe nele |
 | `leveler.learnFromOperator` | `true` | Seu ajuste manual atualiza o alvo |
+| `leveler.fxRateDBps` | `3` | Velocidade máxima do "efeito acompanha" |
+| `leveler.fxMaxCutDB` / `fxMaxBoostDB` | `20` / `6` | Limites do "efeito acompanha" em relação à referência |
+| `leveler.presetFadeSec` | `3` | Duração do fade ao carregar um preset |
 
 Os alvos ficam salvos em `data/estado.json` e sobrevivem a reinícios do programa.
 Cada culto gera um log em `data/sessoes/` (níveis, correções e intervenções), que será usado nas próximas frentes.
@@ -101,7 +136,8 @@ A interface da Ui24R **não tem senha**. Não exponha a mesa na internet (Cloudf
 ## Roadmap (frentes)
 
 - [x] **1. Equilíbrio automático do aux da live** (VU → envios)
-- [ ] 2. Perfis por momento do culto (louvor / pregação / ceia), com troca automática pelos canais ativos ou por cues da mesa
+- [x] Vista "Mesa" com faders verticais, presets com fade, "efeito acompanha", master da live
+- [ ] 2. Troca automática de preset por momento do culto (pelos canais ativos ou por cues da mesa)
 - [ ] 3. Relatório pós-culto com IA local e gratuita (Ollama) a partir dos logs em `data/sessoes/`
 - [ ] 4. Alertas: clipping, microfone aberto sem uso, aux da live alto demais
 - [ ] 5. Acesso remoto seguro ao painel (Cloudflare Tunnel + Access)
@@ -118,6 +154,8 @@ src/
   config.ts                leitura do config/config.json
   leveler/aux-leveler.ts   O ALGORITMO: alvo, correção, limites, operador
   leveler/gated-level.ts   média de nível que ignora silêncio
+  leveler/fx-follower.ts   "efeito acompanha": retorno de FX segue os canais
+  preset-store.ts          presets (data/presets.json)
   mixer/types.ts           contrato comum (mesa real ou simulador)
   mixer/soundcraft-adapter.ts  Ui24R real (biblioteca soundcraft-ui-connection)
   mixer/simulator.ts       mesa falsa para testes
