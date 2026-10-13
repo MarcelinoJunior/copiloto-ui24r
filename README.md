@@ -110,7 +110,7 @@ npm run sim
 Abra http://localhost:8080. O simulador imita uma banda (pastor, ministro, backs, violão, guitarra, baixo, teclado, bateria). No painel você pode:
 - trocar o momento do culto (louvor / pregação / avisos);
 - **"fonte +6"**: simula um músico aumentando o volume;
-- **"operador +3"**: simula você mexendo no envio direto na mesa.
+- **arrastar um fader** do painel: é como você mexendo na mesa (o canal fica em "operador").
 
 ## Na igreja
 
@@ -119,7 +119,7 @@ Abra http://localhost:8080. O simulador imita uma banda (pastor, ministro, backs
    ```bash
    npm run diagnostico
    ```
-   Ele lista os auxes com nome, quantos canais enviam para cada um e a tabela de envios dos auxes 7, 8 e 9. Se dois auxes vizinhos têm valores idênticos, estão em **link estéreo**: use só o primeiro (ímpar).
+   Ele lista os auxes com nome, quantos canais enviam para cada um e a tabela de envios dos auxes 7, 8 e 9. Auxes em **link estéreo** aparecem marcados (ex.: "estéreo com AUX 8").
 3. Se o IP da mesa não for 192.168.0.122, troque na tela **Conexão** do painel. Depois escolha a saída da live em **Controlando** (ex.: AUX 7+8).
 4. Rode:
    ```bash
