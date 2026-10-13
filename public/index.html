@@ -7,44 +7,25 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="mix-page">
-  <header class="topbar">
+  <!-- 1º andar: navegação, simulador, conexão e conta -->
+  <header class="appbar">
     <strong class="logo">Copiloto</strong>
     <nav class="nav" id="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="conexao.html">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
 
-    <label class="field" title="Qual saída da mesa você está vendo e mixando">
-      <span>Saída</span>
-      <select id="bus-select"></select>
-    </label>
-
-    <div class="seg modes" role="radiogroup" aria-label="Modo do automático nesta saída" title="Modo do automático NESTA saída">
-      <button data-mode="desligado" title="Só mostra os níveis">Desligado</button>
-      <button data-mode="observar" title="Calcula as correções mas NÃO mexe na mesa">Observar</button>
-      <button data-mode="automatico" title="Ajusta os envios e efeitos devagar, dentro dos limites">Automático</button>
+    <div id="sim" class="simgroup" hidden title="Mesa falsa para testes: nada é enviado para a Ui24R">
+      <span class="sim-chip">SIMULADOR</span>
+      <span class="muted">momento</span>
+      <div class="seg scenes">
+        <button data-scene="louvor">Louvor</button>
+        <button data-scene="pregacao">Pregação</button>
+        <button data-scene="avisos">Avisos</button>
+      </div>
+      <button id="sim-reset" class="small-btn" title="Volta os músicos simulados ao volume normal">Zerar músicos</button>
+      <a href="conexao.html" class="sim-link">usar a mesa real →</a>
     </div>
 
-    <button id="capture" class="primary small-btn" title="Use quando a mixagem estiver soando bem: o nível atual de cada canal vira o alvo">Gravar alvo</button>
-    <button id="restore" class="danger small-btn" title="Volta os envios para a mixagem original (ou do preset carregado)">Voltar ao original</button>
-
-    <div class="field">
-      <span>Preset</span>
-      <select id="preset-select" title="Carregar preset desta saída (com fade suave)"></select>
-      <button id="preset-new" class="icon-btn" title="Salvar a mixagem atual desta saída como novo preset">+</button>
-      <button id="preset-update" class="icon-btn" title="Atualizar o preset ativo com a mixagem atual">↻</button>
-      <button id="preset-delete" class="icon-btn" title="Apagar o preset ativo">×</button>
-    </div>
-
-    <div class="field">
-      <span>Visualização</span>
-      <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
-      <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
-    </div>
-
-    <label class="toggle-btn" title="Clicar no nome do canal abre todos os volumes dele: master, esta saída e efeitos 1 a 4">
-      <input type="checkbox" id="expand"> Expandir canal
-    </label>
-
+    <span class="spacer"></span>
     <a id="conn" class="pill" href="conexao.html" title="Abrir a tela de conexão">…</a>
-
     <details class="menu user-menu">
       <summary id="user-name">…</summary>
       <div class="menu-body right">
@@ -54,21 +35,52 @@
     </details>
   </header>
 
+  <!-- 2º andar: controles da mixagem, em grupos -->
+  <div class="toolbar" role="toolbar" aria-label="Controles da mixagem">
+    <div class="tgroup" title="Qual saída da mesa você está vendo e mixando">
+      <label class="tlabel" for="bus-select">Saída</label>
+      <select id="bus-select"></select>
+    </div>
+
+    <div class="tgroup">
+      <span class="tlabel">Automático</span>
+      <div class="seg modes" role="radiogroup" aria-label="Modo do automático nesta saída">
+        <button data-mode="desligado" title="Só mostra os níveis">Desligado</button>
+        <button data-mode="observar" title="Calcula as correções mas NÃO mexe na mesa">Observar</button>
+        <button data-mode="automatico" title="Ajusta os envios e efeitos devagar, dentro dos limites">Ligado</button>
+      </div>
+    </div>
+
+    <div class="tgroup">
+      <span class="tlabel">Alvo</span>
+      <button id="capture" class="primary" title="Use quando a mixagem estiver soando bem: o nível atual de cada canal vira o alvo">Gravar</button>
+      <button id="restore" class="danger" title="Volta os envios para a mixagem original (ou do preset carregado)">Voltar ao original</button>
+    </div>
+
+    <div class="tgroup">
+      <label class="tlabel" for="preset-select">Preset</label>
+      <select id="preset-select" title="Carregar preset desta saída (com fade suave)"></select>
+      <div class="btn-row">
+        <button id="preset-new" class="icon-btn" title="Salvar a mixagem atual desta saída como novo preset">+</button>
+        <button id="preset-update" class="icon-btn" title="Atualizar o preset ativo com a mixagem atual">↻</button>
+        <button id="preset-delete" class="icon-btn" title="Apagar o preset ativo">×</button>
+      </div>
+    </div>
+
+    <div class="tgroup">
+      <label class="tlabel" for="view-select">Tela</label>
+      <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
+      <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
+      <label class="toggle-btn" title="Clicar no nome do canal abre todos os volumes dele: master, esta saída e efeitos 1 a 4">
+        <input type="checkbox" id="expand"> Expandir canal
+      </label>
+    </div>
+  </div>
+
   <p id="default-pass" class="warnbar" hidden>
     ⚠ Você está usando a senha padrão <strong>admin</strong>, que todo mundo conhece (o projeto é público).
     <a href="admin.html">Troque a senha agora →</a>
   </p>
-
-  <section id="sim" class="simbar" hidden>
-    <strong>SIMULADOR</strong>
-    <span>mesa falsa para testes — nada é enviado para a Ui24R.</span>
-    <span class="sep">Momento:</span>
-    <button data-scene="louvor">Louvor</button>
-    <button data-scene="pregacao">Pregação</button>
-    <button data-scene="avisos">Avisos</button>
-    <button id="sim-reset">Zerar músicos</button>
-    <a href="conexao.html" class="simbar-link">Usar a mesa real →</a>
-  </section>
 
   <main id="mixer" class="mixer"></main>
   <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>

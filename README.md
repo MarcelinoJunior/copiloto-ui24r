@@ -16,7 +16,7 @@
 - **Conexão:** IP da mesa, saúde da conexão (tempo de resposta, perda, dados chegando) e troca entre mesa real e **simulador**.
 - **Duas fontes de nível:**
   - **VU pela rede** (padrão, sem cabo);
-  - **áudio USB** (conexão física): detecta a Ui24R e o driver no Windows e mede o áudio de cada canal com o ffmpeg. O **controle** é sempre pela rede; pelo USB a mesa só manda áudio.
+  - **áudio USB** (conexão física): detecta a Ui24R no Windows e mede o áudio de cada canal com o ffmpeg que já vem junto. O **controle** é sempre pela rede; pelo USB a mesa só manda áudio.
 - **Log de cada culto** em `data/sessoes/` (níveis, correções e quem mexeu), base para relatórios futuros com IA.
 
 ## Instalação
@@ -27,11 +27,9 @@ Precisa do **[Node.js 22 ou mais novo](https://nodejs.org/)**. O SQLite já vem 
 npm install
 ```
 
-Opcional, só para medir pelo **áudio USB**: o ffmpeg (gratuito) e o driver USB da Ui24R (site da Soundcraft).
+O `npm install` já baixa tudo, inclusive o **ffmpeg** usado na medição pelo áudio USB (pacote `ffmpeg-static`). Não precisa instalar nada à parte.
 
-```bash
-winget install Gyan.FFmpeg
-```
+A única coisa que não dá para vir dentro do programa é o **driver USB da Ui24R**, que é um driver de hardware do Windows. Se a mesa ligada no USB não aparecer na lista de áudio da tela Conexão, instale o driver da Soundcraft uma vez no Windows. Para usar só o VU pela rede, nada disso é necessário.
 
 ## Uso
 
@@ -66,11 +64,11 @@ npm run diagnostico
 | Elemento | O que é |
 |---|---|
 | **Saída** | Qual saída você vê e mixa. Um par estéreo (ex.: AUX 7+8) aparece como uma opção só, e os dois lados mudam juntos. **MASTER** mexe no som do salão (pede confirmação). |
-| **Desligado / Observar / Automático** | Modo do automático **nesta saída**. |
-| **Gravar alvo** | O nível atual de cada canal que está tocando vira o alvo do automático. |
+| **Automático: Desligado / Observar / Ligado** | Modo do automático **nesta saída**. |
+| **Alvo: Gravar** | O nível atual de cada canal que está tocando vira o alvo do automático. |
 | **Voltar ao original** | Botão de pânico: devolve os envios para a sua mixagem (ou para o preset carregado). |
 | **Preset** | Carrega (com fade), salva (+), atualiza (↻) ou apaga (×) presets desta saída. |
-| **Visualização** | Modo de visualização; ✎ cria ou edita ("Quantos faders você quer ver na tela?", canais, efeitos). |
+| **Tela** | Modo de visualização; ✎ cria ou edita ("Quantos faders você quer ver na tela?", canais, efeitos). |
 | **Expandir canal** | Ligado: clicar no nome do canal abre o painel com todos os volumes dele. |
 | **Fader do canal** | Envio daquele canal para a saída. Fica laranja por um instante quando o automático mexe. Arrastar vale como mexer na mesa: o canal fica com você por 30 s e o alvo passa a ser o seu. |
 | **Medidor** | Verde = agora; linha azul = média; linha branca = alvo. |
@@ -139,7 +137,8 @@ Usa a biblioteca [soundcraft-ui-connection](https://github.com/fmalcher/soundcra
 - [x] Tela de mixagem em tela cheia, painel do canal, modos de visualização (SQLite)
 - [x] Pessoas e permissões por saída
 - [x] Saúde da conexão; mesa real ou simulador; nível pela rede ou pelo USB
-- [ ] Validar a captura USB com o driver da Soundcraft na mesa real
+- [x] ffmpeg embutido; captura testada com sinal gerado e com dispositivo de áudio real do Windows
+- [ ] Validar a captura USB com a Ui24R ligada no USB
 - [ ] Ordenar canais arrastando no editor de modos
 - [ ] Troca automática de preset por momento do culto
 - [ ] Relatório pós-culto com IA local (Ollama) a partir dos logs

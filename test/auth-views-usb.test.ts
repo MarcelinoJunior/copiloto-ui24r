@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthError, AuthService, canUseBus } from '../src/auth.js';
 import { openDatabase } from '../src/db.js';
-import { pcmBlockLevels, parseDshowDevices } from '../src/levels/usb-audio.js';
+import { pcmBlockLevels, parseDshowDevices, UsbAudioCapture } from '../src/levels/usb-audio.js';
 import { ViewStore } from '../src/views.js';
 
 function setup() {
@@ -124,4 +124,29 @@ describe('áudio USB', () => {
 [dshow @ 0x1] "Integrated Camera" (video)`;
     expect(parseDshowDevices(stderr)).toEqual(['Microfone (Realtek Audio)', 'Soundcraft Ui24R USB Audio']);
   });
+});
+
+describe('captura de áudio com o ffmpeg embutido', () => {
+  it('mede um sinal gerado: canal 1 em -6 dB, canal 2 mudo', async () => {
+    const frames: number[][] = [];
+    const cap = new UsbAudioCapture(
+      {
+        device: 'teste',
+        channels: 2,
+        // seno de amplitude 0,5 (-6 dBFS) no canal 1 e silêncio no canal 2, por 1 segundo
+        inputArgs: ['-f', 'lavfi', '-i', 'aevalsrc=0.5*sin(2*PI*440*t)|0:s=48000:d=1'],
+      },
+      (levels) => frames.push(levels),
+    );
+    cap.start();
+    // o sinal gerado acaba em ~1 s e o ffmpeg sai sozinho (ao vivo, isso viraria "erro"); aqui só importam as medições
+    for (let i = 0; i < 100 && frames.length < 15 && !(cap.state === 'erro' && frames.length === 0 && i > 20); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    cap.stop();
+    expect(frames.length).toBeGreaterThanOrEqual(10); // 1 s / 50 ms = 20 blocos
+    const [c1, c2] = frames[5];
+    expect(c1).toBeCloseTo(-6, 0);
+    expect(c2).toBe(-80);
+  }, 15000);
 });

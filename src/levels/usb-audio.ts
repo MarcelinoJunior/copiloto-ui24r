@@ -1,4 +1,6 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { FLOOR_DB } from '../util/db.js';
 
@@ -11,11 +13,23 @@ import { FLOOR_DB } from '../util/db.js';
  * Importante: pelo USB a mesa só manda ÁUDIO. Mexer em faders/envios continua sendo pela REDE.
  * Então "modo USB" = níveis pelo USB + controle pela rede.
  *
- * A captura usa o ffmpeg (gratuito), lendo o dispositivo de áudio do Windows (DirectShow) em PCM
- * e calculando o nível de cada canal a cada 50 ms.
+ * A captura usa o ffmpeg que vem JUNTO com o Copiloto (pacote ffmpeg-static, baixado no
+ * `npm install`), lendo o dispositivo de áudio do Windows (DirectShow) em PCM e calculando o
+ * nível de cada canal a cada 50 ms. Nada para instalar à parte.
  */
 
 const run = promisify(execFile);
+
+/** Caminho do ffmpeg embutido; se faltar (instalação incompleta), tenta o do sistema. */
+export function ffmpegBinary(): string {
+  try {
+    const bundled = createRequire(import.meta.url)('ffmpeg-static') as string | null;
+    if (bundled && existsSync(bundled)) return bundled;
+  } catch {
+    // pacote ausente: cai para o ffmpeg do sistema
+  }
+  return 'ffmpeg';
+}
 
 export interface UsbDetection {
   platform: string;
@@ -40,10 +54,10 @@ export async function detectUsbAudio(): Promise<UsbDetection> {
   };
 
   try {
-    const { stdout, stderr } = await run('ffmpeg', ['-hide_banner', '-version'], { timeout: 5000 });
+    const { stdout, stderr } = await run(ffmpegBinary(), ['-hide_banner', '-version'], { timeout: 5000 });
     out.ffmpeg = { found: true, version: (stdout || stderr).split('\n')[0]?.trim() };
   } catch {
-    out.notes.push('ffmpeg não encontrado. Instale (gratuito): winget install Gyan.FFmpeg — e reabra o programa.');
+    out.notes.push('O ffmpeg que vem com o Copiloto não foi encontrado. Rode "npm install" de novo na pasta do Copiloto.');
   }
 
   if (process.platform === 'win32') {
@@ -62,7 +76,8 @@ export async function detectUsbAudio(): Promise<UsbDetection> {
     }
     if (out.ui24Devices.length === 0) {
       out.notes.push(
-        'Nenhuma Ui24R no USB. Ligue o cabo USB da mesa e instale o driver "Soundcraft Ui24R USB" (site da Soundcraft).',
+        'Nenhuma Ui24R no USB. Ligue o cabo USB da mesa ao PC. Se ela não aparecer na lista de áudio, o Windows precisa ' +
+          'do driver USB da Soundcraft (instalado uma vez no Windows; driver de hardware não dá para vir dentro do Copiloto).',
       );
     }
   } else {
@@ -77,14 +92,17 @@ export async function detectUsbAudio(): Promise<UsbDetection> {
 
 /** Lista os dispositivos de captura de áudio que o ffmpeg vê no Windows. */
 export async function listDshowAudioDevices(): Promise<string[]> {
+  // A lista vem no stderr. Conforme a versão, o ffmpeg termina com ou sem erro nesse comando: lemos nos dois casos.
+  let text = '';
   try {
-    await run('ffmpeg', ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'], { timeout: 10000 });
+    const { stderr } = await run(ffmpegBinary(), ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'], {
+      timeout: 10000,
+    });
+    text = String(stderr ?? '');
   } catch (err) {
-    // o ffmpeg sempre "falha" nesse comando; a lista vem no stderr
-    const text = String((err as { stderr?: string }).stderr ?? '');
-    return parseDshowDevices(text);
+    text = String((err as { stderr?: string }).stderr ?? '');
   }
-  return [];
+  return parseDshowDevices(text);
 }
 
 export function parseDshowDevices(stderr: string): string[] {
@@ -119,6 +137,8 @@ export interface UsbCaptureOptions {
   channels: number;
   sampleRate?: number;
   blockMs?: number;
+  /** troca a entrada do ffmpeg (usado nos testes, com um sinal gerado em vez do dispositivo USB) */
+  inputArgs?: string[];
 }
 
 export type UsbCaptureState = 'parado' | 'iniciando' | 'capturando' | 'erro';
@@ -142,19 +162,24 @@ export class UsbAudioCapture {
     const blockBytes = Math.round((rate * (this.opts.blockMs ?? 50)) / 1000) * this.opts.channels * 2;
     this.state = 'iniciando';
     this.lastError = undefined;
-    const args = [
-      '-hide_banner',
-      '-loglevel', 'error',
+    const input = this.opts.inputArgs ?? [
       '-f', 'dshow',
       '-audio_buffer_size', '50',
       '-channels', String(this.opts.channels),
       '-sample_rate', String(rate),
       '-i', `audio=${this.opts.device}`,
+    ];
+    const args = [
+      '-hide_banner',
+      '-loglevel', 'error',
+      ...input,
+      '-ac', String(this.opts.channels),
+      '-ar', String(rate),
       '-f', 's16le',
       '-acodec', 'pcm_s16le',
       '-',
     ];
-    const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const proc = spawn(ffmpegBinary(), args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     this.proc = proc;
     let stderr = '';
     proc.stderr?.on('data', (d: Buffer) => (stderr = (stderr + d.toString()).slice(-2000)));
@@ -170,7 +195,7 @@ export class UsbAudioCapture {
     });
     proc.on('error', (err) => {
       this.state = 'erro';
-      this.lastError = err.message.includes('ENOENT') ? 'ffmpeg não encontrado' : err.message;
+      this.lastError = err.message.includes('ENOENT') ? 'ffmpeg não encontrado (rode "npm install" de novo)' : err.message;
     });
     proc.on('exit', (code) => {
       if (this.proc !== proc) return;

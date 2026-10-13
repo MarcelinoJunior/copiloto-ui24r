@@ -444,3 +444,36 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 .usb-form select, .usb-form input { background: var(--meter-bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; }
 .notes { color: var(--warn); font-size: 13px; margin: 4px 0; padding-left: 18px; }
 @media (max-width: 760px) { .level-grid { grid-template-columns: 1fr; } }
+
+
+/* ================= barra de cima em dois andares ================= */
+
+.appbar, .toolbar { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; flex-wrap: wrap; }
+.appbar { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.appbar .logo { font-size: 16px; margin-right: 4px; }
+.appbar .spacer { flex: 1 1 auto; }
+.appbar .pill { margin-left: 0; }
+
+.simgroup { display: inline-flex; align-items: center; gap: 8px; padding: 3px 4px 3px 3px; border: 1px solid var(--sim); border-radius: 8px; background: rgba(167, 123, 255, 0.12); font-size: 12px; }
+.sim-chip { background: var(--sim); color: #160a2e; font-weight: 800; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 5px; font-size: 12px; }
+.simgroup .seg button { padding: 3px 9px; font-size: 12px; }
+.simgroup .seg button.active { background: var(--sim); color: #160a2e; font-weight: 700; }
+.simgroup .small-btn { padding: 3px 9px; font-size: 12px; }
+.sim-link { color: var(--sim); font-weight: 600; text-decoration: none; white-space: nowrap; padding-right: 4px; }
+
+.toolbar { gap: 0; row-gap: 6px; }
+.tgroup { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-left: 1px solid var(--line); min-height: 32px; }
+.tgroup:first-child { padding-left: 0; border-left: 0; }
+.tlabel { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); white-space: nowrap; }
+.toolbar select, .toolbar button, .toolbar .toggle-btn { height: 30px; font-size: 13px; padding-top: 0; padding-bottom: 0; }
+.toolbar select { padding-left: 8px; padding-right: 6px; max-width: 260px; }
+.toolbar .seg button { height: 28px; }
+.toolbar .icon-btn { width: 30px; padding: 0; }
+.btn-row { display: inline-flex; gap: 3px; }
+#bus-select { font-weight: 700; color: var(--text); min-width: 220px; }
+#bus-select.is-master { border-color: var(--bad); color: var(--bad); }
+
+@media (max-width: 900px) {
+  .tgroup { padding: 0 8px; }
+  .simgroup { flex-wrap: wrap; }
+}
