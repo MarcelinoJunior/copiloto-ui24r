@@ -59,6 +59,15 @@ npm install
 
 O `npm install` baixa **tudo**: o banco (SQLite já vem no Node) e o **ffmpeg** usado no modo Áudio USB (pacote `ffmpeg-static`). Não precisa instalar nada à parte.
 
+### Atalhos na área de trabalho (para quem não usa terminal)
+
+Dê dois cliques em **`Criar atalhos na area de trabalho.bat`** (na pasta do projeto). Aparecem dois ícones:
+
+- **Abrir Copiloto**: na primeira vez instala o que falta (`npm install`), liga o programa numa janela minimizada "Copiloto Ui24R" e abre o painel no navegador. Se já estiver ligado, só abre o painel.
+- **Fechar Copiloto**: desliga o programa.
+
+Não feche a janela minimizada "Copiloto Ui24R" na mão: use o atalho **Fechar Copiloto**. Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
+
 A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**, que é um driver de hardware do Windows. Só é necessário para o modo Áudio USB, e só se o Windows não reconhecer a mesa sozinho.
 
 ## Primeiros passos

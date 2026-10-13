@@ -33,6 +33,8 @@ src/
   mixer/simulator.ts         mesa falsa
   mixer/sim-audio.ts         "USB simulado" (gera áudio de teste, injeta microfonia/zumbido)
 public/                      telas: index (mixagem), analise, conexao, admin (pessoas), login
+scripts/copiloto.ps1         abrir/fechar/criar atalhos (chamado pelos .bat da raiz; PID em data/copiloto.pid)
+scripts/gerar-icones.ps1     desenha os ícones dos atalhos (scripts/icones/*.ico)
 test/                        testes (vitest)
 docs/                        esta documentação
 ```
