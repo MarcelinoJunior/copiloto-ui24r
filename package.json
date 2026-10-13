@@ -1,0 +1,29 @@
+{
+  "name": "copiloto-ui24r",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Copiloto de som para a Soundcraft Ui24R: ajuste automático dos auxiliares da transmissão ao vivo",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "sim": "tsx src/main.ts --sim",
+    "diagnostico": "tsx src/diagnostico.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "rxjs": "^7.8.1",
+    "soundcraft-ui-connection": "^7.0.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}

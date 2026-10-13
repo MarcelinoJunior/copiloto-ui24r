@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copiloto Ui24R</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Copiloto Ui24R</h1>
+      <span id="mixer-info" class="muted"></span>
+    </div>
+    <span id="conn" class="pill">conectando…</span>
+  </header>
+
+  <section class="controls">
+    <div class="modes" role="radiogroup" aria-label="Modo">
+      <button data-mode="desligado">Desligado</button>
+      <button data-mode="observar">Observar</button>
+      <button data-mode="automatico">Automático</button>
+    </div>
+    <p id="mode-help" class="muted"></p>
+    <div class="actions">
+      <button id="capture" class="primary" title="Use quando a live estiver soando bem: o nível atual de cada canal vira o alvo">Gravar mixagem atual como alvo</button>
+      <button id="restore" class="danger" title="Volta todos os envios para a mixagem original do operador">Voltar envios ao original</button>
+      <label class="toggle"><input type="checkbox" id="show-all"> mostrar canais sem envio</label>
+    </div>
+  </section>
+
+  <section id="sim" class="sim" hidden>
+    <strong>Simulador</strong>
+    <span class="muted">Momento do culto:</span>
+    <button data-scene="louvor">Louvor</button>
+    <button data-scene="pregacao">Pregação</button>
+    <button data-scene="avisos">Avisos</button>
+    <button id="sim-reset">Zerar volumes dos músicos</button>
+    <span class="muted">Use os botões "fonte" e "operador" em cada canal para testar.</span>
+  </section>
+
+  <main id="auxes"></main>
+
+  <section class="events">
+    <h2>Acontecimentos</h2>
+    <ul id="events"></ul>
+  </section>
+
+  <template id="aux-tpl">
+    <article class="aux">
+      <header>
+        <h2 class="aux-title"></h2>
+        <div class="aux-out"><span class="muted">saída</span> <div class="meter small"><div class="fill"></div></div> <span class="aux-out-db num"></span></div>
+      </header>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th title="Controle automático ligado para este canal">Auto</th>
+              <th>Canal</th>
+              <th>Estado</th>
+              <th class="meter-col">Peso na live (nível + envio) · alvo</th>
+              <th>Envio</th>
+              <th title="Quanto o software está/estaria mexendo em relação ao envio original">Correção</th>
+              <th>Alvo</th>
+              <th class="sim-col">Simular</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

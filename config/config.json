@@ -1,0 +1,26 @@
+{
+  "mixer": {
+    "ip": "192.168.0.122"
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "streamAuxes": [7],
+  "initialMode": "observar",
+  "leveler": {
+    "tickMs": 500,
+    "gateDB": -50,
+    "averagingSec": 4,
+    "minActiveSec": 2,
+    "releaseSec": 1.5,
+    "deadbandDB": 2,
+    "cutRateDBps": 1.0,
+    "boostRateDBps": 0.4,
+    "maxCutDB": 9,
+    "maxBoostDB": 4,
+    "maxSendDB": 6,
+    "manualHoldSec": 30,
+    "learnFromOperator": true
+  }
+}
