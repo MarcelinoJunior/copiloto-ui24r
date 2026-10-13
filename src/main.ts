@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { App } from './app.js';
+import { App, type Profile, type SourceKind } from './app.js';
 import { loadConfig } from './config.js';
 import { ConnectionStore } from './connection-store.js';
 import { SimulatorAdapter } from './mixer/simulator.js';
@@ -9,28 +9,36 @@ import { startServer } from './server.js';
 import { SessionLog } from './session-log.js';
 import { StateStore } from './state-store.js';
 
-const useSim = process.argv.includes('--sim');
+// npm start      → começa na MESA REAL
+// npm run sim    → começa no SIMULADOR
+// Dá para trocar entre os dois a qualquer momento na tela "Conexão".
+const startKind: SourceKind = process.argv.includes('--sim') ? 'simulador' : 'mesa';
 const cfg = loadConfig();
-// PORT=8081 npm start  → permite rodar simulador e mesa ao mesmo tempo
+// PORT=8081 npm start  → permite rodar duas cópias ao mesmo tempo
 if (process.env.PORT) cfg.server.port = Number(process.env.PORT);
 
 // O endereço escolhido na tela "Conexão" tem prioridade sobre o config/config.json.
 const connStore = new ConnectionStore(resolve('data', 'conexao.json'));
-const ip = useSim ? 'simulador' : connStore.loadIp() ?? cfg.mixer.ip;
+const ip = connStore.loadIp() ?? cfg.mixer.ip;
 
-// Simulador e mesa real guardam alvos e presets separados, para um não bagunçar o outro.
-const store = new StateStore(resolve('data', useSim ? 'estado-simulador.json' : 'estado.json'));
-const presets = new PresetStore(resolve('data', useSim ? 'presets-simulador.json' : 'presets.json'));
-const log = new SessionLog(resolve('data', 'sessoes'), useSim ? 'simulador' : 'mesa');
+// Mesa real e simulador guardam alvos e presets separados, para um não bagunçar o outro.
+const profiles: Record<SourceKind, Profile> = {
+  mesa: { store: new StateStore(resolve('data', 'estado.json')), presets: new PresetStore(resolve('data', 'presets.json')) },
+  simulador: {
+    store: new StateStore(resolve('data', 'estado-simulador.json')),
+    presets: new PresetStore(resolve('data', 'presets-simulador.json')),
+  },
+};
+
+const log = new SessionLog(resolve('data', 'sessoes'), startKind);
 const app = new App(
   cfg,
   {
-    kind: useSim ? 'simulador' : 'mesa',
+    kind: startKind,
     ip,
-    create: (address) => (useSim ? new SimulatorAdapter() : new SoundcraftAdapter(address)),
+    create: (kind, address) => (kind === 'simulador' ? new SimulatorAdapter() : new SoundcraftAdapter(address)),
+    profiles,
   },
-  store,
-  presets,
   log,
   connStore,
 );
@@ -49,8 +57,11 @@ await app.start();
 const panel = `http://${cfg.server.host === '0.0.0.0' ? 'localhost' : cfg.server.host}:${cfg.server.port}`;
 console.log('');
 console.log('  Copiloto Ui24R');
-console.log(`  Mesa:    ${useSim ? 'SIMULADOR' : ip}  (troque na tela Conexão)`);
-console.log(`  Saídas:  escolha no painel (padrão inicial: aux ${cfg.streamAuxes.join(', ')})`);
+console.log(
+  startKind === 'simulador'
+    ? '  Fonte:   SIMULADOR (mesa falsa) — troque para a mesa real na tela Conexão'
+    : `  Fonte:   MESA REAL em ${ip} — troque o IP na tela Conexão`,
+);
 console.log(`  Modo:    ${cfg.initialMode}`);
 console.log(`  Painel:  ${panel}`);
 console.log(`  Conexão: ${panel}/conexao.html`);

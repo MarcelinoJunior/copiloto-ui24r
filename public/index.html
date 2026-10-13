@@ -6,107 +6,101 @@
   <title>Copiloto Ui24R</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <header class="top">
-    <div class="brand">
-      <h1>Copiloto Ui24R</h1>
-      <nav class="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="conexao.html">Conexão</a></nav>
-      <span id="mixer-info" class="muted"></span>
+<body class="mix-page">
+  <header class="topbar">
+    <strong class="logo">Copiloto</strong>
+    <nav class="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="conexao.html">Conexão</a></nav>
+
+    <label class="field" title="Qual saída da mesa aparece e é controlada">
+      <span>Saída</span>
+      <select id="bus-select"></select>
+    </label>
+
+    <div class="seg modes" role="radiogroup" aria-label="Modo">
+      <button data-mode="desligado" title="Só mostra os níveis">Desligado</button>
+      <button data-mode="observar" title="Calcula as correções mas NÃO mexe na mesa">Observar</button>
+      <button data-mode="automatico" title="Ajusta os envios e efeitos devagar, dentro dos limites">Automático</button>
     </div>
-    <a id="conn" class="pill" href="conexao.html" title="Abrir diagnóstico da conexão">conectando…</a>
+
+    <button id="capture" class="primary small-btn" title="Use quando a mixagem estiver soando bem: o nível atual de cada canal vira o alvo">Gravar alvo</button>
+    <button id="restore" class="danger small-btn" title="Volta os envios para a mixagem original (ou do preset carregado)">Voltar ao original</button>
+
+    <div class="field presets">
+      <span>Preset</span>
+      <select id="preset-select" title="Carregar preset (com fade suave)"></select>
+      <button id="preset-new" class="icon-btn" title="Salvar a mixagem atual como novo preset">+</button>
+      <button id="preset-update" class="icon-btn" title="Atualizar o preset ativo com a mixagem atual">↻</button>
+      <button id="preset-delete" class="icon-btn" title="Apagar o preset ativo">×</button>
+    </div>
+
+    <details class="menu">
+      <summary>Exibir</summary>
+      <div class="menu-body">
+        <label><input type="checkbox" id="show-fx" checked> envios de efeito por canal</label>
+        <label><input type="checkbox" id="show-all"> line, player e canais sem envio</label>
+        <label><input type="checkbox" id="show-target" checked> ajuste de alvo (− / +)</label>
+        <div class="seg views">
+          <button data-view="mesa">Mesa</button>
+          <button data-view="tabela">Tabela</button>
+        </div>
+      </div>
+    </details>
+
+    <a id="conn" class="pill" href="conexao.html" title="Abrir a tela de conexão">…</a>
   </header>
 
-  <section class="controls">
-    <div class="row buses">
-      <strong>Controlando</strong>
-      <div id="bus-list" class="bus-list"></div>
-      <span class="muted hint">Clique para ligar/desligar. Par estéreo aparece junto (ex.: AUX 7+8) e é ajustado nos dois lados.</span>
-    </div>
-    <div class="row">
-      <div class="seg modes" role="radiogroup" aria-label="Modo">
-        <button data-mode="desligado">Desligado</button>
-        <button data-mode="observar">Observar</button>
-        <button data-mode="automatico">Automático</button>
-      </div>
-      <div class="actions">
-        <button id="capture" class="primary" title="Use quando a live estiver soando bem: o nível atual de cada canal vira o alvo">Gravar mixagem atual como alvo</button>
-        <button id="restore" class="danger" title="Volta todos os envios para a mixagem original/preset">Voltar ao original</button>
-      </div>
-      <div class="seg views" aria-label="Vista">
-        <button data-view="mesa">Mesa</button>
-        <button data-view="tabela">Tabela</button>
-      </div>
-    </div>
-    <p id="mode-help" class="muted"></p>
-    <div class="row presets">
-      <strong>Presets</strong>
-      <div id="preset-list" class="preset-list"></div>
-      <button id="preset-new" title="Salva a mixagem atual da live (envios, efeitos e alvos) como um novo preset">+ Salvar novo</button>
-      <button id="preset-update" title="Sobrescreve o preset ativo com a mixagem atual">Atualizar ativo</button>
-      <button id="preset-delete" class="ghost" title="Apaga o preset ativo">Apagar ativo</button>
-      <label class="toggle"><input type="checkbox" id="show-fx" checked> envios de efeito por canal</label>
-      <label class="toggle"><input type="checkbox" id="show-all"> mostrar canais sem envio</label>
-    </div>
-  </section>
-
-  <section id="sim" class="sim" hidden>
-    <strong>Simulador</strong>
-    <span class="muted">Momento do culto:</span>
+  <section id="sim" class="simbar" hidden>
+    <strong>SIMULADOR</strong>
+    <span>mesa falsa para testes — nada é enviado para a Ui24R.</span>
+    <span class="sep">Momento:</span>
     <button data-scene="louvor">Louvor</button>
     <button data-scene="pregacao">Pregação</button>
     <button data-scene="avisos">Avisos</button>
-    <button id="sim-reset">Zerar volumes dos músicos</button>
-    <span class="muted">"fonte ±6" em cada canal simula o músico mudando o volume dele.</span>
+    <button id="sim-reset">Zerar músicos</button>
+    <a href="conexao.html" class="simbar-link">Usar a mesa real →</a>
   </section>
 
-  <main id="auxes"></main>
-  <p id="no-bus" class="empty-state" hidden>Nenhuma saída selecionada. Escolha em <strong>Controlando</strong>, lá em cima (ex.: AUX 7+8 da live).</p>
+  <main id="mixer" class="mixer"></main>
+  <p id="no-bus" class="empty-state" hidden>Escolha uma <strong>Saída</strong> lá em cima (ex.: AUX 7+8 da live).</p>
 
-  <section class="events">
-    <h2>Acontecimentos</h2>
-    <ul id="events"></ul>
-  </section>
+  <footer class="statusline">
+    <span id="mode-help" class="muted"></span>
+    <details class="history">
+      <summary id="last-event">—</summary>
+      <ul id="events"></ul>
+    </details>
+  </footer>
 
-  <template id="aux-tpl">
-    <article class="aux">
-      <header>
-        <div>
-          <h2 class="aux-title"></h2>
-          <p class="aux-help"></p>
-        </div>
-        <span class="muted legend">
-          <i class="lg lg-fill"></i> agora
-          <i class="lg lg-avg"></i> média
-          <i class="lg lg-target"></i> alvo
-        </span>
-      </header>
-      <div class="mixer-view">
-        <div class="strips">
-          <div class="group ch-group"></div>
-          <div class="group fx-group"></div>
-          <div class="group master-group"></div>
-        </div>
+  <template id="bus-tpl">
+    <section class="bus">
+      <div class="bus-head">
+        <strong class="bus-title"></strong>
+        <span class="bus-help"></span>
+        <span class="legend"><i class="lg lg-fill"></i>agora <i class="lg lg-avg"></i>média <i class="lg lg-target"></i>alvo</span>
+      </div>
+      <div class="strips mixer-view">
+        <div class="group ch-group"></div>
+        <div class="group fx-group"></div>
+        <div class="group master-group"></div>
       </div>
       <div class="table-view">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th title="Controle automático ligado para este canal">Auto</th>
-                <th>Canal</th>
-                <th>Estado</th>
-                <th class="meter-col">Peso na live (nível + envio) · alvo</th>
-                <th>Envio</th>
-                <th title="Quanto o software está/estaria mexendo em relação ao envio original">Correção</th>
-                <th>Alvo</th>
-                <th class="sim-col">Simular</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Auto</th>
+              <th>Canal</th>
+              <th>Estado</th>
+              <th class="meter-col">Peso na saída (nível + envio) · alvo</th>
+              <th>Envio</th>
+              <th>Correção</th>
+              <th>Alvo</th>
+              <th class="sim-col">Simular</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-    </article>
+    </section>
   </template>
 
   <script src="app.js"></script>

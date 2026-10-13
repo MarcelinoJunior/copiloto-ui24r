@@ -62,13 +62,24 @@ export interface AppSnapshot {
   events: EventEntry[];
   sim?: { scene: Scene; offsets: Record<string, number> };
   health: HealthSnapshot;
+  /** de onde vêm os dados: mesa real (com IP) ou simulador */
+  source: { kind: SourceKind; ip: string };
+}
+
+export type SourceKind = 'mesa' | 'simulador';
+
+/** Mesa real e simulador guardam alvos, saídas e presets separados. */
+export interface Profile {
+  store: StateStore;
+  presets: PresetStore;
 }
 
 export interface MixerTarget {
-  kind: 'mesa' | 'simulador';
+  kind: SourceKind;
+  /** IP da mesa real (guardado mesmo quando está no simulador) */
   ip: string;
-  /** cria o adaptador para um endereço (o simulador ignora o endereço) */
-  create: (ip: string) => MixerAdapter;
+  create: (kind: SourceKind, ip: string) => MixerAdapter;
+  profiles: Record<SourceKind, Profile>;
 }
 
 /** dB vindo do painel: null representa -∞ (JSON não tem -Infinity). */
@@ -94,6 +105,7 @@ export type Command =
   | { type: 'sim.reset' }
   | { type: 'conn.test'; ip: string }
   | { type: 'conn.setIp'; ip: string }
+  | { type: 'conn.useSim' }
   | { type: 'conn.reconnect' };
 
 interface BusController {
@@ -143,26 +155,27 @@ export class App {
   private timers: NodeJS.Timeout[] = [];
   private stopped = false;
   private adapter: MixerAdapter;
+  private kind: SourceKind;
   private ip: string;
-  /** muda a cada troca de endereço; laços de conexão antigos param sozinhos */
+  private store: StateStore;
+  private presets: PresetStore;
+  /** muda a cada troca de mesa; laços de conexão antigos param sozinhos */
   private generation = 0;
   private readonly health: ConnectionHealth;
 
   constructor(
     private readonly cfg: AppConfig,
     private readonly target: MixerTarget,
-    private readonly store: StateStore,
-    private readonly presets: PresetStore,
     private readonly log: SessionLog,
     private readonly connStore: ConnectionStore,
   ) {
     this.mode = cfg.initialMode;
+    this.kind = target.kind;
     this.ip = target.ip;
-    this.health = new ConnectionHealth(
-      { kind: target.kind, ip: target.ip },
-      target.kind === 'simulador' ? async () => Math.round((1 + Math.random() * 4) * 10) / 10 : undefined,
-    );
-    this.adapter = this.attach(target.create(target.ip));
+    this.store = target.profiles[this.kind].store;
+    this.presets = target.profiles[this.kind].presets;
+    this.health = new ConnectionHealth({ kind: this.kind, ip: this.ip });
+    this.adapter = this.attach(target.create(this.kind, this.ip));
   }
 
   private attach(adapter: MixerAdapter): MixerAdapter {
@@ -214,7 +227,7 @@ export class App {
         if (gen !== this.generation) return;
         const detail = err instanceof Error ? err.message : String(err);
         this.setConnection('erro', detail);
-        this.event(`Não consegui conectar na mesa em ${this.ip} (${detail}). Tentando de novo em 5 s…`);
+        this.event(`Não consegui conectar na mesa real em ${this.ip} (${detail}). Tentando de novo em 5 s…`);
         await safeDisconnect(this.adapter);
         await sleep(RETRY_MS);
       }
@@ -227,8 +240,8 @@ export class App {
     this.health.onState(state, detail);
   }
 
-  /** Troca o endereço da mesa: desliga tudo da conexão antiga e conecta no novo. */
-  private async switchMixer(ip: string): Promise<void> {
+  /** Troca de mesa (outro IP, ou mesa real ↔ simulador): desliga tudo da antiga e conecta na nova. */
+  private async switchMixer(kind: SourceKind, ip: string): Promise<void> {
     this.persistIfDirty();
     this.generation++;
     for (const c of this.controllers.values()) c.unsubs.forEach((u) => u());
@@ -239,11 +252,15 @@ export class App {
     this.outLevels = new Map();
     this.wired = false;
     this.mixer = undefined;
+    this.activePresetId = undefined;
     const old = this.adapter;
+    this.kind = kind;
     this.ip = ip;
-    this.adapter = this.attach(this.target.create(ip));
-    this.health.setTarget({ kind: this.target.kind, ip });
-    this.log.write('endereco', { ip });
+    this.store = this.target.profiles[kind].store;
+    this.presets = this.target.profiles[kind].presets;
+    this.adapter = this.attach(this.target.create(kind, ip));
+    this.health.setTarget({ kind, ip });
+    this.log.write('fonte', { kind, ip });
     void this.connectLoop(this.generation);
     // Desligar uma conexão que está tentando reconectar pode nunca terminar: não esperamos por ela.
     await safeDisconnect(old);
@@ -543,10 +560,7 @@ export class App {
           this.event(`Endereço inválido: "${ip}"`);
           return;
         }
-        if (this.target.kind === 'simulador') {
-          this.event('No simulador não há rede para testar. Rode "npm start" para usar a mesa de verdade.');
-          return;
-        }
+        // testar a mesa real funciona mesmo estando no simulador
         void this.health.test(ip);
         break;
       }
@@ -556,18 +570,19 @@ export class App {
           this.event(`Endereço inválido: "${ip}"`);
           return;
         }
-        if (this.target.kind === 'simulador') {
-          this.event('No simulador o endereço não é usado. Rode "npm start" para usar a mesa de verdade.');
-          return;
-        }
         this.connStore.saveIp(ip);
-        this.event(`Endereço da mesa alterado para ${ip}. Conectando…`);
-        void this.switchMixer(ip);
+        this.event(`Usando a MESA REAL em ${ip}. Conectando…`);
+        void this.switchMixer('mesa', ip);
         break;
       }
+      case 'conn.useSim':
+        if (this.kind === 'simulador') return;
+        this.event('Usando o SIMULADOR (mesa falsa). Nada é enviado para a Ui24R.');
+        void this.switchMixer('simulador', this.ip);
+        break;
       case 'conn.reconnect':
-        this.event(`Reconectando em ${this.ip}…`);
-        void this.switchMixer(this.ip);
+        this.event(this.kind === 'mesa' ? `Reconectando na mesa real em ${this.ip}…` : 'Reiniciando o simulador…');
+        void this.switchMixer(this.kind, this.ip);
         break;
     }
   }
@@ -688,6 +703,7 @@ export class App {
       events: this.events.slice(-MAX_EVENTS).reverse(),
       sim: this.sim()?.simState(),
       health: this.health.snapshot(),
+      source: { kind: this.kind, ip: this.ip },
     };
   }
 

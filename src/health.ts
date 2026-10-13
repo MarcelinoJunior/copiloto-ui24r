@@ -12,7 +12,7 @@ import type { ConnectionState } from './mixer/types.js';
  * - Mensagens/s e VU/s: fluxo de dados vindo da mesa.
  */
 
-export type Quality = 'boa' | 'instavel' | 'ruim' | 'sem-conexao';
+export type Quality = 'boa' | 'instavel' | 'ruim' | 'sem-conexao' | 'simulador';
 
 export interface PingSample {
   t: number;
@@ -85,7 +85,6 @@ export class ConnectionHealth {
 
   constructor(
     private target: { kind: 'mesa' | 'simulador'; ip: string },
-    /** no simulador não há rede: o "ping" é simulado */
     private readonly pinger: (ip: string) => Promise<number | null> = (ip) => tcpPing(ip),
   ) {}
 
@@ -107,7 +106,8 @@ export class ConnectionHealth {
     this.lastDataT = undefined;
     this.connectedSince = undefined;
     this.everConnected = false;
-    this.note(`Endereço da mesa: ${target.ip}`);
+    this.reconnects = 0;
+    this.note(target.kind === 'simulador' ? 'Fonte: SIMULADOR (mesa falsa)' : `Fonte: mesa real em ${target.ip}`);
   }
 
   onState(state: ConnectionState, detail?: string): void {
@@ -159,7 +159,8 @@ export class ConnectionHealth {
       lossPct,
       samples: this.samples,
     };
-    const lastDataAgeMs = this.lastDataT === undefined ? undefined : now - this.lastDataT;
+    const lastDataAgeMs =
+      this.lastDataT === undefined || this.target.kind === 'simulador' ? undefined : now - this.lastDataT;
     const { quality, reasons } = this.assess(lastDataAgeMs, ping);
 
     return {
@@ -184,6 +185,12 @@ export class ConnectionHealth {
     age: number | undefined,
     ping: { avgMs?: number; maxMs?: number; lossPct: number },
   ): { quality: Quality; reasons: string[] } {
+    if (this.target.kind === 'simulador') {
+      return {
+        quality: 'simulador',
+        reasons: ['Modo SIMULADOR: os dados vêm de uma mesa falsa. Nenhuma Ui24R está conectada e nada é enviado para ela.'],
+      };
+    }
     if (this.state !== 'conectado') {
       return { quality: 'sem-conexao', reasons: [`Conexão: ${this.state}${this.detail ? ` (${this.detail})` : ''}`] };
     }
@@ -217,7 +224,8 @@ export class ConnectionHealth {
   }
 
   private async pingOnce(): Promise<void> {
-    if (this.pinging) return;
+    // no simulador não há rede: não medimos nada (para não parecer uma conexão real)
+    if (this.pinging || this.target.kind === 'simulador') return;
     this.pinging = true;
     try {
       const ms = await this.pinger(this.target.ip);

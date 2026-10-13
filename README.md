@@ -24,9 +24,9 @@ Ui24R ──(Wi-Fi, WebSocket)──► Copiloto (Node.js neste PC) ──► Pa
 
 Como o VU é medido *antes* do envio, mexer no envio não muda a medição. Por isso o controle não oscila.
 
-### Qual saída o software controla ("Controlando")
+### Qual saída o software controla ("Saída")
 
-No topo do painel você escolhe as saídas, e pode escolher mais de uma:
+Na barra de cima, **Saída** escolhe qual saída da mesa aparece e é controlada, uma por vez, como ao trocar de camada na Ui24R:
 
 - **AUX** (ex.: **AUX 7+8 · LIVE**): o software mexe nos **envios** de cada canal para aquele aux. É o mesmo que você vê na Ui24R ao selecionar o aux. **O salão não muda.**
 - **Par estéreo** (dois auxes em link na mesa) aparece como **uma opção só**, por exemplo AUX 7+8, e os dois lados mudam juntos.
@@ -34,7 +34,14 @@ No topo do painel você escolhe as saídas, e pode escolher mais de uma:
 
 ### O painel (vista "Mesa")
 
-Cada canal aparece como na Ui24R, com **fader vertical** e medidor. Embaixo de cada fader está escrito o que ele controla (ex.: "envio → AUX 7+8" ou "fader no master").
+A tela ocupa a janela inteira:
+- os **24 canais lado a lado**, com faders da altura da janela;
+- os 4 efeitos;
+- **um só master no canto direito**: o do aux escolhido, ou o do salão quando a saída é o master.
+
+A barra de cima tem uma linha só: saída, modo, gravar alvo, presets e o menu **Exibir**. O último acontecimento aparece no rodapé; clique nele para ver o histórico.
+
+Passando o mouse no nome ou no fader, aparece o que ele controla (ex.: "envio do canal para AUX 7+8" ou "fader do canal no master").
 
 - **Fader do canal** = envio daquele canal para a saída escolhida. Ele se move sozinho quando o automático corrige (o botão do fader fica laranja por um instante). Se você arrastar, vale como se tivesse mexido na mesa: o canal fica em "operador" por 30 s e o alvo passa a ser o seu.
 - **Medidor**: verde = nível agora; linha azul = média; linha branca = alvo; faixa clara = tolerância.
@@ -45,16 +52,28 @@ Cada canal aparece como na Ui24R, com **fader vertical** e medidor. Embaixo de c
   - **Laranja** = o efeito também toca no salão: mexer muda o salão **e** a live. Na Ui24R o mesmo efeito alimenta os dois.
   - **Dica:** para ajustar o efeito de cada canal só na live, reserve um dos 4 efeitos para a live. Deixe o retorno dele no master em -∞ e mande só para o aux da live.
 - **Faixas rosa (FX 1–4)**: retorno de cada efeito na saída. **ACOMP.** liga o "efeito acompanha" (abaixo). O selo diz se o efeito toca no "salão + live" ou "só live".
-- **Faixa do master do aux** (à direita): volume geral daquela saída. Não muda o equilíbrio entre os canais.
+- **Faixa do master** (à direita): volume geral daquela saída. Não muda o equilíbrio entre os canais.
+- **Exibir**: liga/desliga os envios de efeito por canal e o ajuste de alvo (para ganhar altura de fader), mostra line/player e troca para a vista **Tabela**.
 
-A vista **Tabela** mostra os canais em linhas.
+### Mesa real ou simulador
+
+O selo no canto superior direito sempre diz de onde vêm os dados:
+- **verde "mesa 192.168.0.122 · 4 ms"** = mesa real;
+- **roxo "SIMULADOR (mesa falsa)"** = simulador.
+
+No simulador também aparece uma faixa roxa logo abaixo da barra de cima. Nada do simulador vai para a Ui24R.
+
+- `npm start` abre na **mesa real**; `npm run sim` abre no **simulador**.
+- Dá para trocar a qualquer momento na tela **Conexão**, sem reiniciar.
+- Alvos, saída escolhida e presets do simulador ficam separados dos da mesa real.
 
 ### Tela "Conexão"
 
-Em **Conexão** (no topo, ou clicando no selo verde da mesa):
+Em **Conexão** (no topo, ou clicando no selo):
 
-- **Endereço da mesa**: digite o IP. **Testar** verifica se a mesa responde nesse endereço sem mudar a conexão atual. **Salvar e conectar** troca de mesa na hora, sem reiniciar o programa. O endereço fica salvo em `data/conexao.json` e tem prioridade sobre o `config/config.json`.
-- **Saúde da conexão**: um selo (boa / instável / ruim / sem conexão) com o motivo, e estes indicadores:
+- **De onde vem o som**: cartão **Mesa real** (com o IP) ou **Simulador**; o que está em uso fica marcado "EM USO".
+- **IP da mesa**: **Testar** verifica se a mesa responde nesse IP sem mudar nada (funciona até no simulador). **Conectar na mesa real** troca na hora. O IP fica salvo em `data/conexao.json` e tem prioridade sobre o `config/config.json`.
+- **Saúde da conexão** (só para a mesa real): um selo (boa / instável / ruim / sem conexão) com o motivo, e estes indicadores:
   - **tempo de resposta** da mesa na rede: atual, média, melhor e pior;
   - **perda** nos testes de rede;
   - **idade do último dado** recebido: se passar de 1 s, o software está "cego";
@@ -120,7 +139,7 @@ Abra http://localhost:8080. O simulador imita uma banda (pastor, ministro, backs
    npm run diagnostico
    ```
    Ele lista os auxes com nome, quantos canais enviam para cada um e a tabela de envios dos auxes 7, 8 e 9. Auxes em **link estéreo** aparecem marcados (ex.: "estéreo com AUX 8").
-3. Se o IP da mesa não for 192.168.0.122, troque na tela **Conexão** do painel. Depois escolha a saída da live em **Controlando** (ex.: AUX 7+8).
+3. Se o IP da mesa não for 192.168.0.122, troque na tela **Conexão** do painel. Depois escolha a saída da live em **Saída** (ex.: AUX 7+8).
 4. Rode:
    ```bash
    npm start
@@ -138,7 +157,7 @@ Abra http://localhost:8080. O simulador imita uma banda (pastor, ministro, backs
 | `mixer.ip` | `192.168.0.122` | IP da mesa |
 | `server.host` | `127.0.0.1` | Use `0.0.0.0` para abrir o painel de um celular/tablet na mesma rede |
 | `server.port` | `8080` | Porta do painel |
-| `streamAuxes` | `[7]` | Saída controlada na primeira vez que o programa abre (depois vale o que você escolher no painel) |
+| `streamAuxes` | `[7]` | Saída mostrada na primeira vez que o programa abre (depois vale a escolhida em **Saída**) |
 | `initialMode` | `observar` | Modo ao abrir o programa |
 | `leveler.gateDB` | `-50` | Abaixo disso o canal é considerado em silêncio |
 | `leveler.averagingSec` | `4` | Janela da média de nível (maior = reage mais devagar e respeita mais a dinâmica da música) |

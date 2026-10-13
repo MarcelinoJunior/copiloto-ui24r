@@ -1,10 +1,11 @@
-// Tela "Conexão": endereço da mesa e saúde da conexão.
+// Tela "Conexão": de onde vem o som (mesa real ou simulador), IP da mesa e saúde da conexão.
 
 const QUALITY = {
-  boa: ['Conexão boa', 'q-good'],
-  instavel: ['Conexão instável', 'q-warn'],
-  ruim: ['Conexão ruim', 'q-bad'],
-  'sem-conexao': ['Sem conexão', 'q-bad'],
+  boa: ['Mesa real · conexão boa', 'q-good'],
+  instavel: ['Mesa real · conexão instável', 'q-warn'],
+  ruim: ['Mesa real · conexão ruim', 'q-bad'],
+  'sem-conexao': ['Mesa real · sem conexão', 'q-bad'],
+  simulador: ['SIMULADOR (mesa falsa)', 'q-sim'],
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -16,7 +17,7 @@ function connect() {
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   socket.onmessage = (ev) => {
     state = JSON.parse(ev.data);
-    render(state.health);
+    render(state);
   };
   socket.onclose = () => {
     const q = $('#quality');
@@ -44,41 +45,51 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 }
 
-function render(h) {
+function render(s) {
+  const h = s.health;
+  const isSim = s.source.kind === 'simulador';
+
   const [label, cls] = QUALITY[h.quality] ?? ['—', ''];
   const q = $('#quality');
   q.className = `quality ${cls}`;
   q.textContent = label;
 
-  const isSim = h.target.kind === 'simulador';
-  $('#target').textContent = isSim ? 'SIMULADOR (sem rede)' : `mesa em ${h.target.ip}`;
-  if (!ipTouched && document.activeElement !== $('#ip')) $('#ip').value = isSim ? '' : h.target.ip;
-  $('#ip').disabled = isSim;
-  document.querySelectorAll('#ip-form button').forEach((b) => (b.disabled = isSim && b.id !== 'reconnect'));
-  if (isSim) $('#ip').placeholder = 'simulador: rode "npm start" para usar a mesa';
+  // cartões "Mesa real" / "Simulador"
+  $('#src-real').classList.toggle('active', !isSim);
+  $('#src-sim').classList.toggle('active', isSim);
+  $('#src-real .now').hidden = isSim;
+  $('#src-sim .now').hidden = !isSim;
+  $('#use-sim').disabled = isSim;
+  $('#use-real').textContent = isSim ? 'Conectar na mesa real' : 'Salvar e reconectar';
+  if (!ipTouched && document.activeElement !== $('#ip')) $('#ip').value = s.source.ip;
 
+  $('#target').textContent = isSim ? 'medindo o SIMULADOR (não há rede)' : `medindo a mesa real em ${s.source.ip}`;
   $('#reasons').innerHTML = h.reasons
-    .map((r) => `<li class="${h.quality === 'boa' ? 'ok' : ''}">${escapeHtml(r)}</li>`)
+    .map((r) => `<li class="${h.quality === 'boa' ? 'ok' : h.quality === 'simulador' ? 'sim' : ''}">${escapeHtml(r)}</li>`)
     .join('');
 
-  $('#t-state').textContent = h.state;
-  $('#t-since').textContent = h.connectedSince ? `há ${duration(Date.now() - h.connectedSince)}` : h.detail ?? '';
-  $('#t-ping').textContent = ms(h.ping.lastMs);
-  $('#t-ping-stats').textContent =
-    h.ping.avgMs === undefined ? 'sem medições' : `média ${ms(h.ping.avgMs)} · melhor ${ms(h.ping.minMs)} · pior ${ms(h.ping.maxMs)}`;
-  $('#t-loss').textContent = `${h.ping.lossPct}%`;
-  $('#t-age').textContent = h.lastDataAgeMs === undefined ? '—' : h.lastDataAgeMs < 1000 ? `${h.lastDataAgeMs} ms` : `${(h.lastDataAgeMs / 1000).toFixed(1)} s`;
-  $('#t-age').className = `tv ${h.lastDataAgeMs > 3000 ? 'bad' : h.lastDataAgeMs > 1000 ? 'warn' : ''}`;
+  $('#t-state').textContent = isSim ? 'simulando' : h.state;
+  $('#t-since').textContent = isSim ? 'mesa falsa' : h.connectedSince ? `há ${duration(Date.now() - h.connectedSince)}` : h.detail ?? '';
+  $('#t-ping').textContent = isSim ? '—' : ms(h.ping.lastMs);
+  $('#t-ping-stats').textContent = isSim
+    ? 'não se aplica ao simulador'
+    : h.ping.avgMs === undefined
+      ? 'sem medições'
+      : `média ${ms(h.ping.avgMs)} · melhor ${ms(h.ping.minMs)} · pior ${ms(h.ping.maxMs)}`;
+  $('#t-loss').textContent = isSim ? '—' : `${h.ping.lossPct}%`;
+  const age = h.lastDataAgeMs;
+  $('#t-age').textContent = age === undefined ? '—' : age < 1000 ? `${age} ms` : `${(age / 1000).toFixed(1)} s`;
+  $('#t-age').className = `tv ${age > 3000 ? 'bad' : age > 1000 ? 'warn' : ''}`;
   $('#t-vu').textContent = h.vuPerSec.toFixed(1);
   $('#t-msg').textContent = isSim ? '—' : h.msgPerSec.toFixed(1);
   $('#t-rec').textContent = String(h.reconnects);
 
-  renderSpark(h.ping.samples);
+  renderSpark(h.ping.samples, isSim);
 
   $('#pc').innerHTML = h.pc.length
     ? h.pc
         .map((p) => `<li><strong>${escapeHtml(p.address)}</strong> <span class="muted">${escapeHtml(p.iface)}</span> ${
-          isSim ? '' : p.sameSubnet ? '<span class="tag ok">mesma rede da mesa</span>' : '<span class="tag">outra rede</span>'
+          p.sameSubnet ? '<span class="tag ok">mesma rede da mesa</span>' : '<span class="tag">outra rede</span>'
         }</li>`)
         .join('')
     : '<li class="muted">Nenhuma rede ativa encontrada</li>';
@@ -98,8 +109,13 @@ function render(h) {
   }
 }
 
-function renderSpark(samples) {
+function renderSpark(samples, isSim) {
   const el = $('#spark');
+  if (isSim) {
+    el.innerHTML = '';
+    $('#spark-max').textContent = 'simulador: sem rede para medir';
+    return;
+  }
   const values = samples.map((s) => s.ms).filter((v) => v !== null);
   const max = Math.max(20, ...values);
   $('#spark-max').textContent = `escala até ${Math.round(max)} ms`;
@@ -109,21 +125,25 @@ function renderSpark(samples) {
     .map((s) => {
       if (!s) return '<i class="empty"></i>';
       if (s.ms === null) return '<i class="fail" title="sem resposta"></i>';
-      const h = Math.max(4, (s.ms / max) * 100);
+      const hgt = Math.max(4, (s.ms / max) * 100);
       const cls = s.ms > 200 ? 'bad' : s.ms > 60 ? 'warn' : '';
-      return `<i class="${cls}" style="height:${h}%" title="${ms(s.ms)}"></i>`;
+      return `<i class="${cls}" style="height:${hgt}%" title="${ms(s.ms)}"></i>`;
     })
     .join('');
 }
 
 $('#ip').addEventListener('input', () => (ipTouched = true));
 $('#test').addEventListener('click', () => send({ type: 'conn.test', ip: $('#ip').value.trim() }));
-$('#reconnect').addEventListener('click', () => send({ type: 'conn.reconnect' }));
+$('#use-sim').addEventListener('click', () => {
+  if (confirm('Trocar para o SIMULADOR? O software deixa de conversar com a mesa real.')) send({ type: 'conn.useSim' });
+});
 $('#ip-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const ip = $('#ip').value.trim();
   if (!ip) return;
-  if (state?.health.target.ip === ip || confirm(`Trocar a mesa para ${ip}? A conexão atual será fechada.`)) {
+  const isSim = state?.source.kind === 'simulador';
+  const msg = isSim ? `Conectar na MESA REAL em ${ip}?` : `Reconectar na mesa real em ${ip}?`;
+  if (confirm(msg)) {
     send({ type: 'conn.setIp', ip });
     ipTouched = false;
   }

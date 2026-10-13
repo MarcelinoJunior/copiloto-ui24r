@@ -16,20 +16,32 @@
   </header>
 
   <section class="card">
-    <h2>Endereço da mesa</h2>
-    <form id="ip-form" class="row ip-form">
-      <label for="ip">IP ou nome da Ui24R</label>
-      <input id="ip" name="ip" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.0.122">
-      <button type="button" id="test">Testar</button>
-      <button type="submit" class="primary">Salvar e conectar</button>
-      <button type="button" id="reconnect" class="ghost">Reconectar</button>
-    </form>
-    <p class="muted small" id="ip-help">
-      "Testar" verifica se a mesa responde nesse endereço, sem mudar a conexão atual.
-      Dicas: no Wi-Fi próprio da Ui24R (hotspot) o endereço costuma ser <code>10.10.1.1</code>;
-      na rede da igreja, veja o IP no roteador ou em Settings › Network da mesa.
-    </p>
-    <p id="test-result" class="test-result" hidden></p>
+    <h2>De onde vem o som</h2>
+    <div class="sources">
+      <div class="source real" id="src-real">
+        <h3>Mesa real (Ui24R) <span class="now" hidden>EM USO</span></h3>
+        <p class="muted small">O software conversa com a mesa de verdade pela rede (Wi-Fi).</p>
+        <form id="ip-form" class="row ip-form">
+          <label for="ip"><strong>IP da mesa</strong></label>
+          <input id="ip" name="ip" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.0.122">
+          <button type="button" id="test" title="Verifica se a mesa responde nesse IP, sem mudar nada">Testar</button>
+          <button type="submit" class="primary" id="use-real">Conectar na mesa real</button>
+        </form>
+        <p id="test-result" class="test-result" hidden></p>
+        <p class="muted small">
+          No Wi-Fi próprio da Ui24R (hotspot) o IP costuma ser <code>10.10.1.1</code>.
+          Na rede da igreja, veja o IP no roteador ou em Settings › Network da mesa.
+        </p>
+      </div>
+      <div class="source sim" id="src-sim">
+        <h3>Simulador <span class="now" hidden>EM USO</span></h3>
+        <p class="muted small">Uma mesa <strong>falsa</strong> para testar o software em casa. Os níveis são inventados e nada é enviado para a Ui24R.</p>
+        <div class="row">
+          <button type="button" id="use-sim">Usar o simulador</button>
+        </div>
+        <p class="muted small">Alvos e presets do simulador ficam separados dos da mesa real.</p>
+      </div>
+    </div>
   </section>
 
   <section class="card">
@@ -45,7 +57,7 @@
       <div class="tile"><span class="tl">Último dado da mesa</span><span class="tv" id="t-age">—</span><span class="ts">ideal: abaixo de 0,5 s</span></div>
       <div class="tile"><span class="tl">VU recebido</span><span class="tv" id="t-vu">—</span><span class="ts">leituras por segundo</span></div>
       <div class="tile"><span class="tl">Mensagens da mesa</span><span class="tv" id="t-msg">—</span><span class="ts">por segundo</span></div>
-      <div class="tile"><span class="tl">Reconexões</span><span class="tv" id="t-rec">—</span><span class="ts">desde que o programa abriu</span></div>
+      <div class="tile"><span class="tl">Reconexões</span><span class="tv" id="t-rec">—</span><span class="ts">desde a última troca de mesa</span></div>
     </div>
 
     <h3>Tempo de resposta — últimos 2 minutos</h3>
@@ -64,7 +76,7 @@
     </div>
     <div>
       <h2>Histórico da conexão</h2>
-      <ul id="history" class="plain history"></ul>
+      <ul id="history" class="plain history-list"></ul>
     </div>
   </section>
 
