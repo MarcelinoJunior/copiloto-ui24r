@@ -1,9 +1,12 @@
 import { analyzeNoise, type FeedbackAlert, FeedbackDetector, Persistence } from './detectors.js';
+import { type EqAdvice, eqAdvice } from './eq-advice.js';
 import { magnitudeSpectrumDb } from './fft.js';
+import { type Identification, SourceIdentifier } from './identify.js';
 import { type LoudnessReading, LoudnessMeter } from './loudness.js';
 import { type ChannelRole, guessRole, type Moment, MomentClassifier } from './moment.js';
 import { type RecordingInfo, MultitrackRecorder } from './recorder.js';
 import { rtaBands, smoothBands } from './rta.js';
+import type { EqState } from '../mixer/eq.js';
 
 /**
  * Motor dos recursos avançados (só no modo Áudio USB): recebe os blocos PCM de todos os canais
@@ -57,6 +60,8 @@ export interface AnalysisSnapshot {
   recording?: RecordingInfo & { seconds: number };
   /** espectro em bandas do canal pedido (painel do canal) */
   rta: Record<string, number[]>;
+  /** que som é cada canal (só canais que já tocaram o bastante) */
+  identified: Record<string, Identification>;
 }
 
 const ANALYZE_EVERY_MS = 200;
@@ -76,6 +81,11 @@ interface ChannelState {
   humInfo?: { freqHz: number; aboveDb: number };
   hissInfo?: { levelDb: number };
   bands?: number[];
+  /** espectro médio (minutos) enquanto o canal toca, para as sugestões de EQ */
+  longBands?: number[];
+  ident: SourceIdentifier;
+  blockSum: number;
+  blockCount: number;
 }
 
 export class AnalysisEngine {
@@ -88,12 +98,15 @@ export class AnalysisEngine {
   /** canais cujo espectro alguém está olhando (painel do canal) */
   readonly wantRta = new Set<string>();
   onMomentChange?: (m: Moment) => void;
+  /** amostras por bloco de 50 ms (identificação de ataques/pausas) */
+  private readonly blockFrames: number;
 
   constructor(
     private settings: AdvancedSettings,
     readonly channels: number,
     private readonly sampleRate = 48000,
   ) {
+    this.blockFrames = Math.round(sampleRate * 0.05);
     for (let i = 0; i < channels; i++) {
       this.ch.push({
         ring: new Float32Array(FFT_SIZE),
@@ -104,6 +117,9 @@ export class AnalysisEngine {
         feedback: new FeedbackDetector(sampleRate, FFT_SIZE),
         hum: new Persistence(2000),
         hiss: new Persistence(5000),
+        ident: new SourceIdentifier(),
+        blockSum: 0,
+        blockCount: 0,
       });
     }
     this.recorder = new MultitrackRecorder(sampleRate);
@@ -146,6 +162,12 @@ export class AnalysisEngine {
         st.ring[keep + (f - start)] = v;
         st.sumSquares += v * v;
         st.count++;
+        st.blockSum += v * v;
+        if (++st.blockCount >= this.blockFrames) {
+          st.ident.pushBlock(Math.max(-100, 10 * Math.log10(st.blockSum / st.blockCount + 1e-12)));
+          st.blockSum = 0;
+          st.blockCount = 0;
+        }
         if (c === li && left) left[f] = v;
         if (c === ri && right) right[f] = v;
       }
@@ -180,14 +202,15 @@ export class AnalysisEngine {
       st.rmsDb = st.count ? Math.max(-100, 10 * Math.log10(st.sumSquares / st.count + 1e-12)) : -100;
       st.sumSquares = 0;
       st.count = 0;
-      const role = this.settings.moment.roles[key] ?? guessRole(this.names[c] ?? '');
+      const role = this.roleOf(c);
       activity.push({ key, role, rmsDb: st.rmsDb });
       if (st.filled < FFT_SIZE) continue;
 
       const wantsRta = this.settings.rta && this.wantRta.has(key);
       const wantsFeedback = this.settings.feedback && st.rmsDb > -60;
       const wantsNoise = this.settings.noise && st.rmsDb > -78 && st.rmsDb < -30;
-      if (!wantsRta && !wantsFeedback && !wantsNoise) {
+      const playing = st.rmsDb > -55; // tocando de verdade: alimenta a identificação e o espectro médio
+      if (!wantsRta && !wantsFeedback && !wantsNoise && !playing) {
         // canal parado: nada a analisar, e os alertas antigos deixam de valer
         st.fbAlert = undefined;
         st.humInfo = undefined;
@@ -198,7 +221,16 @@ export class AnalysisEngine {
       }
       const spec = magnitudeSpectrumDb(st.ring);
 
-      if (wantsRta) st.bands = smoothBands(st.bands, rtaBands(spec, this.sampleRate, FFT_SIZE));
+      if (wantsRta || playing) {
+        const bands = rtaBands(spec, this.sampleRate, FFT_SIZE);
+        if (wantsRta) st.bands = smoothBands(st.bands, bands);
+        if (playing) {
+          st.ident.pushSpectrum(spec, this.sampleRate, FFT_SIZE);
+          // média lenta em dB, relativa ao nível do canal (assim mudar o volume não muda a "cara" do som)
+          const rel = bands.map((b) => b - st.rmsDb);
+          st.longBands = st.longBands ? st.longBands.map((v, i) => v + 0.03 * (rel[i] - v)) : rel;
+        }
+      }
       if (this.settings.feedback) {
         const fb = wantsFeedback ? st.feedback.update(spec, now) : undefined;
         if (fb && !st.fbAlert) st.fbSince = now;
@@ -230,14 +262,50 @@ export class AnalysisEngine {
     this.loudness?.reset();
   }
 
+  /**
+   * Papel do canal: o escolhido na tela Análise; senão pelo nome; senão pelo som identificado
+   * (instrumento identificado vira "instrumento"; voz fica "auto", porque fala e canto se parecem).
+   */
+  private roleOf(c: number): ChannelRole {
+    const key = this.key(c);
+    const set = this.settings.moment.roles[key];
+    if (set) return set;
+    const byName = guessRole(this.names[c] ?? '');
+    if (byName !== 'auto') return byName;
+    const id = this.ch[c]?.ident.identify();
+    if (id && id.type !== 'voz' && id.type !== 'desconhecido') return 'instrumento';
+    return 'auto';
+  }
+
   /** Papel de cada canal (definido ou adivinhado). */
   roles(): Record<string, ChannelRole> {
     const out: Record<string, ChannelRole> = {};
-    for (let c = 0; c < this.channels; c++) {
-      const key = this.key(c);
-      out[key] = this.settings.moment.roles[key] ?? guessRole(this.names[c] ?? '');
-    }
+    for (let c = 0; c < this.channels; c++) out[this.key(c)] = this.roleOf(c);
     return out;
+  }
+
+  /** Que som é o canal ("iN"). */
+  identification(key: string): Identification | undefined {
+    const st = this.ch[Number(key.slice(1)) - 1];
+    if (!st || !key.startsWith('i')) return undefined;
+    const id = st.ident.identify();
+    return id.type === 'desconhecido' ? undefined : id;
+  }
+
+  /** Sugestões de EQ para o canal, pelo espectro médio e pelo tipo de som. */
+  eqAdviceFor(key: string, eq?: EqState): EqAdvice[] {
+    const st = this.ch[Number(key.slice(1)) - 1];
+    const id = this.identification(key);
+    if (!st?.longBands || !id) return [];
+    return eqAdvice(id.type, st.longBands, eq);
+  }
+
+  /** Esquece o que foi aprendido dos canais (troca de mesa/dispositivo). */
+  resetLearning(): void {
+    for (const st of this.ch) {
+      st.ident.reset();
+      st.longBands = undefined;
+    }
   }
 
   snapshot(rtaKeys: Iterable<string> = []): AnalysisSnapshot {
@@ -249,12 +317,15 @@ export class AnalysisEngine {
       hiss: [],
       moment: { state: this.moment.state, since: this.moment.since, candidate: this.moment.candidate?.moment, roles: this.roles() },
       rta: {},
+      identified: {},
     };
     this.ch.forEach((st, i) => {
       const key = this.key(i);
       if (st.fbAlert) out.feedback.push({ key, name: name(i), since: st.fbSince ?? now, ...st.fbAlert });
       if (st.humInfo) out.hum.push({ key, name: name(i), since: now - st.hum.forSec(now) * 1000, ...st.humInfo });
       if (st.hissInfo) out.hiss.push({ key, name: name(i), since: now - st.hiss.forSec(now) * 1000, ...st.hissInfo });
+      const id = st.ident.identify();
+      if (id.type !== 'desconhecido') out.identified[key] = { type: id.type, confidence: Math.round(id.confidence * 100) / 100 };
     });
     for (const key of rtaKeys) {
       const i = Number(key.slice(1)) - 1;

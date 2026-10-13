@@ -1,11 +1,14 @@
 import type { AnalysisSnapshot } from './analysis/engine.js';
+import type { EqAdvice } from './analysis/eq-advice.js';
+import type { SourceType } from './analysis/identify.js';
 import type { ChannelSnapshot, Mode } from './leveler/aux-leveler.js';
 import type { ObsStatus } from './obs.js';
 
 /**
  * Dicas para o operador, a partir do que o software está lendo.
  * Funciona sempre com o VU (clip, volume baixo, ruído constante, saída estourando, automático no
- * limite) e, no modo Áudio USB, acrescenta microfonia, zumbido, chiado, loudness da live e OBS.
+ * limite, equilíbrio de volumes entre os canais) e, no modo Áudio USB, acrescenta microfonia,
+ * zumbido, chiado, sugestões de EQ, loudness da live e OBS.
  */
 
 export type TipSeverity = 'alta' | 'media' | 'baixa';
@@ -61,7 +64,90 @@ export interface TipInput {
   bus?: { bus: number; label: string; mode: Mode; outDB?: number; channels: ChannelSnapshot[] };
   analysis?: AnalysisSnapshot;
   obs?: ObsStatus;
+  /** tipo de som de cada canal (pelo áudio USB ou pelo nome) */
+  types?: Record<string, SourceType>;
+  /** canais que são a voz principal (pelo nome) */
+  leadVoices?: Set<string>;
+  /** sugestões de EQ por canal (modo Áudio USB) */
+  eqAdvice?: { key: string; name: string; advice: EqAdvice[] }[];
   now: number;
+}
+
+/** Mediana de uma lista (não vazia). */
+function median(values: number[]): number {
+  const v = [...values].sort((a, b) => a - b);
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+/**
+ * Equilíbrio entre os canais na saída vista, pelo VU: "quanto cada canal pesa" = nível médio
+ * enquanto toca + envio. Compara com a mediana dos canais tocando e com o tipo de som:
+ * a voz deve ficar acima da banda; um instrumento muito acima dos outros (ou sumido) vira dica.
+ */
+export function balanceTips(
+  bus: NonNullable<TipInput['bus']>,
+  types: Record<string, SourceType> = {},
+  leadVoices: Set<string> = new Set(),
+): Tip[] {
+  const tips: Tip[] = [];
+  const playing = bus.channels.filter(
+    (c) => c.contributionDB !== undefined && !c.muted && !c.key.startsWith('f') && (c.levelDB ?? -100) > -50 && (c.rawDB ?? -100) > -60,
+  );
+  if (playing.length < 3) return tips;
+  const contrib = (c: ChannelSnapshot) => c.contributionDB as number;
+  const voices = playing.filter((c) => types[c.key] === 'voz');
+  const instruments = playing.filter((c) => types[c.key] !== undefined && types[c.key] !== 'voz');
+  const mid = median(playing.map(contrib));
+  const fmt = (d: number) => `${Math.round(d)} dB`;
+
+  for (const c of playing) {
+    const diff = contrib(c) - mid;
+    const isVoice = types[c.key] === 'voz';
+    // a voz principal pode (e deve) ficar acima da média
+    const loudLimit = isVoice ? 14 : 9;
+    if (diff > loudLimit) {
+      const lower = Math.round(diff - (isVoice ? 8 : 4));
+      tips.push({
+        id: `bal-alto:${bus.bus}:${c.key}`,
+        severity: 'media',
+        title: `${c.name}: muito acima dos outros em ${bus.label}`,
+        detail: `Está ${fmt(diff)} acima da média dos canais tocando. Baixe o envio uns ${lower} dB (ou o ganho, se estiver clipando) para não esconder o resto.`,
+        channel: c.key,
+        bus: bus.bus,
+        action: 'canal',
+      });
+    } else if (diff < -15 && types[c.key] !== 'pratos') {
+      tips.push({
+        id: `bal-baixo:${bus.bus}:${c.key}`,
+        severity: 'baixa',
+        title: `${c.name}: quase sumindo em ${bus.label}`,
+        detail: `Está ${fmt(-diff)} abaixo da média dos canais tocando: na live quase não aparece. Se deveria ser ouvido, suba o envio uns ${Math.round(-diff - 10)} dB.`,
+        channel: c.key,
+        bus: bus.bus,
+        action: 'canal',
+      });
+    }
+  }
+
+  if (voices.length && instruments.length >= 2) {
+    const named = voices.filter((v) => leadVoices.has(v.key));
+    const lead = (named.length ? named : voices).reduce((a, b) => (contrib(b) > contrib(a) ? b : a));
+    const band = median(instruments.map(contrib));
+    const gap = contrib(lead) - band;
+    if (gap < 2) {
+      tips.push({
+        id: `bal-voz:${bus.bus}`,
+        severity: 'media',
+        title: `${lead.name}: voz encoberta pela banda em ${bus.label}`,
+        detail: `A voz está ${gap >= 0 ? `só ${fmt(gap)} acima` : `${fmt(-gap)} abaixo`} da média dos instrumentos. Na live a voz costuma ficar 3 a 6 dB acima: suba a voz uns ${Math.round(4 - gap)} dB ou baixe a banda. Se o som estiver embolado, tire um pouco de 250–400 Hz dos instrumentos no EQ em vez de só subir volume.`,
+        channel: lead.key,
+        bus: bus.bus,
+        action: 'canal',
+      });
+    }
+  }
+  return tips;
 }
 
 const ORDER: Record<TipSeverity, number> = { alta: 0, media: 1, baixa: 2 };
@@ -120,7 +206,7 @@ export function computeTips(input: TipInput): Tip[] {
         tips.push({
           id: `limit:${bus.bus}:${ch.key}`,
           severity: 'media',
-          title: `${ch.name}: automático no limite em ${bus.label}`,
+          title: `${ch.name}: ajuste automático no limite em ${bus.label}`,
           detail: 'O canal precisaria de mais correção do que o permitido. Ajuste o ganho ou a mixagem base desse canal.',
           channel: ch.key,
           bus: bus.bus,
@@ -130,12 +216,35 @@ export function computeTips(input: TipInput): Tip[] {
         tips.push({
           id: `notarget:${bus.bus}:${ch.key}`,
           severity: 'baixa',
-          title: `${ch.name}: sem alvo`,
-          detail: `O automático está ligado em ${bus.label}, mas este canal não tem alvo. Clique em "Gravar" (Alvo) com a mixagem boa.`,
+          title: `${ch.name}: sem volume ideal`,
+          detail: `O ajuste automático está ligado em ${bus.label}, mas este canal não tem volume ideal. Clique em "Gravar volumes atuais" com a mixagem boa.`,
           channel: ch.key,
           bus: bus.bus,
         });
       }
+    }
+    tips.push(...balanceTips(bus, input.types, input.leadVoices));
+  }
+
+  // EQ: uma dica por canal só quando são poucos; muitos canais viram uma dica só (não poluir a lista)
+  const eqList = (input.eqAdvice ?? []).filter((e) => e.advice.length);
+  if (eqList.length > 3) {
+    tips.push({
+      id: 'eq:varios',
+      severity: 'baixa',
+      title: `Sugestões de EQ em ${eqList.length} canais`,
+      detail: `${eqList.map((e) => e.name).join(', ')}. Abra cada canal (clique no nome) para ver a curva, o espectro e aplicar com um clique.`,
+    });
+  } else {
+    for (const e of eqList) {
+      tips.push({
+        id: `eq:${e.key}`,
+        severity: 'baixa',
+        title: `${e.name}: sugestão de EQ`,
+        detail: `${e.advice.map((a) => a.text).join(' ')} Abra o canal para ver a curva e aplicar com um clique.`,
+        channel: e.key,
+        action: 'canal',
+      });
     }
   }
 

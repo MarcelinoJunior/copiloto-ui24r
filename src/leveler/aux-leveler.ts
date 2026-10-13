@@ -35,6 +35,8 @@ export interface ChannelSnapshot {
   /** nível médio do canal enquanto toca */
   levelDB?: number;
   sendDB?: number;
+  /** envio mutado na mesa (o fader continua onde está) */
+  muted: boolean;
   baseSendDB?: number;
   targetDB?: number;
   /** quanto o canal pesa no aux agora (nível + envio) */
@@ -373,6 +375,7 @@ export class AuxLeveler {
         rawDB: ch.rawDB === undefined ? undefined : round1(ch.rawDB),
         levelDB: level === undefined ? undefined : round1(level),
         sendDB: sendDB === undefined || !Number.isFinite(sendDB) ? undefined : round1(sendDB),
+        muted: ch.send?.muted ?? false,
         baseSendDB:
           ch.baseSendDB === undefined || !Number.isFinite(ch.baseSendDB) ? undefined : round1(ch.baseSendDB),
         targetDB: ch.targetDB,

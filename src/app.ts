@@ -6,7 +6,10 @@ import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
 import { resolve } from 'node:path';
 import { type AdvancedSettings, type AnalysisSnapshot, AnalysisEngine, DEFAULT_ADVANCED } from './analysis/engine.js';
+import type { EqAdvice } from './analysis/eq-advice.js';
+import { isLeadVoiceName, SOURCE_LABEL, type SourceType, TYPE_OFFSET_DB, typeFromName } from './analysis/identify.js';
 import type { ChannelRole, Moment } from './analysis/moment.js';
+import { type EqState, eqFromRaw, eqParamToRaw, isEqParam } from './mixer/eq.js';
 import { type AudioSource, detectUsbAudio, UsbAudioCapture, type UsbDetection } from './levels/usb-audio.js';
 import { SimulatedAudio } from './mixer/sim-audio.js';
 import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
@@ -104,6 +107,21 @@ export interface ChannelDetail {
   preamp?: { gainDB: number; phantom: boolean; gainAllowed: boolean; phantomAllowed: boolean };
   /** espectro em bandas de 1/3 de oitava (só no modo Áudio USB) */
   rta?: number[];
+  /** envio mutado na saída que a pessoa está vendo */
+  muted: boolean;
+  /** que som é o canal: pelo áudio (modo USB) ou pelo nome */
+  identified?: ChannelIdentity;
+  /** equalizador do canal (só entradas). Valores convertidos da escala 0..1 da mesa (aproximados). */
+  eq?: EqState & { allowed: boolean };
+  /** sugestões de EQ pelo espectro médio (modo Áudio USB) */
+  eqAdvice?: EqAdvice[];
+}
+
+export interface ChannelIdentity {
+  type: SourceType;
+  label: string;
+  confidence: number;
+  by: 'audio' | 'nome';
 }
 
 /** Recursos avançados (modo Áudio USB): configuração visível no painel (sem a senha do OBS). */
@@ -164,6 +182,10 @@ export type Command =
   | { type: 'setBusMaster'; bus: number; db: WireDB }
   | { type: 'setFxSend'; fx: string; key: string; db: WireDB }
   | { type: 'setFxFollow'; bus: number; key: string; follow: boolean }
+  | { type: 'setMute'; bus: number; key: string; muted: boolean }
+  | { type: 'setEq'; key: string; param: string; value: number }
+  | { type: 'eq.apply'; key: string; adviceId: string }
+  | { type: 'suggestTargets'; bus: number }
   | { type: 'preset.save'; bus: number; name: string; id?: string }
   | { type: 'preset.load'; bus: number; id: string }
   | { type: 'preset.delete'; id: string }
@@ -257,6 +279,8 @@ export class App {
   private usbDetection?: UsbDetection;
   /** ganho/phantom de cada entrada */
   private readonly preamps = new Map<string, { gainDB: number; phantom: boolean }>();
+  /** EQ de cada entrada, como a mesa guarda (0..1) */
+  private readonly eqRaw = new Map<string, Record<string, number>>();
   /** histórico curto do nível de cada canal, para as dicas */
   private readonly stats = new Map<string, ChannelStats>();
   private advanced: AdvancedSettings = structuredClone(DEFAULT_ADVANCED);
@@ -354,6 +378,7 @@ export class App {
     this.fxSends.clear();
     this.fxInRoom.clear();
     this.preamps.clear();
+    this.eqRaw.clear();
     this.stats.clear();
     this.stopAdvanced();
     this.usbCapture?.stop();
@@ -396,7 +421,9 @@ export class App {
     }
 
     for (const ch of channels) {
-      if (ch.kind === 'i') this.adapter.watchPreamp(ch.key, (p) => this.preamps.set(ch.key, p));
+      if (ch.kind !== 'i') continue;
+      this.adapter.watchPreamp(ch.key, (p) => this.preamps.set(ch.key, p));
+      this.adapter.watchEq(ch.key, (raw) => this.eqRaw.set(ch.key, raw));
     }
     this.advanced = mergeAdvanced(this.persisted.advanced);
 
@@ -675,8 +702,56 @@ export class App {
     if (user.role === 'admin' || canUseBus(user, MASTER_BUS)) return true;
     if (this.fxInRoom.get(fxKey)) return false;
     return [...this.controllers.values()].some(
-      (c) => c.bus !== MASTER_BUS && canUseBus(user, c.bus) && c.follower.snapshot().some((f) => f.key === fxKey && f.sendDB !== undefined),
+      (c) => c.bus !== MASTER_BUS && canUseBus(user, c.bus) && c.follower.snapshot().some((f) => f.key === fxKey && f.sendDB !== undefined && !f.muted),
     );
+  }
+
+  /** EQ muda o canal em TODAS as saídas (salão, auxes, gravação): admin ou quem tem o master. */
+  private canEditEq(user: User): boolean {
+    return user.role === 'admin' || canUseBus(user, MASTER_BUS);
+  }
+
+  private requireEq(ctx: ClientCtx, key: string): void {
+    if (!this.canEditEq(ctx.user)) throw new CommandError('O EQ muda o salão e todas as saídas: só o admin ou quem tem o master pode mexer.');
+    if (!/^i\d{1,2}$/.test(key) || !this.eqRaw.has(key)) throw new CommandError('Só canais de entrada têm equalizador.');
+  }
+
+  private eqState(key: string): EqState | undefined {
+    const raw = this.eqRaw.get(key);
+    return raw ? eqFromRaw(raw) : undefined;
+  }
+
+  /** Que som é o canal: pelo áudio USB (quando já deu para ouvir) ou pelo nome. */
+  identityOf(key: string): ChannelIdentity | undefined {
+    const byAudio = key.startsWith('i') ? this.engine?.identification(key) : undefined;
+    if (byAudio) return { type: byAudio.type, label: SOURCE_LABEL[byAudio.type], confidence: Math.round(byAudio.confidence * 100) / 100, by: 'audio' };
+    const type = typeFromName(this.channelName(key));
+    return type === 'desconhecido' ? undefined : { type, label: SOURCE_LABEL[type], confidence: 0.5, by: 'nome' };
+  }
+
+  /**
+   * Volume ideal sugerido pelo tipo de som: a voz principal é a referência e cada tipo fica
+   * alguns dB abaixo dela (TYPE_OFFSET_DB). Só canais tocando agora, ligados e sem mute.
+   */
+  private suggestTargets(c: BusController, now: number): { count: number; lead: string } {
+    const chans = c.leveler
+      .snapshot(now)
+      .filter((ch) => ch.enabled && !ch.muted && ch.contributionDB !== undefined && !ch.key.startsWith('f'))
+      .map((ch) => ({ ch, id: this.identityOf(ch.key) }));
+    const voices = chans.filter((x) => x.id?.type === 'voz');
+    if (!voices.length) throw new CommandError('Nenhuma voz tocando agora para servir de referência. Use com a banda e a voz principal tocando.');
+    const named = voices.filter((x) => isLeadVoiceName(x.ch.name));
+    const pool = named.length ? named : voices;
+    const lead = pool.reduce((a, b) => ((b.ch.contributionDB ?? -100) > (a.ch.contributionDB ?? -100) ? b : a));
+    const ref = lead.ch.targetDB ?? lead.ch.contributionDB!;
+    let count = 0;
+    for (const { ch, id } of chans) {
+      if (!id || id.type === 'desconhecido') continue;
+      const offset = ch.key === lead.ch.key ? 0 : TYPE_OFFSET_DB[id.type];
+      c.leveler.setTarget(ch.key, ref + offset);
+      count++;
+    }
+    return { count, lead: lead.ch.name };
   }
 
   private remember(ctx: ClientCtx, bus: number, key: string): void {
@@ -748,6 +823,45 @@ export class App {
         this.remember(ctx, cmd.bus, cmd.key);
         this.adapter.setSendDB(cmd.bus, cmd.key, fromWire(cmd.db));
         return;
+      case 'setMute': {
+        this.requireBus(ctx, cmd.bus);
+        if (!/^[ilpf]\d{1,2}$/.test(cmd.key)) throw new CommandError('Canal inválido.');
+        this.remember(ctx, cmd.bus, cmd.key);
+        this.adapter.setSendMute(cmd.bus, cmd.key, Boolean(cmd.muted));
+        const onde = cmd.bus === MASTER_BUS ? 'no salão' : `em ${this.labelOf(cmd.bus)}`;
+        this.event(`${who}: ${this.channelName(cmd.key)} ${cmd.muted ? 'MUTADO' : 'sem mute'} ${onde}`, `mute:${cmd.bus}:${cmd.key}`);
+        this.log.write('mute', { bus: cmd.bus, key: cmd.key, muted: Boolean(cmd.muted), quem: who });
+        return;
+      }
+      case 'setEq': {
+        this.requireEq(ctx, cmd.key);
+        if (!isEqParam(cmd.param)) throw new CommandError('Parâmetro de EQ inválido.');
+        const value = Number(cmd.value);
+        if (!Number.isFinite(value)) throw new CommandError('Valor de EQ inválido.');
+        this.adapter.setEqRaw(cmd.key, cmd.param, eqParamToRaw(cmd.param, value));
+        this.event(`${who}: EQ de ${this.channelName(cmd.key)} (${eqParamLabel(cmd.param)} → ${eqValueLabel(cmd.param, value)})`, `eq:${cmd.key}:${cmd.param}`);
+        this.log.write('eq', { key: cmd.key, param: cmd.param, value, quem: who });
+        return;
+      }
+      case 'eq.apply': {
+        this.requireEq(ctx, cmd.key);
+        const eq = this.eqState(cmd.key);
+        const advice = this.engine?.eqAdviceFor(cmd.key, eq).find((a) => a.id === cmd.adviceId);
+        if (!advice) throw new CommandError('Essa sugestão não vale mais (o som do canal mudou).');
+        if (eq?.bypass) this.adapter.setEqRaw(cmd.key, 'bypass', 0);
+        for (const ch of advice.changes) this.adapter.setEqRaw(cmd.key, ch.param, eqParamToRaw(ch.param, ch.value));
+        this.event(`${who}: sugestão de EQ aplicada em ${this.channelName(cmd.key)} — ${advice.text}`);
+        this.log.write('eq', { key: cmd.key, sugestao: advice.id, mudancas: advice.changes, quem: who });
+        return;
+      }
+      case 'suggestTargets': {
+        const c = this.requireBus(ctx, cmd.bus);
+        const r = this.suggestTargets(c, now);
+        this.dirty = true;
+        this.event(`${who}: volumes ideais de ${this.labelOf(c.bus)} sugeridos pelo tipo de som (${r.count} canais, referência: ${r.lead})`);
+        this.log.write('alvos-por-tipo', { bus: c.bus, canais: r.count, referencia: r.lead, quem: who, alvos: c.leveler.exportPersisted() });
+        return;
+      }
       case 'setBusMaster':
         this.requireBus(ctx, cmd.bus);
         this.adapter.setBusMasterDB(cmd.bus, fromWire(cmd.db));
@@ -792,7 +906,7 @@ export class App {
       }
       case 'sim.scene':
         this.sim()?.setScene(cmd.scene);
-        this.event(`[simulador] Momento: ${cmd.scene}`);
+        this.event(`[simulador] Momento: ${{ louvor: 'música', pregacao: 'fala', avisos: 'avisos' }[cmd.scene] ?? cmd.scene}`);
         return;
       case 'sim.source':
         this.sim()?.changeSource(cmd.key, clampDelta(cmd.delta));
@@ -1121,7 +1235,31 @@ export class App {
       bus: bus && { bus: bus.bus, label: bus.label, mode: bus.mode, outDB: bus.outDB, channels: bus.channels },
       analysis: this.analysisSnapshot(now),
       obs: this.engine && this.advanced.obs.enabled ? this.obs.status : undefined,
+      ...this.soundInfo(now),
     }).filter((t) => t.bus === undefined || canUseBus(user, t.bus));
+  }
+
+  /** Tipos de som, vozes principais e sugestões de EQ (para as dicas), recalculados 1×/s. */
+  private soundCache?: { t: number; info: Pick<Parameters<typeof computeTips>[0], 'types' | 'leadVoices' | 'eqAdvice'> };
+
+  private soundInfo(now: number) {
+    if (this.soundCache && now - this.soundCache.t < 1000) return this.soundCache.info;
+    const types: Record<string, SourceType> = {};
+    const leadVoices = new Set<string>();
+    const eqAdvice: { key: string; name: string; advice: EqAdvice[] }[] = [];
+    for (const ch of this.adapter.listChannels()) {
+      const name = this.channelName(ch.key);
+      const id = this.identityOf(ch.key);
+      if (id) types[ch.key] = id.type;
+      if (isLeadVoiceName(name)) leadVoices.add(ch.key);
+      if (this.engine && ch.kind === 'i') {
+        const advice = this.engine.eqAdviceFor(ch.key, this.eqState(ch.key));
+        if (advice.length) eqAdvice.push({ key: ch.key, name, advice });
+      }
+    }
+    const info = { types, leadVoices, eqAdvice };
+    this.soundCache = { t: now, info };
+    return info;
   }
 
   /** Pedidos de espectro (painel do canal aberto): a análise só calcula o RTA de quem está sendo visto. */
@@ -1191,6 +1329,10 @@ export class App {
           }
         : undefined,
       rta: this.analysisSnapshot(now)?.rta[key],
+      muted: ch.muted,
+      identified: this.identityOf(key),
+      eq: this.eqRaw.has(key) ? { ...this.eqState(key)!, allowed: this.canEditEq(ctx.user) } : undefined,
+      eqAdvice: this.engine?.eqAdviceFor(key, this.eqState(key)),
     };
   }
 
@@ -1233,6 +1375,22 @@ function fromWire(db: WireDB): number {
 
 function fmt(db: number): string {
   return Number.isFinite(db) ? db.toFixed(1) : '-∞';
+}
+
+const EQ_BAND_NAME: Record<string, string> = { b1: 'banda 1', b2: 'banda 2', b3: 'banda 3', b4: 'banda 4' };
+
+function eqParamLabel(param: string): string {
+  if (param === 'bypass') return 'bypass';
+  if (param === 'hpf.freq') return 'passa-altas';
+  const [band, what] = param.split('.');
+  return `${EQ_BAND_NAME[band] ?? band} ${what === 'freq' ? 'frequência' : what === 'gain' ? 'ganho' : 'Q'}`;
+}
+
+function eqValueLabel(param: string, value: number): string {
+  if (param === 'bypass') return value ? 'ligado (EQ desligado)' : 'desligado (EQ ligado)';
+  if (param.endsWith('.gain')) return `${value > 0 ? '+' : ''}${value.toFixed(1)} dB`;
+  if (param.endsWith('.q')) return value.toFixed(2);
+  return value >= 1000 ? `${(value / 1000).toFixed(1)} kHz` : `${Math.round(value)} Hz`;
 }
 
 function clampDelta(delta: number): number {

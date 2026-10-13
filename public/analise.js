@@ -102,7 +102,7 @@ function render(s) {
 
   // ---- fala × música ----
   const m = a?.moment;
-  const label = { fala: 'FALA (pregação/avisos)', musica: 'MÚSICA (louvor)', silencio: 'silêncio' };
+  const label = { fala: 'FALA', musica: 'MÚSICA', silencio: 'silêncio' };
   $('#m-state').textContent = !adv.active
     ? '—'
     : !set.moment.enabled
@@ -176,14 +176,18 @@ function renderAuto(adv) {
 function renderRoles(adv, isAdmin) {
   const box = $('#m-roles');
   const roles = adv.analysis?.moment.roles ?? {};
-  const sig = JSON.stringify([adv.channels, roles, adv.settings.moment.roles, isAdmin]);
+  const heard = adv.analysis?.identified ?? {};
+  const sig = JSON.stringify([adv.channels, roles, adv.settings.moment.roles, isAdmin, heard]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  const names = { auto: 'automático', fala: 'fala', canto: 'canto', instrumento: 'instrumento', ignorar: 'ignorar' };
+  const names = { auto: 'automático (pelo som)', fala: 'fala', canto: 'canto', instrumento: 'instrumento', ignorar: 'ignorar' };
+  const SOUND = { voz: 'voz', bumbo: 'bumbo', caixa: 'caixa', pratos: 'pratos/overhead', baixo: 'baixo', harmonico: 'violão/guitarra/teclado' };
   box.innerHTML = adv.channels
     .map((c) => {
       const role = adv.settings.moment.roles[c.key] ?? roles[c.key] ?? 'auto';
-      return `<label class="role"><span><span class="muted">${c.key}</span> ${escapeHtml(c.name)}</span>
+      const h = heard[c.key];
+      const tag = h ? ` <span class="heard" title="Reconhecido pelo áudio (${Math.round(h.confidence * 100)}%)">ouvido: ${SOUND[h.type] ?? h.type}</span>` : '';
+      return `<label class="role"><span><span class="muted">${c.key}</span> ${escapeHtml(c.name)}${tag}</span>
         <select data-role="${c.key}" ${isAdmin ? '' : 'disabled'}>${Object.entries(names)
           .map(([v, t]) => `<option value="${v}" ${v === role ? 'selected' : ''}>${t}</option>`)
           .join('')}</select></label>`;

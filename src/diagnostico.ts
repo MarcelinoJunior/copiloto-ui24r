@@ -1,11 +1,13 @@
 /**
  * Diagnóstico da mesa: conecta, lê tudo por alguns segundos e imprime um resumo.
- * Serve para descobrir qual aux é o da transmissão e conferir se a leitura de VU funciona.
+ * Serve para descobrir qual aux é o da transmissão, conferir se a leitura de VU funciona e
+ * mostrar o EQ do canal 1 (valores brutos 0..1 da mesa) para calibrar a escala do equalizador.
  *
  *   npm run diagnostico               (usa o IP do config/config.json)
  *   npm run diagnostico -- 192.168.0.122
  */
 import { loadConfig } from './config.js';
+import { eqFromRaw } from './mixer/eq.js';
 import { SoundcraftAdapter } from './mixer/soundcraft-adapter.js';
 import type { SendInfo } from './mixer/types.js';
 
@@ -33,6 +35,9 @@ const sends = new Map<string, SendInfo>();
 for (let aux = 1; aux <= info.auxCount; aux++) {
   for (const ch of channels) adapter.watchSend(aux, ch.key, (s) => sends.set(`${aux}:${ch.key}`, s));
 }
+
+let eqRaw: Record<string, number> = {};
+if (channels.some((c) => c.key === 'i1')) adapter.watchEq('i1', (raw) => (eqRaw = raw));
 
 const peaks = new Map<string, number>();
 const auxPeaks = new Map<number, number>();
@@ -78,6 +83,14 @@ for (const ch of channels) {
   console.log(`${ch.key.padEnd(4)}${ch.name.slice(0, 17).padEnd(18)}${fmt(peaks.get(ch.key))}  ${cells.join(' ')}`);
 }
 console.log('\nLegenda: M = envio mutado, P = pós-fader, p = pré-fader. Canais sem envio para esses auxes foram omitidos.');
+const eq = eqFromRaw(eqRaw);
+console.log('\n== EQ do canal 1 (para calibrar) ==');
+console.log(`bruto (0..1): ${JSON.stringify(eqRaw)}`);
+console.log(
+  `convertido ≈ HPF ${Math.round(eq.hpfHz)} Hz | ` +
+    eq.bands.map((b) => `${b.band}: ${Math.round(b.freqHz)} Hz ${b.gainDB.toFixed(1)} dB Q ${b.q.toFixed(2)}`).join(' | '),
+);
+console.log('Compare com o EQ do canal 1 na interface web da mesa. Se não bater, ajuste as constantes em src/mixer/eq.ts.\n');
 console.log('Dica: no painel, um par estéreo (ex.: AUX 7+8) aparece como uma opção só; o software mexe nos dois juntos.');
 
 await adapter.disconnect();

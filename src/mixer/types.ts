@@ -90,6 +90,11 @@ export interface MixerAdapter {
   /** Envio de um canal (ou retorno de efeito, "fN") para um bus. No master, é o fader do canal. */
   watchSend(bus: number, key: string, cb: (info: SendInfo) => void): Unsubscribe;
   setSendDB(bus: number, key: string, db: number): void;
+  /** Mute do envio para o bus (no master: mute do canal). */
+  setSendMute(bus: number, key: string, muted: boolean): void;
+  /** EQ do canal de entrada ("iN"): valores brutos 0..1 como a mesa guarda (ver mixer/eq.ts). */
+  watchEq(key: string, cb: (raw: Record<string, number>) => void): Unsubscribe;
+  setEqRaw(key: string, param: string, value: number): void;
   /** Envio de um canal para um efeito (quanto do canal entra no reverb/delay). Vale para salão E live. */
   watchFxSend(fx: number, key: string, cb: (db: number) => void): Unsubscribe;
   setFxSendDB(fx: number, key: string, db: number): void;

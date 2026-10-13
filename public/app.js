@@ -6,7 +6,7 @@
 const STATUS_LABEL = {
   desabilitado: 'manual',
   'sem-envio': 'sem envio',
-  'sem-alvo': 'sem alvo',
+  'sem-alvo': 'sem ideal',
   manual: 'operador',
   transicao: 'preset',
   silencio: 'silêncio',
@@ -28,20 +28,20 @@ const FX_STATUS_LABEL = {
 const STATUS_HELP = {
   desabilitado: 'Automático desligado neste canal (AUTO)',
   'sem-envio': 'O envio deste canal para a saída está fechado ou mutado',
-  'sem-alvo': 'Ainda sem alvo: use "Gravar alvo" com o canal tocando',
+  'sem-alvo': 'Ainda sem volume ideal: use "Gravar volumes atuais" com o canal tocando',
   manual: 'Você mexeu há pouco: o automático espera antes de agir',
   transicao: 'Carregando preset (fade)',
   silencio: 'Canal em silêncio: o automático não sobe (evita ruído)',
   aguardando: 'Começou a tocar agora: aguardando estabilizar',
-  ok: 'Dentro do alvo',
-  corrigindo: 'Fora do alvo: corrigindo devagar',
+  ok: 'No volume ideal',
+  corrigindo: 'Fora do volume ideal: corrigindo devagar',
   'no-limite': 'Precisaria de mais correção do que o limite permite',
 };
 
 const MODE_HELP = {
-  desligado: 'Desligado nesta saída: só mostra os níveis. Os faders daqui funcionam como na mesa.',
-  observar: 'Observar nesta saída: calcula as correções mas NÃO mexe na mesa.',
-  automatico: 'Automático nesta saída: ajustando envios e efeitos devagar, dentro dos limites.',
+  desligado: 'Ajuste automático DESLIGADO nesta saída: só mostra os níveis. Os faders daqui funcionam como na mesa.',
+  observar: 'Ajuste automático em SÓ SUGERIR: embaixo de cada fader aparece quanto ele mexeria, sem mexer na mesa.',
+  automatico: 'Ajuste automático LIGADO: os envios estão sendo corrigidos devagar para cada canal ficar no volume ideal.',
 };
 
 const MASTER_BUS = 0;
@@ -433,6 +433,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     <div class="strip-sub"><span class="status"></span></div>
     <div class="strip-tag"><span class="tag-text"></span></div>
     <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
+    <button class="mute-btn" type="button">MUTE</button>
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
       ${scaleHtml()}
@@ -451,6 +452,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     name: $('.strip-name', el),
     status: $('.status', el),
     toggle: $('.auto-btn', el),
+    mute: $('.mute-btn', el),
     fill: $('.fill', el),
     avg: $('.avg', el),
     target: $('.target', el),
@@ -460,6 +462,18 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     delta: $('.delta', el),
     tag: $('.tag-text', el),
   };
+}
+
+/** Botão MUTE da faixa: liga/desliga o mute do envio desta saída (no master, o mute do canal). */
+function bindMute(strip, bus, key) {
+  const where = bus.bus === MASTER_BUS ? 'no salão (mute do canal na mesa)' : `em ${bus.label} (só nesta saída)`;
+  strip.mute.title = `Muta/desmuta ${where}`;
+  strip.mute.addEventListener('click', () => send({ type: 'setMute', bus: bus.bus, key, muted: !strip.mute.classList.contains('on') }));
+}
+
+function setMuted(strip, muted) {
+  strip.mute.classList.toggle('on', muted);
+  strip.el.classList.toggle('muted', muted);
 }
 
 /** Número que aparece embaixo do fader: 1, 2… (entradas), L1/P1 (line/player), FX1… */
@@ -506,6 +520,7 @@ function createChannelStrip(bus, ch) {
     if (!$('#expand').checked) return toast('Ligue "Expandir canal" (barra de cima) para abrir os controles do canal.');
     openDetail(ch.key);
   });
+  bindMute(strip, bus, ch.key);
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: ch.key, db }));
   return strip;
 }
@@ -533,6 +548,7 @@ function updateChannelStrip(strip, ch, s) {
   strip.el.classList.toggle('off', !ch.enabled);
   if (!strip.el.hidden) setStripName(strip, ch.name);
   strip.toggle.classList.toggle('on', ch.enabled);
+  setMuted(strip, ch.muted);
   const phantom = s.phantom?.includes(ch.key);
   strip.tag.textContent = phantom ? '48V' : '';
   strip.tag.className = `tag-text ${phantom ? 'p48' : ''}`;
@@ -570,6 +586,7 @@ function createFxStrip(bus, fx) {
   strip.toggle.addEventListener('click', () =>
     send({ type: 'setFxFollow', bus: bus.bus, key: fx.key, follow: !strip.toggle.classList.contains('on') }),
   );
+  bindMute(strip, bus, fx.key);
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: fx.key, db }));
   return strip;
 }
@@ -580,6 +597,7 @@ function updateFxStrip(strip, fx, s) {
   strip.badge.textContent = fx.inRoom ? 'salão' : 'só live';
   strip.badge.title = fx.inRoom ? 'Este efeito toca no salão e nas saídas' : 'Este efeito não toca no salão (só nas saídas)';
   strip.toggle.classList.toggle('on', fx.follow);
+  setMuted(strip, fx.muted);
   let label = FX_STATUS_LABEL[fx.status] ?? fx.status;
   if (fx.status === 'acompanhando' && s.bus.mode !== 'automatico') label = 'acomp.?';
   strip.status.textContent = label;
@@ -603,6 +621,7 @@ function createMasterStrip(bus) {
   strip.name.disabled = true;
   strip.toggle.disabled = true;
   strip.toggle.title = 'Volume geral desta saída: não muda o equilíbrio entre os canais';
+  strip.mute.style.visibility = 'hidden'; // mantém o fader alinhado com os canais
   bindFader(strip, (db) => send({ type: 'setBusMaster', bus: bus.bus, db }));
   return strip;
 }
@@ -681,6 +700,14 @@ function renderDetail(s) {
   $('#d-status-help').textContent = STATUS_HELP[d.status] ?? '';
   renderPreamp(d);
   renderRta(d, s);
+  renderEq(d, s);
+  $('#d-ident').textContent = d.identified
+    ? `som: ${d.identified.label} (${d.identified.by === 'audio' ? `pelo áudio, ${Math.round(d.identified.confidence * 100)}%` : 'pelo nome'})`
+    : 'som: ainda não identificado';
+  const dMute = $('#d-mute');
+  dMute.classList.toggle('on', Boolean(d.muted));
+  dMute.textContent = d.muted ? 'MUTADO' : 'MUTE';
+  dMute.title = `Mute deste canal em ${s.bus?.bus === MASTER_BUS ? 'salão (master)' : s.bus?.label ?? 'esta saída'}`;
   $('.sim-ctl-d').hidden = s.source.kind !== 'simulador';
 
   // alertas só deste canal
@@ -764,6 +791,10 @@ function renderDetail(s) {
   if (box.children.length !== used.length || used.some((el, i) => box.children[i] !== el)) box.replaceChildren(...used);
 }
 
+$('#d-mute').addEventListener('click', () => {
+  const d = state?.detail;
+  if (d && state.bus) send({ type: 'setMute', bus: state.bus.bus, key: d.key, muted: !d.muted });
+});
 $('#d-close').addEventListener('click', closeDetail);
 $('#detail-backdrop').addEventListener('click', closeDetail);
 document.addEventListener('keydown', (e) => {
@@ -794,8 +825,8 @@ function renderTips(s) {
   if (sig === tipsSig) return;
   tipsSig = sig;
   $('#tips-sub').textContent = s.advanced?.active
-    ? 'Com o áudio USB: inclui microfonia, zumbido, chiado, loudness e OBS.'
-    : 'Pelo VU da rede. No modo Áudio USB aparecem também microfonia, zumbido e loudness.';
+    ? 'Com o áudio USB: equilíbrio de volumes, EQ pelo som de cada canal, microfonia, zumbido, chiado, loudness e OBS.'
+    : 'Pelo VU da rede: clip, volume e equilíbrio entre os canais. No modo Áudio USB aparecem também EQ, microfonia, zumbido e loudness.';
   $('#tips-list').innerHTML = tips.length
     ? tips
         .map(
@@ -909,6 +940,216 @@ function renderRta(d, s) {
   });
 }
 
+// ---------- equalizador ----------
+
+const RTA_CENTERS = [25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000];
+const EQ_F_MIN = 20;
+const EQ_F_MAX = 20000;
+const EQ_DB = 15; // escala do gráfico ±15 dB
+const logPos = (v, min, max) => Math.log(v / min) / Math.log(max / min);
+const logVal = (p, min, max) => min * Math.pow(max / min, p);
+const fmtHz = (hz) => (hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 0 : 1)} k` : `${Math.round(hz)}`);
+
+/** Controles de cada parâmetro: slider 0..1000 ↔ valor físico. */
+const EQ_PARAMS = {
+  freq: { min: 20, max: 20000, log: true, fmt: (v) => `${fmtHz(v)}Hz` },
+  gain: { min: -15, max: 15, log: false, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+  q: { min: 0.3, max: 10, log: true, fmt: (v) => `Q ${v.toFixed(1)}` },
+  hpf: { min: 20, max: 400, log: true, fmt: (v) => (v <= 21 ? 'desligado' : `${Math.round(v)} Hz`) },
+};
+const toPos = (kind, v) => {
+  const p = EQ_PARAMS[kind];
+  const x = Math.max(p.min, Math.min(p.max, v));
+  return Math.round((p.log ? logPos(x, p.min, p.max) : (x - p.min) / (p.max - p.min)) * 1000);
+};
+const fromPos = (kind, pos) => {
+  const p = EQ_PARAMS[kind];
+  const t = pos / 1000;
+  return p.log ? logVal(t, p.min, p.max) : Math.round((p.min + t * (p.max - p.min)) * 2) / 2;
+};
+
+let eqBuilt = false;
+const eqDragging = new Set();
+const eqThrottle = new Map();
+
+function sendEq(param, value, final) {
+  const d = state?.detail;
+  if (!d) return;
+  const now = Date.now();
+  if (!final && now - (eqThrottle.get(param) ?? 0) < 150) return;
+  eqThrottle.set(param, now);
+  send({ type: 'setEq', key: d.key, param, value });
+}
+
+function eqSlider(param, kind, label) {
+  return `<label class="eq-ctl"><span>${label}</span><input type="range" min="0" max="1000" step="1" data-param="${param}" data-kind="${kind}"><output data-out="${param}"></output></label>`;
+}
+
+function buildEq() {
+  if (eqBuilt) return;
+  eqBuilt = true;
+  const names = { b1: 'Banda 1 (graves)', b2: 'Banda 2', b3: 'Banda 3', b4: 'Banda 4 (agudos)' };
+  $('#d-eq-bands').innerHTML =
+    `<div class="eq-band hpf"><strong>Passa-altas</strong>${eqSlider('hpf.freq', 'hpf', 'corte')}</div>` +
+    ['b1', 'b2', 'b3', 'b4']
+      .map((b) => `<div class="eq-band"><strong>${names[b]}</strong>${eqSlider(`${b}.freq`, 'freq', 'freq')}${eqSlider(`${b}.gain`, 'gain', 'ganho')}${eqSlider(`${b}.q`, 'q', 'largura')}</div>`)
+      .join('');
+  for (const input of document.querySelectorAll('#d-eq-bands input')) {
+    const { param, kind } = input.dataset;
+    const show = () => {
+      const v = fromPos(kind, Number(input.value));
+      $(`output[data-out="${param}"]`).textContent = `≈ ${EQ_PARAMS[kind].fmt(v)}`;
+      return v;
+    };
+    input.addEventListener('input', () => {
+      eqDragging.add(param);
+      sendEq(param, show(), false);
+    });
+    input.addEventListener('change', () => {
+      eqDragging.delete(param);
+      sendEq(param, show(), true);
+    });
+  }
+}
+
+function eqResponseDb(eq, hz) {
+  if (eq.bypass) return 0;
+  let db = 0;
+  for (const b of eq.bands) {
+    const bw = 1 / Math.max(0.05, b.q);
+    const oct = Math.log2(hz / b.freqHz);
+    db += b.gainDB * Math.exp(-0.5 * Math.pow(oct / (bw / 2), 2));
+  }
+  if (eq.hpfHz > 21) {
+    const r = Math.pow(hz / eq.hpfHz, 4);
+    db += 10 * Math.log10(r / (1 + r));
+  }
+  return db;
+}
+
+function drawEq(eq, rta) {
+  const canvas = $('#d-eq-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = (canvas.width = canvas.clientWidth || 600);
+  const h = (canvas.height = canvas.clientHeight || 150);
+  ctx.clearRect(0, 0, w, h);
+  const xOf = (hz) => logPos(hz, EQ_F_MIN, EQ_F_MAX) * w;
+  const yOf = (db) => h / 2 - (Math.max(-EQ_DB, Math.min(EQ_DB, db)) / EQ_DB) * (h / 2 - 6);
+  // grade
+  ctx.strokeStyle = '#232a33';
+  ctx.lineWidth = 1;
+  for (const hz of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
+    ctx.beginPath();
+    ctx.moveTo(xOf(hz), 0);
+    ctx.lineTo(xOf(hz), h);
+    ctx.stroke();
+  }
+  for (const db of [-12, -6, 0, 6, 12]) {
+    ctx.strokeStyle = db === 0 ? '#3a4452' : '#232a33';
+    ctx.beginPath();
+    ctx.moveTo(0, yOf(db));
+    ctx.lineTo(w, yOf(db));
+    ctx.stroke();
+  }
+  // espectro do canal (modo Áudio USB) por baixo da curva
+  if (rta) {
+    const max = Math.max(...rta);
+    rta.forEach((db, i) => {
+      const lo = i ? Math.sqrt(RTA_CENTERS[i - 1] * RTA_CENTERS[i]) : RTA_CENTERS[0] / 1.12;
+      const hi = i < RTA_CENTERS.length - 1 ? Math.sqrt(RTA_CENTERS[i] * RTA_CENTERS[i + 1]) : 20000;
+      const v = Math.max(0, Math.min(1, (db - (max - 50)) / 50));
+      ctx.fillStyle = 'rgba(62, 207, 142, 0.22)';
+      ctx.fillRect(xOf(lo) + 1, h - v * h, Math.max(1, xOf(hi) - xOf(lo) - 2), v * h);
+    });
+  }
+  // curva
+  ctx.strokeStyle = eq.bypass ? '#6b7584' : '#4aa8ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let x = 0; x <= w; x += 2) {
+    const hz = logVal(x / w, EQ_F_MIN, EQ_F_MAX);
+    const y = yOf(eqResponseDb(eq, hz));
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // pontos das bandas
+  eq.bands.forEach((b, i) => {
+    ctx.fillStyle = ['#f5b642', '#3ecf8e', '#c77dff', '#ff6b6b'][i];
+    ctx.beginPath();
+    ctx.arc(xOf(b.freqHz), yOf(b.gainDB), 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = '#8b96a5';
+  ctx.font = '10px system-ui';
+  ctx.fillText('+12', 4, yOf(12) - 2);
+  ctx.fillText('0 dB', 4, yOf(0) - 2);
+  ctx.fillText('−12', 4, yOf(-12) - 2);
+}
+
+let eqAdviceSig = '';
+
+function renderEq(d, s) {
+  const wrap = $('#d-eq');
+  wrap.hidden = !d.eq;
+  if (!d.eq) return;
+  buildEq();
+  const eq = d.eq;
+  const values = { 'hpf.freq': ['hpf', eq.hpfHz] };
+  for (const b of eq.bands) {
+    values[`${b.band}.freq`] = ['freq', b.freqHz];
+    values[`${b.band}.gain`] = ['gain', b.gainDB];
+    values[`${b.band}.q`] = ['q', b.q];
+  }
+  for (const input of document.querySelectorAll('#d-eq-bands input')) {
+    const p = input.dataset.param;
+    input.disabled = !eq.allowed;
+    if (eqDragging.has(p) || !values[p]) continue;
+    const [kind, v] = values[p];
+    input.value = String(toPos(kind, v));
+    $(`output[data-out="${p}"]`).textContent = `≈ ${EQ_PARAMS[kind].fmt(v)}`;
+  }
+  const on = $('#d-eq-on');
+  on.checked = !eq.bypass;
+  on.disabled = !eq.allowed;
+  $('#d-eq-note').textContent = eq.allowed
+    ? '— vale para o canal inteiro (salão, auxes e live). Valores ≈ convertidos da escala da mesa.'
+    : '— só o admin ou quem tem o master pode mexer (muda o salão também).';
+  drawEq(eq, d.rta);
+
+  const advice = d.eqAdvice ?? [];
+  const sig = JSON.stringify([advice.map((a) => a.id + a.text), eq.allowed, s.advanced?.active]);
+  if (sig !== eqAdviceSig) {
+    eqAdviceSig = sig;
+    const box = $('#d-eq-advice');
+    if (!s.advanced?.active) {
+      box.innerHTML = '<li class="muted">As sugestões automáticas de EQ precisam ouvir o canal: ligue o modo Áudio USB (tela Conexão).</li>';
+    } else if (!advice.length) {
+      box.innerHTML = '<li class="muted">Nenhuma sugestão: o som deste canal parece equilibrado (ou ainda está ouvindo — leva alguns segundos tocando).</li>';
+    } else {
+      box.innerHTML = advice
+        .map(
+          (a) =>
+            `<li><span>${escapeHtml(a.text)}</span><button class="small-btn primary" data-advice="${escapeHtml(a.id)}" ${eq.allowed ? '' : 'disabled title="Só admin ou quem tem o master"'}>Aplicar</button></li>`,
+        )
+        .join('');
+    }
+  }
+}
+
+$('#d-eq-on').addEventListener('change', (e) => {
+  const d = state?.detail;
+  if (d) send({ type: 'setEq', key: d.key, param: 'bypass', value: e.target.checked ? 0 : 1 });
+});
+$('#d-eq-advice').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-advice]');
+  const d = state?.detail;
+  if (!btn || !d) return;
+  if (confirm(`Aplicar esta sugestão no EQ de ${d.name}? Vale para o salão e todas as saídas.`)) {
+    send({ type: 'eq.apply', key: d.key, adviceId: btn.dataset.advice });
+  }
+});
+
 $('#d-fb').addEventListener('click', () => state?.detail && send({ type: 'sim.inject', key: state.detail.key, kind: 'microfonia' }));
 $('#d-hum').addEventListener('click', () => state?.detail && send({ type: 'sim.inject', key: state.detail.key, kind: 'zumbido' }));
 $('#d-clear').addEventListener('click', () => state?.detail && send({ type: 'sim.clearInject', key: state.detail.key }));
@@ -928,7 +1169,7 @@ function createRow(bus, ch) {
       <button class="small" data-act="t-">−1</button>
       <span class="target-db"></span>
       <button class="small" data-act="t+">+1</button>
-      <button class="small" data-act="clear" title="Esquecer o alvo deste canal">×</button>
+      <button class="small" data-act="clear" title="Esquecer o volume ideal deste canal">×</button>
     </td>`;
   $('.key', tr).textContent = ch.key;
   $('.en', tr).addEventListener('change', (e) => send({ type: 'setEnabled', bus, key: ch.key, enabled: e.target.checked }));
@@ -1100,7 +1341,7 @@ document.querySelectorAll('[data-mode]').forEach((b) =>
     const bus = state?.bus;
     if (!bus) return;
     if (b.dataset.mode === 'automatico' && bus.mode !== 'automatico' && state.source.kind === 'mesa') {
-      if (!confirm(`Ligar o AUTOMÁTICO em ${bus.label}? O software vai mexer nessa saída da mesa real.`)) return;
+      if (!confirm(`Ligar o AJUSTE AUTOMÁTICO DE VOLUME em ${bus.label}? O software vai mexer nos envios dessa saída na mesa real.`)) return;
     }
     send({ type: 'setMode', bus: bus.bus, mode: b.dataset.mode });
   }),
@@ -1121,13 +1362,23 @@ $('#bus-select').addEventListener('change', (e) => {
 document.querySelectorAll('[data-scene]').forEach((b) =>
   b.addEventListener('click', () => send({ type: 'sim.scene', scene: b.dataset.scene })),
 );
+$('#suggest-targets').addEventListener('click', () => {
+  if (!state?.bus) return;
+  if (
+    confirm(
+      `Calcular o volume ideal de cada canal de ${state.bus.label} pelo tipo de som?\n\nA voz principal vira a referência; backs ~5 dB abaixo, bumbo/baixo ~6, violão/teclado ~8, pratos ~12. Use com a banda e a voz tocando. Não mexe nos faders agora: só muda o volume ideal (o ajuste automático vai em direção a ele).`,
+    )
+  ) {
+    send({ type: 'suggestTargets', bus: state.bus.bus });
+  }
+});
 $('#capture').addEventListener('click', () => {
-  if (state?.bus && confirm(`Gravar o nível atual de cada canal que está tocando como alvo de ${state.bus.label}?`)) {
+  if (state?.bus && confirm(`Gravar o volume atual de cada canal que está tocando como o VOLUME IDEAL de ${state.bus.label}?`)) {
     send({ type: 'capture', bus: state.bus.bus });
   }
 });
 $('#restore').addEventListener('click', () => {
-  if (state?.bus && confirm(`Voltar os envios de ${state.bus.label} para a mixagem original (ou do preset carregado)?`)) {
+  if (state?.bus && confirm(`Desfazer os ajustes: voltar os envios de ${state.bus.label} para antes das correções (ou para o preset carregado)?`)) {
     send({ type: 'restore', bus: state.bus.bus });
   }
 });
@@ -1136,7 +1387,7 @@ $('#preset-select').addEventListener('change', (e) => {
 });
 $('#preset-new').addEventListener('click', () => {
   if (!state?.bus) return;
-  const name = prompt(`Nome do preset para ${state.bus.label} (ex.: "Louvor - mais batera"):`);
+  const name = prompt(`Nome do preset para ${state.bus.label} (ex.: "Música - mais batera"):`);
   if (name?.trim()) send({ type: 'preset.save', bus: state.bus.bus, name: name.trim() });
 });
 $('#preset-update').addEventListener('click', () => {

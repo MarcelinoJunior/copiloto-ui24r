@@ -16,8 +16,8 @@
       <span class="sim-chip">SIMULADOR</span>
       <span class="muted">momento</span>
       <div class="seg scenes">
-        <button data-scene="louvor">Louvor</button>
-        <button data-scene="pregacao">Pregação</button>
+        <button data-scene="louvor">Música</button>
+        <button data-scene="pregacao">Fala</button>
         <button data-scene="avisos">Avisos</button>
       </div>
       <button id="sim-reset" class="small-btn" title="Volta os músicos simulados ao volume normal">Zerar músicos</button>
@@ -45,22 +45,23 @@
       <select id="bus-select"></select>
     </div>
 
-    <div class="tgroup g-auto" title="AUTOMÁTICO: o que o software faz NESTA saída. Desligado = só mostra. Observar = calcula as correções sem mexer na mesa. Ligado = corrige os envios devagar, dentro dos limites.">
-      <span class="tlabel">Automático <span class="ti">ⓘ</span></span>
-      <div class="seg modes" role="radiogroup" aria-label="Modo do automático nesta saída">
-        <button data-mode="desligado" title="Só mostra os níveis">Desligado</button>
-        <button data-mode="observar" title="Calcula as correções mas NÃO mexe na mesa">Observar</button>
-        <button data-mode="automatico" title="Ajusta os envios e efeitos devagar, dentro dos limites">Ligado</button>
+    <div class="tgroup g-auto" title="AJUSTE AUTOMÁTICO DE VOLUME: o software mantém o volume de cada canal perto do volume ideal NESTA saída. Desligado = não faz nada. Só sugerir = mostra quanto mexeria, sem mexer. Ajustando = corrige os envios devagar, dentro dos limites.">
+      <span class="tlabel">Ajuste automático de volume <span class="ti">ⓘ</span></span>
+      <div class="seg modes" role="radiogroup" aria-label="Ajuste automático de volume nesta saída">
+        <button data-mode="desligado" title="O software não mexe em nada: só mostra os níveis">Desligado</button>
+        <button data-mode="observar" title="Mostra embaixo de cada fader quanto mexeria, mas NÃO mexe na mesa">Só sugerir</button>
+        <button data-mode="automatico" title="Corrige os envios devagar para cada canal ficar no volume ideal">Ajustando</button>
       </div>
     </div>
 
-    <div class="tgroup g-alvo" title="ALVO: a mixagem de referência que o automático mantém. Gravar = o nível atual de cada canal vira o alvo. Voltar ao original = desfaz as correções.">
-      <span class="tlabel">Alvo <span class="ti">ⓘ</span></span>
-      <button id="capture" class="primary" title="Use quando a mixagem estiver soando bem: o nível atual de cada canal vira o alvo">Gravar</button>
-      <button id="restore" class="danger" title="Volta os envios para a mixagem original (ou do preset carregado)">Voltar ao original</button>
+    <div class="tgroup g-alvo" title="VOLUME IDEAL: o volume de cada canal que o ajuste automático vai manter. Gravar = a mixagem de agora vira a ideal. Pelo tipo de som = calcula a partir da voz principal. Desfazer ajustes = volta os envios para como estavam antes das correções.">
+      <span class="tlabel">Volume ideal <span class="ti">ⓘ</span></span>
+      <button id="capture" class="primary" title="Com a mixagem soando bem, grava o volume de cada canal como o ideal">Gravar volumes atuais</button>
+      <button id="suggest-targets" title="Calcula o volume ideal de cada canal pelo tipo de som (voz, bumbo, baixo, violão…), usando a voz principal como referência. Use com todos tocando.">Pelo tipo de som</button>
+      <button id="restore" class="danger" title="Volta os envios para como estavam antes das correções (ou para o preset carregado)">Desfazer ajustes</button>
     </div>
 
-    <div class="tgroup g-preset" title="PRESET: mixagens salvas desta saída (ex.: Louvor, Pregação), carregadas com fade suave. + salva nova, ↻ atualiza a ativa, × apaga.">
+    <div class="tgroup g-preset" title="PRESET: mixagens salvas desta saída (ex.: Música, Fala), carregadas com fade suave. + salva nova, ↻ atualiza a ativa, × apaga.">
       <label class="tlabel" for="preset-select">Preset <span class="ti">ⓘ</span></label>
       <select id="preset-select" title="Carregar preset desta saída (com fade suave)"></select>
       <div class="btn-row">
@@ -70,7 +71,7 @@
       </div>
     </div>
 
-    <div class="tgroup g-tela" title="TELA: como os faders aparecem (quantos por tela, quais canais). ✎ cria seus modos. Expandir canal = clicar no nome abre ganho, master, efeitos e espectro.">
+    <div class="tgroup g-tela" title="TELA: como os faders aparecem (quantos por tela, quais canais). ✎ cria seus modos. Expandir canal = clicar no nome abre ganho, EQ, master, efeitos e espectro.">
       <label class="tlabel" for="view-select">Tela <span class="ti">ⓘ</span></label>
       <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
       <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
@@ -84,10 +85,10 @@
 
   <div id="toolbar-help" class="toolbar-help" hidden>
     <div class="h g-saida"><strong>Saída</strong> Qual saída da mesa você vê e mixa: o aux da live (ex.: AUX 7+8), um retorno ou o master do salão. Cada pessoa vê a sua; o admin escolhe quem pode usar qual.</div>
-    <div class="h g-auto"><strong>Automático</strong> O que o software faz nesta saída. <em>Desligado</em>: só mostra. <em>Observar</em>: calcula as correções sem mexer na mesa. <em>Ligado</em>: corrige os envios devagar, dentro dos limites.</div>
-    <div class="h g-alvo"><strong>Alvo</strong> <em>Gravar</em>: com a mixagem soando bem, o nível de cada canal vira o alvo que o automático mantém. <em>Voltar ao original</em>: desfaz as correções (botão de pânico).</div>
-    <div class="h g-preset"><strong>Preset</strong> Mixagens salvas desta saída (ex.: "Louvor – mais batera", "Pregação"). Escolher na lista carrega com fade suave. <em>+</em> salva nova, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
-    <div class="h g-tela"><strong>Tela</strong> Como os faders aparecem: quantos cabem na tela e quais canais (✎ cria seus modos). <em>Expandir canal</em>: clicar no nome do canal abre ganho, phantom, master, efeitos e espectro.</div>
+    <div class="h g-auto"><strong>Ajuste automático de volume</strong> O software mantém cada canal perto do volume ideal nesta saída (ex.: o pastor empolgou → o envio dele desce um pouco). <em>Desligado</em>: não faz nada. <em>Só sugerir</em>: mostra embaixo do fader quanto mexeria. <em>Ajustando</em>: corrige devagar.</div>
+    <div class="h g-alvo"><strong>Volume ideal</strong> É a referência do ajuste automático. <em>Gravar volumes atuais</em>: com a mixagem soando bem, o volume de cada canal vira o ideal. <em>Pelo tipo de som</em>: a voz principal vira referência e cada tipo (backs, bumbo, baixo, violão…) fica alguns dB abaixo dela. <em>Desfazer ajustes</em>: volta os envios para antes das correções (botão de pânico).</div>
+    <div class="h g-preset"><strong>Preset</strong> Mixagens salvas desta saída (ex.: "Música – mais batera", "Fala"). Escolher na lista carrega com fade suave. <em>+</em> salva nova, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
+    <div class="h g-tela"><strong>Tela</strong> Como os faders aparecem: quantos cabem na tela e quais canais (✎ cria seus modos). <em>Expandir canal</em>: clicar no nome do canal abre ganho, phantom, mute, equalizador, master, efeitos e espectro.</div>
   </div>
 
   <p id="default-pass" class="warnbar" hidden>
@@ -116,7 +117,9 @@
         <h2 id="d-name"></h2>
         <span class="muted small" id="d-sub"></span>
       </div>
+      <span id="d-ident" class="cm-ident" title="Que som é este canal: pelo áudio (modo Áudio USB) ou pelo nome do canal"></span>
       <span class="spacer"></span>
+      <button id="d-mute" class="cm-mute" title="Mute deste canal na saída que você está vendo">MUTE</button>
       <button id="d-close" class="cm-close" title="Fechar e voltar para a mixagem (Esc)">✕ Voltar</button>
     </header>
 
@@ -124,6 +127,22 @@
       <section class="cm-volumes">
         <h3>Volumes deste canal <span class="muted small">— cada fader é um destino diferente do mesmo canal</span></h3>
         <div id="d-faders" class="detail-faders"></div>
+
+        <section class="cm-eq" id="d-eq" hidden>
+          <h3>Equalizador <span class="muted small" id="d-eq-note"></span></h3>
+          <div class="eq-wrap">
+            <div class="eq-graph">
+              <canvas id="d-eq-canvas" width="600" height="150" aria-label="Curva do equalizador sobre o espectro do canal"></canvas>
+              <div class="rta-axis small muted"><span>20 Hz</span><span>100</span><span>500</span><span>2 k</span><span>8 k</span><span>20 kHz</span></div>
+              <label class="toggle-btn"><input type="checkbox" id="d-eq-on"> EQ ligado</label>
+            </div>
+            <div class="eq-bands" id="d-eq-bands"></div>
+          </div>
+          <div class="eq-advice-box">
+            <strong class="small">Sugestões de EQ</strong>
+            <ul id="d-eq-advice" class="eq-advice"></ul>
+          </div>
+        </section>
       </section>
 
       <aside class="cm-side">
@@ -145,19 +164,19 @@
         </section>
 
         <section class="cm-card">
-          <h3>Automático nesta saída</h3>
-          <label class="toggle-btn"><input type="checkbox" id="d-auto"> AUTO ligado neste canal</label>
+          <h3>Ajuste automático de volume (nesta saída)</h3>
+          <label class="toggle-btn" title="Liga/desliga o ajuste automático de volume só deste canal nesta saída"><input type="checkbox" id="d-auto"> AUTO ligado neste canal</label>
           <div class="cm-stats">
             <div><span>agora</span><strong id="d-now">—</strong></div>
             <div><span>média</span><strong id="d-avg">—</strong></div>
-            <div><span>alvo</span><strong id="d-target">—</strong></div>
+            <div title="Volume ideal: o que o ajuste automático tenta manter"><span>ideal</span><strong id="d-target">—</strong></div>
             <div><span>envio</span><strong id="d-send">—</strong></div>
             <div><span>correção</span><strong id="d-corr">—</strong></div>
           </div>
           <div class="detail-row">
-            <span class="small muted">Ajustar o alvo:</span>
-            <button class="icon-btn" id="d-tminus" title="Alvo −1 dB">− 1 dB</button>
-            <button class="icon-btn" id="d-tplus" title="Alvo +1 dB">+ 1 dB</button>
+            <span class="small muted">Volume ideal:</span>
+            <button class="icon-btn" id="d-tminus" title="Volume ideal −1 dB">− 1 dB</button>
+            <button class="icon-btn" id="d-tplus" title="Volume ideal +1 dB">+ 1 dB</button>
           </div>
           <p id="d-status-help" class="small muted"></p>
         </section>
@@ -192,6 +211,12 @@
       <button id="tips-close" class="icon-btn" title="Fechar (Esc)">×</button>
     </div>
     <ul id="tips-list" class="tips-list"></ul>
+    <details class="tips-note">
+      <summary>Nota: equilíbrio de volumes e equalização</summary>
+      <p><strong>Equilíbrio (pelo VU):</strong> o software compara quanto cada canal pesa na saída (nível médio enquanto toca + envio). Na live, a voz principal costuma ficar 3 a 6 dB acima da banda; backs uns 5 dB abaixo da voz; bumbo e baixo uns 6; violão/teclado uns 8; pratos bem mais baixos. Canal muito acima (+9 dB) ou quase sumido (−15 dB) da média vira dica com quanto mexer.</p>
+      <p><strong>Antes de subir volume, equalize:</strong> som embolado (250–400 Hz) e grave sobrando (passa-altas desligado) fazem tudo parecer mais alto sem ficar mais claro. Cortar 2–4 dB no lugar certo costuma resolver melhor que subir o fader.</p>
+      <p><strong>Tipo de som:</strong> no modo Áudio USB o software ouve cada canal e reconhece voz, bumbo, caixa, pratos, baixo ou violão/teclado; no modo VU usa o nome do canal. Isso alimenta estas dicas e o botão "Pelo tipo de som".</p>
+    </details>
   </aside>
 
   <!-- editor de modos de visualização -->
@@ -237,7 +262,7 @@
           <span class="bank-label"></span>
           <button class="icon-btn bank-next" title="Próximos canais">▶</button>
         </span>
-        <span class="legend"><i class="lg lg-fill"></i>agora <i class="lg lg-avg"></i>média <i class="lg lg-target"></i>alvo</span>
+        <span class="legend"><i class="lg lg-fill"></i>agora <i class="lg lg-avg"></i>média <i class="lg lg-target"></i>ideal</span>
       </div>
       <div class="strips mixer-view">
         <div class="ch-scroll"><div class="group ch-group"></div></div>
@@ -249,8 +274,8 @@
           <thead>
             <tr>
               <th>Auto</th><th>Canal</th><th>Estado</th>
-              <th class="meter-col">Peso na saída (nível + envio) · alvo</th>
-              <th>Envio</th><th>Correção</th><th>Alvo</th>
+              <th class="meter-col">Peso na saída (nível + envio) · ideal</th>
+              <th>Envio</th><th>Correção</th><th>Ideal</th>
             </tr>
           </thead>
           <tbody></tbody>

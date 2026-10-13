@@ -1,4 +1,5 @@
 import { clamp, dbToPow, FLOOR_DB, powToDb, sumDb } from '../util/db.js';
+import { DEFAULT_EQ_RAW } from './eq.js';
 import {
   type BusInfo,
   type ChannelInfo,
@@ -184,6 +185,28 @@ export class SimulatorAdapter implements MixerAdapter {
     }
   }
 
+  setSendMute(bus: number, key: string, muted: boolean): void {
+    for (const b of [bus, this.linkedWith(bus)].filter((x): x is number => x !== undefined)) {
+      const next = { ...this.getSend(b, key), muted };
+      this.sends.set(`${b}:${key}`, next);
+      this.emit(`send:${b}:${key}`, next);
+    }
+  }
+
+  private readonly eqs = new Map<string, Record<string, number>>();
+
+  watchEq(key: string, cb: (raw: Record<string, number>) => void): Unsubscribe {
+    if (!key.startsWith('i')) return () => undefined;
+    cb(this.eqs.get(key) ?? { ...DEFAULT_EQ_RAW });
+    return this.watch(`eq:${key}`, cb);
+  }
+
+  setEqRaw(key: string, param: string, value: number): void {
+    const eq = { ...(this.eqs.get(key) ?? DEFAULT_EQ_RAW), [param]: clamp(value, 0, 1) };
+    this.eqs.set(key, eq);
+    this.emit(`eq:${key}`, eq);
+  }
+
   watchFxSend(fx: number, key: string, cb: (db: number) => void): Unsubscribe {
     cb(this.fxSends.get(`${fx}:${key}`) ?? NEG);
     return this.watch(`fx:${fx}:${key}`, cb);
@@ -217,8 +240,8 @@ export class SimulatorAdapter implements MixerAdapter {
   }
 
   /** Para o áudio USB simulado: comportamento e nível atual de cada canal. */
-  audioProfile(): { key: string; behavior: Behavior; preDb: number; index: number }[] {
-    return this.sim.map((s, index) => ({ key: s.info.key, behavior: s.behavior, preDb: s.lastPre, index }));
+  audioProfile(): { key: string; name: string; behavior: Behavior; preDb: number; index: number }[] {
+    return this.sim.map((s, index) => ({ key: s.info.key, name: s.info.name, behavior: s.behavior, preDb: s.lastPre, index }));
   }
 
   watchBusMaster(bus: number, cb: (db: number) => void): Unsubscribe {

@@ -186,6 +186,37 @@ export class SoundcraftAdapter implements MixerAdapter {
     setFader(bus === MASTER_BUS ? this.masterChannel(kind, number) : this.auxChannel(bus, kind, number), db);
   }
 
+  setSendMute(bus: number, key: string, muted: boolean): void {
+    const { kind, number } = parseChannelKey(key);
+    const ch = bus === MASTER_BUS ? this.masterChannel(kind, number) : this.auxChannel(bus, kind, number);
+    (ch as unknown as { setMute(v: boolean): void }).setMute(muted);
+  }
+
+  watchEq(key: string, cb: (raw: Record<string, number>) => void): Unsubscribe {
+    const { kind, number } = parseChannelKey(key);
+    if (kind !== 'i') return () => undefined;
+    const prefix = `i.${number - 1}.eq.`;
+    let last = '';
+    const sub = this.ui.store.state$.subscribe((state) => {
+      const raw: Record<string, number> = {};
+      for (const [k, v] of Object.entries(state)) {
+        if (k.startsWith(prefix) && typeof v === 'number') raw[k.slice(prefix.length)] = v;
+      }
+      const sig = JSON.stringify(raw);
+      if (sig !== last) {
+        last = sig;
+        cb(raw);
+      }
+    });
+    return () => sub.unsubscribe();
+  }
+
+  setEqRaw(key: string, param: string, value: number): void {
+    const { kind, number } = parseChannelKey(key);
+    if (kind !== 'i' || !/^(bypass|hpf\.freq|b[1-4]\.(freq|gain|q))$/.test(param)) return;
+    this.ui.conn.setd(`i.${number - 1}.eq.${param}`, Math.max(0, Math.min(1, value)));
+  }
+
   watchFxSend(fx: number, key: string, cb: (db: number) => void): Unsubscribe {
     const send = this.fxChannel(fx, key);
     const sub = combineLatest([send.faderLevelDB$, send.mute$]).subscribe(([db, muted]) =>

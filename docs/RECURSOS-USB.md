@@ -36,14 +36,36 @@ Arquivo: `src/analysis/detectors.ts` (`analyzeNoise`). Só roda quando o canal e
 
 ## Espectro (RTA)
 
-Arquivo: `src/analysis/rta.ts`. São 30 bandas de 1/3 de oitava (25 Hz a 20 kHz), suavizadas (sobem rápido e descem 3 dB por atualização). Só é calculado para o canal aberto no painel, para economizar processamento.
+Arquivo: `src/analysis/rta.ts`. São 30 bandas de 1/3 de oitava (25 Hz a 20 kHz), suavizadas (sobem rápido e descem 3 dB por atualização). O espectro ao vivo só é enviado para o canal aberto no painel. Na janela do canal ele aparece em barras e também por baixo da curva do equalizador.
+
+## Que som é esse? (identificação do canal)
+
+Arquivo: `src/analysis/identify.ts`. Enquanto o canal toca, o motor acumula:
+- a **distribuição da energia** por faixa (abaixo de 120 Hz, 120–500, 500–2k, 2k–6k, acima de 6k), o **centroide** e a "ruidosidade" acima de 1 kHz;
+- **ataques por segundo** (blocos de 50 ms que sobem 9 dB ou mais) e **quanto o som cai ~150 ms depois** de cada ataque (percussão despenca 15–40 dB; fala e canto sustentam a sílaba);
+- **pausas** e **variação de volume** entre blocos (voz oscila por sílabas e frases; instrumento sustentado não).
+
+Regras: grave + ataques com queda rápida = **bumbo**; grave sustentado com fundamental abaixo de 120 Hz = **baixo**; quase tudo acima de 2 kHz = **pratos/overhead**; ataques rápidos com ruído largo = **caixa**; médios com pausas ou variação de sílabas = **voz**; o resto = **violão/guitarra/teclado**. Precisa de ~2,5 s tocando; durante pausas longas fica com a última resposta. A confiança aparece na janela do canal e na tela Análise ("ouvido: …"). Sem áudio USB, o tipo vem do **nome** do canal.
+
+Usos: botão **Volume ideal › Pelo tipo de som**, dicas de equilíbrio, sugestões de EQ e o papel "automático (pelo som)" do fala × música (instrumento reconhecido conta como música).
+
+## Sugestões de EQ
+
+Arquivo: `src/analysis/eq-advice.ts`. Usa o espectro médio de minutos do canal (relativo ao nível dele, então mexer no volume não muda nada) e o tipo de som:
+- **passa-altas** desligado e grave abaixo de 80 Hz acima de ~0,5% da energia (voz, violão, caixa, pratos);
+- **embolado**: 250–400 Hz mais de 5 dB acima dos médios → −3 dB em ~300 Hz;
+- **agressivo**: 2,5–4 kHz mais de 5 dB acima dos médios → −2 dB em ~3,2 kHz (não vale para pratos);
+- **voz abafada**: pouca presença em 2–5 kHz → +2 dB em ~3,5 kHz;
+- **bumbo "papelão"** (300–600 Hz) → −4 dB em ~400 Hz; **baixo com ronco** → passa-altas em ~35 Hz.
+
+Cada sugestão vira mudanças no EQ da mesa (escolhe uma banda livre perto da frequência) e só é aplicada com o clique em *Aplicar*, com confirmação, por admin ou quem tem o master. Muitos canais com sugestão viram uma dica só no painel Dicas.
 
 ## Fala × música
 
 Arquivo: `src/analysis/moment.ts`.
 - Cada canal tem um **papel**: fala, canto, instrumento, automático ou ignorar. O papel é adivinhado pelo nome ("Pastor" = fala, "Back" = canto, "Guitarra" = instrumento) e pode ser ajustado na tela Análise.
 - O detector compara a **energia média recente da fala** com a **energia da música** (instrumentos + canto). Assim, um teclado de fundo durante a pregação não vira "música" se o pastor está acima dele.
-- Canais em "automático" são classificados pelo jeito do som: fala tem muitas pausas curtas.
+- Canais em "automático (pelo som)" usam a identificação do canal: instrumento reconhecido conta como música; voz é classificada pelo jeito do som (fala tem muitas pausas curtas).
 - A troca só acontece depois de **12 s** estáveis (histerese). Silêncio não troca nada.
 - **Troca automática de preset:** na tela Análise, para cada saída, escolha o preset de "fala" e o de "música" e marque a saída. Quem tem acesso à saída pode configurar.
 

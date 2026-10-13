@@ -43,7 +43,7 @@ npm test
 - **Algoritmos vêm com teste**, de preferência com sinais sintéticos de resultado conhecido (veja `test/analysis.test.ts`).
 - Toda funcionalidade nova precisa funcionar **com o simulador e com a mesa real** (contrato `MixerAdapter`).
 - **Permissões ficam no servidor** (`App.handle`), nunca só na tela.
-- Mantenha o padrão seguro: modo **Observar** antes de Automático, limites de correção, nada que mexa no salão sem deixar isso claro.
+- Mantenha o padrão seguro: modo **Só sugerir** antes de **Ajustando**, limites de correção, nada que mexa no salão sem deixar isso claro.
 - Commits pequenos, com mensagem dizendo **o quê** e **por quê**.
 
 ## Licença

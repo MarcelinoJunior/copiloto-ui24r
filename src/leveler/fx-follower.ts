@@ -18,6 +18,8 @@ export interface FxSnapshot {
   status: FxStatus;
   rawDB?: number;
   sendDB?: number;
+  /** retorno mutado na mesa */
+  muted: boolean;
   refDB?: number;
   /** compensação calculada a partir dos canais (dB) */
   followDeltaDB?: number;
@@ -230,7 +232,8 @@ export class FxFollower {
       follow: fx.follow,
       status: fx.status,
       rawDB: fx.rawDB === undefined ? undefined : round1(fx.rawDB),
-      sendDB: fx.send && Number.isFinite(fx.send.db) && !fx.send.muted ? round1(fx.send.db) : undefined,
+      sendDB: fx.send && Number.isFinite(fx.send.db) ? round1(fx.send.db) : undefined,
+      muted: fx.send?.muted ?? false,
       refDB: fx.refDB !== undefined && Number.isFinite(fx.refDB) ? round1(fx.refDB) : undefined,
       followDeltaDB: fx.lastDeltaDB === undefined ? undefined : round1(fx.lastDeltaDB),
       suggestedDeltaDB: fx.suggestedDeltaDB,
