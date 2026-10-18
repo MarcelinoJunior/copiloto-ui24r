@@ -190,7 +190,7 @@ describe('programa inteiro com a mesa real pela rede (Ui24R falsa)', () => {
     const profile = (n: string) => ({ store: new StateStore(join(dir, `e-${n}.json`)), presets: new PresetStore(join(dir, `p-${n}.json`)) });
     const connStore = new ConnectionStore(join(dir, 'conexao.json'));
     app = new App(
-      { ...loadConfig(), streamAuxes: [7] }, // a mesa falsa usa o par 7+8 como live
+      { ...loadConfig(), streamAuxes: [7], safeBuses: undefined }, // a mesa falsa usa o par 7+8 como live
       {
         kind: 'mesa',
         ip: fake.address,

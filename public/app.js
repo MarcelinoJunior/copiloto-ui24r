@@ -177,6 +177,48 @@ function setPill(cls, text) {
 
 // ---------- render geral ----------
 
+/** Liberação de risco ativa para este escopo ("bus:N" ou "canal")? */
+function riskAcked(s, scope) {
+  return (s.safety?.acks ?? []).some((a) => a.scope === scope && a.until > Date.now());
+}
+
+/** Saídas fora das testadas (ex.: só LIVE e o fone) ficam travadas com aviso até liberar. */
+function renderRisk(s) {
+  const safe = s.safety?.safeBuses;
+  const bar = $('#risk-bar');
+  const bus = s.bus;
+  const risky = Boolean(safe && bus && !safe.includes(bus.bus));
+  const acked = risky && riskAcked(s, `bus:${bus.bus}`);
+  bar.hidden = !risky;
+  document.body.classList.toggle('risk-locked', risky && !acked);
+  if (risky) {
+    const tested = s.safety.safeLabels.join(' e ');
+    const until = acked ? s.safety.acks.find((a) => a.scope === `bus:${bus.bus}`).until : 0;
+    $('.risk-text', bar).textContent = acked
+      ? `⚠ ${bus.label} LIBERADA COM RISCO até ${new Date(until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}: o Copiloto ainda não foi testado nesta saída (só em ${tested}).`
+      : `⚠ ${bus.label} · ${bus.name} ainda não foi testada com o Copiloto (testadas: ${tested}). Mexer aqui tem risco: pode mudar o som de um músico ou do salão durante o culto. Os controles desta saída estão travados.`;
+    $('#risk-ack').hidden = acked;
+    $('#risk-release').hidden = !acked;
+  }
+  const canalLocked = Boolean(safe) && !riskAcked(s, 'canal');
+  document.body.classList.toggle('risk-canal-locked', canalLocked);
+  $('#risk-canal').hidden = !canalLocked;
+}
+
+$('#risk-ack').addEventListener('click', () => {
+  const b = state?.bus;
+  if (!b) return;
+  if (confirm(`Liberar ${b.label} · ${b.name} por 10 minutos?\n\nEsta saída ainda não foi testada com o Copiloto. O que você mexer aqui vai para a mesa de verdade.`)) {
+    send({ type: 'risk.ack', scope: `bus:${b.bus}` });
+  }
+});
+$('#risk-release').addEventListener('click', () => state?.bus && send({ type: 'risk.release', scope: `bus:${state.bus.bus}` }));
+$('#risk-canal-ack').addEventListener('click', () => {
+  if (confirm('Liberar ganho, phantom, EQ e envios para efeitos por 10 minutos?\n\nEsses controles mexem no canal inteiro: salão, live e todos os fones.')) {
+    send({ type: 'risk.ack', scope: 'canal' });
+  }
+});
+
 /** A saída vista está protegida pelo bypass (bypass ligado e ela não está na exceção)? */
 function busBypassed(s) {
   return Boolean(s.bypass?.on && !(s.bus && (s.bypass.allow ?? []).includes(s.bus.bus)));
@@ -212,6 +254,7 @@ function render() {
   if (s.sim) document.querySelectorAll('[data-scene]').forEach((b) => b.classList.toggle('active', b.dataset.scene === s.sim.scene));
 
   renderBusSelect(s);
+  renderRisk(s);
   renderPresets(s);
 
   if (view && (!s.bus || view.bus !== s.bus.bus)) {
@@ -233,14 +276,17 @@ function render() {
 function renderBusSelect(s) {
   const sel = $('#bus-select');
   const current = s.bus?.bus;
-  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.stereo, b.mode]), current]);
+  const safe = s.safety?.safeBuses;
+  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.stereo, b.mode]), current, safe]);
   if (sel.dataset.sig === sig) return;
   sel.dataset.sig = sig;
   const icon = { automatico: ' ●auto', observar: ' ◐obs', desligado: '' };
   sel.innerHTML = s.buses
     .map((b) => {
       const label = b.id === MASTER_BUS ? 'MASTER · salão' : `${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`;
-      return `<option value="${b.id}" ${b.id === current ? 'selected' : ''}>${escapeHtml(label + icon[b.mode])}</option>`;
+      // com saídas testadas configuradas: ✓ = testada, ⚠ = ainda não (travada até liberar)
+      const mark = safe ? (safe.includes(b.id) ? '✓ ' : '⚠ ') : '';
+      return `<option value="${b.id}" ${b.id === current ? 'selected' : ''}>${escapeHtml(mark + label + icon[b.mode])}</option>`;
     })
     .join('');
   sel.classList.toggle('is-master', current === MASTER_BUS);

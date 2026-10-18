@@ -31,7 +31,7 @@ async function until<T>(fn: () => T | undefined, ms = 8000): Promise<T> {
 beforeAll(async () => {
   const profile = () => ({ store: new StateStore(join(dir, `e-${Math.random()}.json`)), presets: new PresetStore(join(dir, `p-${Math.random()}.json`)) });
   app = new App(
-    loadConfig(),
+    { ...loadConfig(), safeBuses: undefined }, // sem travas de risco: testa os comandos em si
     { kind: 'simulador', ip: 'simulador', create: () => new SimulatorAdapter(), profiles: { mesa: profile(), simulador: profile() }, dataDir: dir },
     new SessionLog(join(dir, 'sessoes'), 'teste'),
     new ConnectionStore(join(dir, 'conexao.json')),
@@ -80,5 +80,49 @@ describe('comandos novos: mute, EQ e volume ideal pelo tipo', () => {
     const bumbo = after.find((c) => c.key === 'i9')!;
     expect(ministro.targetDB).toBeDefined();
     expect(bumbo.targetDB).toBeCloseTo(ministro.targetDB! - 6, 1);
+  });
+});
+
+describe('saídas testadas (safeBuses): o resto fica travado com aviso de risco', () => {
+  const dir2 = mkdtempSync(join(tmpdir(), 'copiloto-risco-'));
+  let app2: App;
+  const ctx = (): ClientCtx => ({ user: user('admin', []), view: { bus: 7 } });
+
+  beforeAll(async () => {
+    const profile = () => ({ store: new StateStore(join(dir2, `e-${Math.random()}.json`)), presets: new PresetStore(join(dir2, `p-${Math.random()}.json`)) });
+    app2 = new App(
+      { ...loadConfig(), streamAuxes: [7], safeBuses: [7, 9] },
+      { kind: 'simulador', ip: 'simulador', create: () => new SimulatorAdapter(), profiles: { mesa: profile(), simulador: profile() }, dataDir: dir2 },
+      new SessionLog(join(dir2, 'sessoes'), 'teste'),
+      new ConnectionStore(join(dir2, 'conexao.json')),
+    );
+    await app2.start();
+    const c = ctx();
+    await until(() => app2.snapshotFor(c).connection === 'conectado' && app2.snapshotFor(c).bus);
+  });
+
+  afterAll(async () => {
+    await app2.stop();
+    rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it('live e fone liberados; outro aux, master, EQ e ganho pedem "Liberar (risco)" (10 min, por pessoa)', () => {
+    const a = ctx();
+    app2.handle({ type: 'setSend', bus: 7, key: 'i1', db: -5 }, a); // live: ok
+    app2.handle({ type: 'setMute', bus: 9, key: 'i1', muted: false }, a); // fone: ok
+    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a)).toThrow(/Liberar \(risco\)/);
+    expect(() => app2.handle({ type: 'setSend', bus: 0, key: 'i1', db: -5 }, a)).toThrow(/Liberar \(risco\)/);
+    expect(() => app2.handle({ type: 'setMode', bus: 1, mode: 'automatico' }, a)).toThrow(/Liberar/);
+    app2.handle({ type: 'setMode', bus: 1, mode: 'observar' }, a); // só sugerir não mexe: liberado
+    expect(() => app2.handle({ type: 'setGain', key: 'i1', db: 30 }, a)).toThrow(/canal inteiro/);
+    expect(app2.snapshotFor(a).safety.safeLabels).toEqual(['AUX 7+8', 'AUX 9']);
+
+    app2.handle({ type: 'risk.ack', scope: 'bus:1' }, a);
+    app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a); // liberado com aviso
+    expect(app2.snapshotFor(a).safety.acks.map((x) => x.scope)).toEqual(['bus:1']);
+    const b = ctx(); // outra pessoa: continua travado para ela
+    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, b)).toThrow(/Liberar/);
+    app2.handle({ type: 'risk.release' }, a);
+    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a)).toThrow(/Liberar/);
   });
 });

@@ -77,7 +77,7 @@ A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**
      ```bash
      npm start
      ```
-   - Em casa, com o **simulador** (uma mesa falsa, com USB simulado, microfonia e zumbido de teste):
+   - Em casa, com o **simulador** (uma mesa falsa, com USB simulado, microfonia e zumbido de teste). Depois que o Copiloto conecta uma vez na mesa real, o simulador **clona** os nomes dos canais, as saídas (live, fones, matrizes) e os envios dela (`data/mesa-espelho.json`):
      ```bash
      npm run sim
      ```
@@ -180,7 +180,8 @@ Arquivo [config/config.json](config/config.json):
 | `server.host` | `127.0.0.1` | Use `0.0.0.0` para abrir o painel em celulares e tablets da mesma rede (todos precisam de login) |
 | `server.port` | `8080` | Porta do painel (ou `PORT=8081 npm start`) |
 | (variável) `COPILOTO_DATA` | `./data` | Outra pasta de dados, ex.: para rodar uma cópia de teste isolada |
-| `streamAuxes` | `[7]` | Saída que já começa em `initialMode` e aparece primeiro |
+| `streamAuxes` | `[5]` | Saída da live: já começa em `initialMode` e aparece primeiro (confira com `npm run diagnostico`) |
+| `safeBuses` | `[5, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados com aviso de risco** até alguém clicar em *Liberar (risco)* (vale 10 min, só para quem liberou). Sem esta linha, tudo fica liberado |
 | `initialMode` | `observar` | Modo inicial dessa saída (`desligado`, `observar` = *Só sugerir*, `automatico` = *Ajustando*); as outras começam desligadas |
 | `leveler.*` | | Limites do automático: tolerância, quanto pode subir/descer, velocidade, pausa depois que o operador mexe, fade dos presets, "efeito acompanha" |
 
@@ -205,6 +206,9 @@ Os dados ficam em `data/`, que não vai para o git:
 Clique em **⛔ BYPASS** no topo da tela (qualquer pessoa logada pode). A partir daí o Copiloto **não manda nada para a mesa**: nem envios, faders, mute, EQ, ganho, phantom, presets ou o teste de comando. Os níveis, as dicas e as sugestões continuam na tela (as correções aparecem como "corrigiria"), e uma faixa vermelha avisa quem ligou e quando. Os controles que mexem na mesa ficam travados, e o servidor também recusa. O bypass continua ligado mesmo se o programa reiniciar. Para desligar: clique de novo e confirme.
 
 **Exceção do bypass (testar numa saída só):** com o bypass ligado, a faixa vermelha tem *mexer só em:* — escolha uma saída (ex.: o fone de um músico) e o Copiloto passa a mexer **só nos envios dela** (faders, mute, ajuste automático, presets). EQ, ganho, phantom, efeitos, o salão e as outras saídas continuam protegidos. Ao desligar e religar o bypass, a exceção some.
+
+**Quero usar o Copiloto só na live e no meu fone, por enquanto.**
+Coloque essas saídas em `safeBuses` no `config/config.json` (ex.: `[5, 9]`). Elas aparecem com ✓ no seletor de Saída; as outras aparecem com ⚠ e ficam travadas com uma faixa amarela explicando o risco. Se precisar mexer numa delas, clique em *Liberar esta saída por 10 min (risco)*. Ganho, phantom, EQ e envios para efeitos (que mudam o canal inteiro) têm a mesma trava na janela do canal. Uma saída fora da lista nunca volta ligada em "Ajustando" depois de reiniciar.
 
 **Ele mexe no som do salão?**
 Só se você escolher a saída **MASTER** (fica em vermelho e pede confirmação), mexer no **ganho** ou no **phantom**, ou mexer em **efeitos que tocam no salão**. Nos auxiliares, ele mexe só nos envios daquele aux.

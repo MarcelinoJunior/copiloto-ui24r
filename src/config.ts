@@ -42,6 +42,12 @@ export interface AppConfig {
   mixer: { ip: string };
   server: { host: string; port: number };
   streamAuxes: number[];
+  /**
+   * Saídas já testadas com o Copiloto (ex.: a live e um fone). As outras, o master e os
+   * comandos que mexem no canal inteiro (EQ, ganho, phantom, efeitos) ficam travados com aviso
+   * de risco até alguém liberar por 10 min. Sem esta opção, tudo fica liberado.
+   */
+  safeBuses?: number[];
   initialMode: Mode;
   leveler: LevelerConfig;
 }
@@ -74,6 +80,7 @@ export function loadConfig(path = resolve('config/config.json')): AppConfig {
     mixer: { ip: raw.mixer?.ip ?? '192.168.0.122' },
     server: { host: raw.server?.host ?? '127.0.0.1', port: raw.server?.port ?? 8080 },
     streamAuxes: raw.streamAuxes ?? [7],
+    safeBuses: raw.safeBuses,
     initialMode: raw.initialMode ?? 'observar',
     leveler: { ...DEFAULT_LEVELER, ...raw.leveler },
   };
@@ -83,6 +90,9 @@ export function loadConfig(path = resolve('config/config.json')): AppConfig {
   }
   if (config.streamAuxes.length === 0 || config.streamAuxes.some((a) => !Number.isInteger(a) || a < 1 || a > 10)) {
     throw new Error('streamAuxes precisa ter números de aux entre 1 e 10');
+  }
+  if (config.safeBuses && config.safeBuses.some((a) => !Number.isInteger(a) || a < 0 || a > 10)) {
+    throw new Error('safeBuses precisa ter números de saída entre 0 (master) e 10');
   }
   return config;
 }

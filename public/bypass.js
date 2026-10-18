@@ -65,10 +65,13 @@
           : `BYPASS LIGADO${who}${when}: o Copiloto NÃO mexe na mesa, só monitora (níveis, dicas e sugestões continuam)${blocked}.`;
         const sel = banner.querySelector('#bypass-allow');
         const opts = (s.buses ?? []).filter((x) => x.id !== 0);
-        const sig = JSON.stringify(opts.map((o) => [o.id, o.label, o.name]));
+        const sig = JSON.stringify([opts.map((o) => [o.id, o.label, o.name]), s.safety?.safeBuses]);
         if (sel.dataset.sig !== sig) {
           sel.dataset.sig = sig;
-          sel.innerHTML = '<option value="">nenhuma saída</option>' + opts.map((o) => `<option value="${o.id}">${o.label} · ${o.name}</option>`).join('');
+          const safe = s.safety?.safeBuses;
+          sel.innerHTML =
+            '<option value="">nenhuma saída</option>' +
+            opts.map((o) => `<option value="${o.id}">${safe ? (safe.includes(o.id) ? '✓ ' : '⚠ ') : ''}${o.label} · ${o.name}</option>`).join('');
         }
         if (document.activeElement !== sel) sel.value = allow.length ? String(allow[0]) : '';
       }

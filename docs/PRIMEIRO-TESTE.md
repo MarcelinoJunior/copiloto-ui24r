@@ -53,6 +53,10 @@ Para a primeira vez, deixe o **⛔ BYPASS ligado antes de conectar**: assim o Co
 - Mexa no Copiloto o fader de um canal **sem uso** nessa saída: a mesa acompanha. Volte o fader.
 - Teste o **MUTE** num canal sem uso e desfaça.
 
+## 4a. Saídas testadas
+
+Em `config/config.json`, `safeBuses` lista as saídas já testadas (na igreja: `[5, 9]` = LIVE e o fone F. SAMUEL). As outras ficam travadas com aviso de risco; ganho, phantom, EQ e efeitos também. Quando conectar na mesa real, o Copiloto grava os nomes dela em `data/mesa-espelho.json` e o simulador passa a ser igual à mesa da igreja.
+
 ## 4b. Testar numa saída só (ex.: um fone)
 
 Com o bypass ligado, na faixa vermelha escolha **mexer só em: AUX 9 · F. SAMUEL** (por exemplo). Só os envios dessa saída podem mudar; o resto da mesa continua protegido. Vá em **Saída › AUX 9**, faça o teste abaixo e volte a exceção para *nenhuma saída* no fim.

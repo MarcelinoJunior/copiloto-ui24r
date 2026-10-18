@@ -5,6 +5,7 @@ import { openDatabase } from './db.js';
 import { ViewStore } from './views.js';
 import { loadConfig } from './config.js';
 import { ConnectionStore } from './connection-store.js';
+import { loadMirror } from './mixer/mirror.js';
 import { SimulatorAdapter } from './mixer/simulator.js';
 import { SoundcraftAdapter } from './mixer/soundcraft-adapter.js';
 import { PresetStore } from './preset-store.js';
@@ -42,7 +43,9 @@ const app = new App(
   {
     kind: startKind,
     ip,
-    create: (kind, address) => (kind === 'simulador' ? new SimulatorAdapter() : new SoundcraftAdapter(address)),
+    // o simulador usa o "espelho" da mesa real (nomes, saídas, envios) quando já conectou nela uma vez
+    create: (kind, address) =>
+      kind === 'simulador' ? new SimulatorAdapter(loadMirror(resolve(dataDir, 'mesa-espelho.json'))) : new SoundcraftAdapter(address),
     profiles,
     dataDir,
   },

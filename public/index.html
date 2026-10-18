@@ -100,6 +100,12 @@
     <div class="h g-tela"><strong>Tela</strong> Como os faders aparecem: quantos cabem na tela e quais canais (✎ cria seus modos). <em>Expandir canal</em>: clicar no nome do canal abre ganho, phantom, mute, equalizador, master, efeitos e espectro.</div>
   </div>
 
+  <div id="risk-bar" class="risk-bar" role="alert" hidden>
+    <span class="risk-text"></span>
+    <button type="button" id="risk-ack" class="small-btn">Liberar esta saída por 10 min (risco)</button>
+    <button type="button" id="risk-release" class="small-btn" hidden>Travar de novo</button>
+  </div>
+
   <p id="default-pass" class="warnbar" hidden>
     ⚠ Você está usando a senha padrão <strong>admin</strong>, que todo mundo conhece (o projeto é público).
     <a href="admin.html">Troque a senha agora →</a>
@@ -155,6 +161,10 @@
       </section>
 
       <aside class="cm-side">
+        <div id="risk-canal" class="risk-bar small" hidden>
+          <span class="risk-text">⚠ Ganho, phantom, EQ e envios para efeitos mexem no <strong>canal inteiro</strong> (salão, live e todos os fones) e ainda não foram testados com o Copiloto. Estão travados.</span>
+          <button type="button" id="risk-canal-ack" class="small-btn">Liberar por 10 min (risco)</button>
+        </div>
         <section class="cm-card g-alvo-card" id="d-preamp" hidden>
           <h3>Pré-amplificador</h3>
           <div class="detail-preamp">

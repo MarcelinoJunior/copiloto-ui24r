@@ -10,6 +10,7 @@ import type { EqAdvice } from './analysis/eq-advice.js';
 import { isLeadVoiceName, SOURCE_LABEL, type SourceType, TYPE_OFFSET_DB, typeFromName } from './analysis/identify.js';
 import type { ChannelRole, Moment } from './analysis/moment.js';
 import { type EqState, eqFromRaw, eqParamToRaw, isEqParam } from './mixer/eq.js';
+import { type MixerMirror, saveMirror } from './mixer/mirror.js';
 import { type AudioSource, detectUsbAudio, UsbAudioCapture, type UsbDetection } from './levels/usb-audio.js';
 import { SimulatedAudio } from './mixer/sim-audio.js';
 import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
@@ -55,6 +56,8 @@ export interface ClientView {
   bus?: number;
   /** canal aberto no painel do canal */
   detail?: string;
+  /** liberações de risco desta pessoa: escopo ("bus:N" ou "canal") → até quando (ms) */
+  riskAcks?: Record<string, number>;
 }
 
 export interface ClientCtx {
@@ -181,6 +184,8 @@ export interface AppSnapshot {
   levelSource: LevelSourceInfo;
   /** senha da mesa (Settings › Access) e teste de comando; a senha em si nunca vai para a tela */
   access: AccessInfo;
+  /** saídas já testadas (sem aviso) e o que esta pessoa liberou com risco */
+  safety: { safeBuses: number[] | null; safeLabels: string[]; acks: { scope: string; until: number }[] };
   /** botão de pânico: ligado = o Copiloto não manda nada para a mesa, só monitora */
   bypass: BypassState & { blocked: number; allowLabels: string[] };
   tips: Tip[];
@@ -222,6 +227,8 @@ export type Command =
   | { type: 'conn.writeTest' }
   | { type: 'bypass'; on: boolean }
   | { type: 'bypass.allow'; bus: number | null }
+  | { type: 'risk.ack'; scope: string }
+  | { type: 'risk.release'; scope?: string }
   | { type: 'level.detect' }
   | { type: 'level.useVu' }
   | { type: 'level.useUsb'; device: string; channels: number }
@@ -417,6 +424,7 @@ export class App {
         this.event(`Conectado: ${info.model} em ${info.address} (firmware ${info.firmware})`);
         this.log.write('mesa', { ...info });
         this.wire();
+        if (this.kind === 'mesa') this.scheduleMirror(gen);
         // mesa real: confere logo de cara se ela aceita comandos (mudança inaudível, ver WriteTest)
         // (com o bypass ligado nem o teste é feito: nada vai para a mesa)
         if (this.kind === 'mesa' && !this.bypass.on) {
@@ -552,8 +560,13 @@ export class App {
   }
 
   private addController(bus: number): void {
-    const mode =
+    let mode =
       this.persisted.modes?.[String(bus)] ?? (this.cfg.streamAuxes.includes(bus) ? this.cfg.initialMode : 'desligado');
+    // saída ainda não testada nunca começa corrigindo sozinha (precisa liberar com aviso de risco)
+    if (mode === 'automatico' && !this.isSafeBus(bus)) {
+      mode = 'observar';
+      this.event(`⚠ ${this.labelOf(bus)} estava em "Ajustando" mas não está entre as saídas testadas: voltou para "Só sugerir"`);
+    }
     const leveler = new AuxLeveler(bus, this.cfg.leveler);
     const follower = new FxFollower(bus, this.cfg.leveler);
     leveler.setMode(mode);
@@ -849,6 +862,7 @@ export class App {
     if (this.bypass.on && WRITE_COMMANDS.has(cmd.type) && !(scopedBus !== undefined && this.bypassAllows(scopedBus))) {
       throw new CommandError('BYPASS ligado: o Copiloto não mexe na mesa, só monitora. Desligue o bypass (botão vermelho no topo) para mexer.');
     }
+    this.checkRisk(cmd, ctx, now);
 
     switch (cmd.type) {
       case 'view': {
@@ -1059,6 +1073,21 @@ export class App {
         this.log.write('bypass', { on, quem: who });
         return;
       }
+      case 'risk.ack': {
+        const scope = String(cmd.scope ?? '');
+        const m = /^bus:(\d{1,2})$/.exec(scope);
+        if (m) this.requireBus(ctx, Number(m[1]));
+        else if (scope !== 'canal') throw new CommandError('Liberação inválida.');
+        (ctx.view.riskAcks ??= {})[scope] = now + RISK_ACK_MS;
+        const what = m ? this.labelOf(Number(m[1])) : 'ganho, phantom, EQ e efeitos (canal inteiro)';
+        this.event(`⚠ ${who}: liberou ${what} por 10 min (fora do que já foi testado)`);
+        this.log.write('risco', { scope, quem: who });
+        return;
+      }
+      case 'risk.release':
+        if (cmd.scope) delete ctx.view.riskAcks?.[cmd.scope];
+        else ctx.view.riskAcks = {};
+        return;
       case 'bypass.allow': {
         // exceção do bypass: liberar UMA saída (aux) para o Copiloto mexer nos envios dela
         if (!this.bypass.on) throw new CommandError('O bypass está desligado: o Copiloto já pode mexer conforme o modo de cada saída.');
@@ -1209,6 +1238,64 @@ export class App {
         if (this.usbCapture instanceof SimulatedAudio) this.usbCapture.clearInjections(cmd.key);
         return;
     }
+  }
+
+  /** Saída já testada com o Copiloto (sem aviso de risco)? Sem `safeBuses` no config, todas são. */
+  private isSafeBus(bus: number): boolean {
+    const safe = this.cfg.safeBuses;
+    return !safe || safe.includes(bus);
+  }
+
+  /** Escopo de risco de um comando: a saída que ele mexe ("bus:N") ou o canal inteiro ("canal"). */
+  private riskScope(cmd: Command): string | undefined {
+    if (CHANNEL_WIDE_COMMANDS.has(cmd.type)) return this.cfg.safeBuses ? 'canal' : undefined;
+    const writesBus = BUS_SCOPED_COMMANDS.has(cmd.type) || (cmd.type === 'setMode' && cmd.mode === 'automatico');
+    if (!writesBus || !('bus' in cmd)) return undefined;
+    const bus = (cmd as { bus: number }).bus;
+    return this.isSafeBus(bus) ? undefined : `bus:${bus}`;
+  }
+
+  /** Fora das saídas testadas: só passa se a pessoa liberou (com aviso) nos últimos 10 min. */
+  private checkRisk(cmd: Command, ctx: ClientCtx, now: number): void {
+    const scope = this.riskScope(cmd);
+    if (!scope || (ctx.view.riskAcks?.[scope] ?? 0) > now) return;
+    const what = scope === 'canal' ? 'mexe no canal inteiro (salão, live e todos os fones)' : `mexe em ${this.labelOf(Number(scope.slice(4)))}`;
+    throw new CommandError(`⚠ Travado por segurança: este comando ${what}, que ainda não foi testado com o Copiloto. Para usar mesmo assim, clique em "Liberar (risco)".`);
+  }
+
+  /** Grava o "espelho" da mesa real (nomes, saídas, envios) para o simulador ficar igual. */
+  private scheduleMirror(gen: number): void {
+    const save = () => {
+      if (gen !== this.generation || this.kind !== 'mesa' || this.connection !== 'conectado') return;
+      try {
+        saveMirror(resolve(this.target.dataDir, 'mesa-espelho.json'), this.buildMirror());
+      } catch (err) {
+        this.log.write('erro', { onde: 'espelho', detalhe: String(err) });
+      }
+    };
+    setTimeout(save, 8000);
+    const timer = setInterval(() => (gen === this.generation ? save() : clearInterval(timer)), 5 * 60_000);
+    this.timers.push(timer);
+  }
+
+  private buildMirror(): MixerMirror {
+    const now = Date.now();
+    const sends: MixerMirror['sends'] = {};
+    for (const c of this.controllers.values()) {
+      const row: Record<string, number | null> = {};
+      for (const ch of c.leveler.snapshot(now)) row[ch.key] = ch.sendDB ?? null;
+      sends[String(c.bus)] = row;
+      const info = this.adapter.listBuses().find((b) => b.id === c.bus);
+      if (info?.linkedWith !== undefined) sends[String(info.linkedWith)] = row;
+    }
+    return {
+      savedAt: now,
+      address: this.ip,
+      firmware: this.mixer?.firmware ?? '?',
+      channels: this.adapter.listChannels().map((c) => ({ key: c.key, name: this.channelName(c.key) })),
+      buses: this.adapter.listBuses().filter((b) => b.id !== MASTER_BUS).map((b) => ({ id: b.id, name: b.name, linkedWith: b.linkedWith, isMatrix: b.isMatrix })),
+      sends,
+    };
   }
 
   /** Teste de comando (mudança inaudível conferida por uma segunda conexão). */
@@ -1376,6 +1463,13 @@ export class App {
         detection: this.usbDetection,
       },
       access: this.accessInfo(),
+      safety: {
+        safeBuses: this.cfg.safeBuses ?? null,
+        safeLabels: (this.cfg.safeBuses ?? []).map((b) => this.labelOf(b)),
+        acks: Object.entries(ctx.view.riskAcks ?? {})
+          .filter(([, until]) => until > now)
+          .map(([scope, until]) => ({ scope, until })),
+      },
       bypass: {
         ...this.bypass,
         blocked: this.blockedWrites,
@@ -1557,6 +1651,12 @@ function fmt(db: number): string {
 
 /** Métodos do MixerAdapter que escrevem na mesa (barrados com o bypass ligado). */
 const MIXER_WRITES = new Set(['setSendDB', 'setSendMute', 'setEqRaw', 'setFxSendDB', 'setGainDB', 'setPhantom', 'setBusMasterDB', 'testWrite']);
+
+/** Liberação de risco vale por 10 minutos. */
+const RISK_ACK_MS = 10 * 60_000;
+
+/** Comandos que mexem no canal inteiro (salão, live e fones juntos). */
+const CHANNEL_WIDE_COMMANDS = new Set<Command['type']>(['setEq', 'eq.apply', 'setGain', 'setPhantom', 'setFxSend']);
 
 /** Comandos que mexem só numa saída: passam se a saída estiver na exceção do bypass. */
 const BUS_SCOPED_COMMANDS = new Set<Command['type']>(['setSend', 'setMute', 'setBusMaster', 'restore', 'preset.load']);

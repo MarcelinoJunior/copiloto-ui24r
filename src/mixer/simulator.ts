@@ -1,5 +1,7 @@
 import { clamp, dbToPow, FLOOR_DB, powToDb, sumDb } from '../util/db.js';
+import { typeFromName } from '../analysis/identify.js';
 import { DEFAULT_EQ_RAW } from './eq.js';
+import type { MixerMirror } from './mirror.js';
 import {
   type AccessState,
   type BusInfo,
@@ -102,10 +104,13 @@ export class SimulatorAdapter implements MixerAdapter {
   private timer?: NodeJS.Timeout;
   private lastT = Date.now();
   scene: Scene = 'louvor';
+  /** nomes, saídas e envios clonados da mesa real (ver mirror.ts) */
+  private readonly mirror?: MixerMirror;
 
-  constructor() {
+  constructor(mirror?: MixerMirror) {
+    this.mirror = mirror;
     for (let n = 1; n <= INPUTS; n++) {
-      const def = BAND[n - 1];
+      const def = mirror ? mirrorBand(mirror, n) : BAND[n - 1];
       const key = channelKey('i', n);
       this.sim.push({
         info: { key, kind: 'i', number: n, name: def?.[0] ?? `CH ${n}` },
@@ -155,13 +160,16 @@ export class SimulatorAdapter implements MixerAdapter {
   listBuses(): BusInfo[] {
     const buses: BusInfo[] = [{ id: MASTER_BUS, name: 'Master (salão)', isMatrix: false }];
     for (let aux = 1; aux <= AUXES; aux++) {
-      buses.push({ id: aux, name: AUX_NAMES[aux - 1], linkedWith: this.linkedWith(aux), isMatrix: false });
+      const m = this.mirror?.buses.find((b) => b.id === aux);
+      buses.push({ id: aux, name: this.busName(aux), linkedWith: this.linkedWith(aux), isMatrix: m?.isMatrix ?? false });
     }
     return buses;
   }
 
   busName(bus: number): string {
-    return bus === MASTER_BUS ? 'Master (salão)' : AUX_NAMES[bus - 1] ?? `AUX ${bus}`;
+    if (bus === MASTER_BUS) return 'Master (salão)';
+    const m = this.mirror?.buses.find((b) => b.id === bus);
+    return m?.name || (this.mirror ? `AUX ${bus}` : AUX_NAMES[bus - 1] ?? `AUX ${bus}`);
   }
 
   onVu(cb: (frame: VuFrame) => void): void {
@@ -292,6 +300,7 @@ export class SimulatorAdapter implements MixerAdapter {
   // ---- internos ----
 
   private linkedWith(bus: number): number | undefined {
+    if (this.mirror) return this.mirror.buses.find((b) => b.id === bus)?.linkedWith;
     for (const [a, b] of LINKED) {
       if (bus === a) return b;
       if (bus === b) return a;
@@ -313,6 +322,13 @@ export class SimulatorAdapter implements MixerAdapter {
   private getSend(bus: number, key: string): SendInfo {
     const existing = this.sends.get(`${bus}:${key}`);
     if (existing) return existing;
+    if (this.mirror) {
+      // envios clonados da mesa real (na Ui24R da igreja todos os auxes são pré-fader)
+      const v = this.mirror.sends[String(bus)]?.[key];
+      const info: SendInfo = { db: v === null || v === undefined ? NEG : v, muted: false, postFader: false, postProc: true };
+      this.sends.set(`${bus}:${key}`, info);
+      return info;
+    }
     const source = INITIAL[bus] ?? INITIAL[this.linkedWith(bus) ?? -1];
     const idx = Number(key.slice(1)) - 1;
     const db = (key.startsWith('f') ? source?.fx[idx] : source?.ch[idx]) ?? NEG;
@@ -390,6 +406,24 @@ export class SimulatorAdapter implements MixerAdapter {
     }
     return clamp(level, FLOOR_DB, 0);
   }
+}
+
+/**
+ * Canal do simulador a partir do nome clonado da mesa real: o tipo de som vem do nome
+ * (BUMBO, CAIXA, OVER, BAIXO, VIOLAO, MINISTRO...). Canal sem nome conhecido toca como
+ * instrumento; "CH 23" (sem uso) fica em silêncio.
+ */
+function mirrorBand(mirror: MixerMirror, n: number): [string, Behavior, number, Scene[], (number | null)[]] {
+  const name = mirror.channels.find((c) => c.key === `i${n}`)?.name ?? `CH ${n}`;
+  if (/^CH\s*\d+$/i.test(name.trim())) return [name, 'instrumento', FLOOR_DB, [], []];
+  const type = typeFromName(name);
+  const lower = name.toLowerCase();
+  if (type === 'voz') {
+    const speech = /pastor|prega|palestr|fala|avis|locu|apresent|\bpr\b/.test(lower);
+    return speech ? [name, 'fala', -18, ['pregacao', 'avisos'], []] : [name, 'canto', -20, ['louvor'], []];
+  }
+  if (type === 'bumbo' || type === 'caixa' || type === 'pratos') return [name, 'percussao', -16, ['louvor'], []];
+  return [name, 'instrumento', -20, ['louvor'], []];
 }
 
 function quantize(db: number): number {

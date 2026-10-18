@@ -723,3 +723,18 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 .bypass-on.bypass-allowed .bus { outline-color: var(--warn); }
 .bypass-allow { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .bypass-allow select { background: #fff; color: #7a1010; border-color: #fff; font-weight: 700; }
+
+/* ================= saídas não testadas: travadas com aviso de risco ================= */
+
+.risk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 12px; border: 2px solid var(--warn); border-radius: 8px; background: rgba(245, 182, 66, 0.12); color: var(--text); font-weight: 600; }
+.risk-bar[hidden] { display: none; }
+.risk-bar.small { font-size: 12px; font-weight: 500; }
+.risk-bar .small-btn { border-color: var(--warn); color: var(--warn); font-weight: 700; }
+.risk-locked .strip .fader, .risk-locked .mute-btn, .risk-locked #restore, .risk-locked #preset-select, .risk-locked [data-mode="automatico"],
+.risk-locked .dfader[data-kind="bus"] .fader, .risk-locked #d-mute,
+.risk-canal-locked #d-gain, .risk-canal-locked #d-gminus, .risk-canal-locked #d-gplus, .risk-canal-locked #d-phantom,
+.risk-canal-locked #d-eq-bands input, .risk-canal-locked #d-eq-on, .risk-canal-locked #d-eq-advice button, .risk-canal-locked .dfader[data-kind="fx"] .fader {
+  pointer-events: none;
+  opacity: 0.45;
+}
+.risk-locked .bus { outline: 2px dashed var(--warn); outline-offset: -2px; }
