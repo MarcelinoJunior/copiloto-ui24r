@@ -15,7 +15,7 @@ import { type AudioSource, detectUsbAudio, UsbAudioCapture, type UsbDetection } 
 import { SimulatedAudio } from './mixer/sim-audio.js';
 import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
 import { ObsClient, type ObsStatus } from './obs.js';
-import { ChannelStats, computeTips, type Tip } from './tips.js';
+import { BalanceTracker, ChannelStats, computeTips, type Tip, TipHold } from './tips.js';
 import {
   type BusInfo,
   type ChannelVu,
@@ -716,10 +716,15 @@ export class App {
     this.log.write('operador', { bus, key, quem: who, ...change });
   }
 
+  /** dicas de equilíbrio: média longa por canal e só depois de 20 s persistente */
+  private readonly balance = new BalanceTracker();
+  private readonly tipHold = new TipHold();
+
   private tick(): void {
     if (!this.wired) return;
     const now = Date.now();
     for (const c of this.controllers.values()) {
+      if (c.bus !== MASTER_BUS) this.balance.update(c.bus, c.leveler.snapshot(now), now);
       this.apply(c.leveler.tick(now));
       this.apply(c.follower.tick(now, c.leveler.offsets(now)));
     }
@@ -1501,14 +1506,15 @@ export class App {
   }
 
   private tipsFor(user: User, bus: ViewedBus | undefined, now: number): Tip[] {
-    return computeTips({
+    const tips = computeTips({
       now,
       channels: this.channelSummaries(now),
-      bus: bus && { bus: bus.bus, label: bus.label, mode: bus.mode, outDB: bus.outDB, channels: bus.channels },
+      bus: bus && { bus: bus.bus, label: bus.label, mode: bus.mode, outDB: bus.outDB, channels: this.balance.view(bus.bus, bus.channels, now) },
       analysis: this.analysisSnapshot(now),
       obs: this.engine && this.advanced.obs.enabled ? this.obs.status : undefined,
       ...this.soundInfo(now),
-    }).filter((t) => t.bus === undefined || canUseBus(user, t.bus));
+    });
+    return this.tipHold.filter(tips, now).filter((t) => t.bus === undefined || canUseBus(user, t.bus));
   }
 
   /** Tipos de som, vozes principais e sugestões de EQ (para as dicas), recalculados 1×/s. */

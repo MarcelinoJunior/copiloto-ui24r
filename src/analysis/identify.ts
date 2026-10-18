@@ -179,6 +179,7 @@ export class SourceIdentifier {
  */
 export function typeFromName(name: string): SourceType {
   const n = name.toLowerCase();
+  if (isUtilityName(name)) return 'desconhecido'; // "TALK BACK" não é back vocal
   if (/bumbo|kick|\bbd\b/.test(n)) return 'bumbo';
   if (/caixa|snare|\bcx\b|\bsn\b/.test(n)) return 'caixa';
   if (/over|\boh\b|prato|chimbal|hi-?hat|\bhh\b|ride|crash/.test(n)) return 'pratos';
@@ -186,6 +187,11 @@ export function typeFromName(name: string): SourceType {
   if (/voz|vocal|\bvox\b|back|minist|cantor|canto|coral|pastor|prega|palestr|fala|locu|\bmc\b|apresent|lider|solo/.test(n)) return 'voz';
   if (/viol|guit|gtr|tecl|key|piano|synth|pad|sax|trompe|flaut|cord|acord|sanfon/.test(n)) return 'harmonico';
   return 'desconhecido';
+}
+
+/** Canal de serviço (talk back, click, guia): fica fora das contas de equilíbrio da mixagem. */
+export function isUtilityName(name: string): boolean {
+  return /talk\s*-?\s*back|\btb\b|\bclick\b|metr[oô]nomo|\bguia\b|\bcue\b/i.test(name);
 }
 
 /** Voz principal pelo nome (pastor, ministro, solo...). */

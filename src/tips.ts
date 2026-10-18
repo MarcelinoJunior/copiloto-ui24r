@@ -1,6 +1,6 @@
 import type { AnalysisSnapshot } from './analysis/engine.js';
 import type { EqAdvice } from './analysis/eq-advice.js';
-import type { SourceType } from './analysis/identify.js';
+import { isUtilityName, type SourceType } from './analysis/identify.js';
 import type { ChannelSnapshot, Mode } from './leveler/aux-leveler.js';
 import type { ObsStatus } from './obs.js';
 
@@ -91,8 +91,9 @@ export function balanceTips(
   leadVoices: Set<string> = new Set(),
 ): Tip[] {
   const tips: Tip[] = [];
+  // contributionDB aqui é a média LONGA (BalanceTracker); canais de serviço (talk back) ficam de fora
   const playing = bus.channels.filter(
-    (c) => c.contributionDB !== undefined && !c.muted && !c.key.startsWith('f') && (c.levelDB ?? -100) > -50 && (c.rawDB ?? -100) > -60,
+    (c) => c.contributionDB !== undefined && !c.muted && !c.key.startsWith('f') && !isUtilityName(c.name),
   );
   if (playing.length < 3) return tips;
   const contrib = (c: ChannelSnapshot) => c.contributionDB as number;
@@ -104,15 +105,17 @@ export function balanceTips(
   for (const c of playing) {
     const diff = contrib(c) - mid;
     const isVoice = types[c.key] === 'voz';
+    // percussão: o VU da mesa mede pico, e bumbo/caixa/pratos têm pico alto por natureza
+    const isPerc = types[c.key] === 'bumbo' || types[c.key] === 'caixa' || types[c.key] === 'pratos';
     // a voz principal pode (e deve) ficar acima da média
-    const loudLimit = isVoice ? 14 : 9;
+    const loudLimit = isVoice ? 14 : isPerc ? 13 : 9;
     if (diff > loudLimit) {
-      const lower = Math.round(diff - (isVoice ? 8 : 4));
+      const lower = Math.round(diff - (isVoice ? 8 : isPerc ? 8 : 4));
       tips.push({
         id: `bal-alto:${bus.bus}:${c.key}`,
         severity: 'media',
         title: `${c.name}: muito acima dos outros em ${bus.label}`,
-        detail: `Está ${fmt(diff)} acima da média dos canais tocando. Baixe o envio uns ${lower} dB (ou o ganho, se estiver clipando) para não esconder o resto.`,
+        detail: `Está ${fmt(diff)} acima da média dos canais tocando (média dos últimos ~30 s). Baixe o envio uns ${lower} dB (ou o ganho, se estiver clipando) para não esconder o resto.`,
         channel: c.key,
         bus: bus.bus,
         action: 'canal',
@@ -122,7 +125,7 @@ export function balanceTips(
         id: `bal-baixo:${bus.bus}:${c.key}`,
         severity: 'baixa',
         title: `${c.name}: quase sumindo em ${bus.label}`,
-        detail: `Está ${fmt(-diff)} abaixo da média dos canais tocando: na live quase não aparece. Se deveria ser ouvido, suba o envio uns ${Math.round(-diff - 10)} dB.`,
+        detail: `Está ${fmt(-diff)} abaixo da média dos canais tocando (últimos ~30 s): na live quase não aparece. Se deveria ser ouvido, suba o envio uns ${Math.round(-diff - 10)} dB.`,
         channel: c.key,
         bus: bus.bus,
         action: 'canal',
@@ -148,6 +151,83 @@ export function balanceTips(
     }
   }
   return tips;
+}
+
+/**
+ * Média LONGA do peso de cada canal numa saída (nível + envio), para as dicas de equilíbrio:
+ * ~30 s em potência, só enquanto o canal toca. Assim um pico de bumbo ou uma frase mais forte
+ * não viram dica; o canal só entra na conta depois de ~15 s tocando.
+ */
+export class BalanceTracker {
+  private readonly avg = new Map<string, { pow: number; since: number; last: number }>();
+
+  constructor(
+    private readonly tauSec = 30,
+    private readonly warmupSec = 15,
+  ) {}
+
+  update(bus: number, channels: ChannelSnapshot[], now: number): void {
+    for (const c of channels) {
+      const playing = c.contributionDB !== undefined && !c.muted && (c.rawDB ?? -100) > -60 && (c.levelDB ?? -100) > -50;
+      if (!playing) continue;
+      const id = `${bus}:${c.key}`;
+      const p = Math.pow(10, (c.contributionDB as number) / 10);
+      const st = this.avg.get(id);
+      if (!st || now - st.last > 60_000) {
+        this.avg.set(id, { pow: p, since: now, last: now });
+        continue;
+      }
+      const alpha = 1 - Math.exp(-(now - st.last) / 1000 / this.tauSec);
+      st.pow += alpha * (p - st.pow);
+      st.last = now;
+    }
+  }
+
+  /** Canais com a média longa no lugar do peso instantâneo (sem média ainda = fora da conta). */
+  view(bus: number, channels: ChannelSnapshot[], now: number): ChannelSnapshot[] {
+    return channels.map((c) => {
+      const st = this.avg.get(`${bus}:${c.key}`);
+      const ready = st && now - st.since >= this.warmupSec * 1000 && now - st.last < 10_000;
+      return { ...c, contributionDB: ready ? Math.round(10 * Math.log10(st.pow) * 10) / 10 : undefined };
+    });
+  }
+}
+
+/**
+ * Dicas que só aparecem se o problema persiste (ex.: equilíbrio: 20 s seguidos) e só somem
+ * depois de ~10 s resolvidas, para não piscar a cada compasso.
+ */
+export class TipHold {
+  private readonly seen = new Map<string, { first: number; last: number; tip: Tip }>();
+
+  constructor(
+    private readonly prefix = 'bal-',
+    private readonly holdMs = 20_000,
+    private readonly releaseMs = 10_000,
+  ) {}
+
+  filter(tips: Tip[], now: number): Tip[] {
+    const out: Tip[] = [];
+    const present = new Set<string>();
+    for (const t of tips) {
+      if (!t.id.startsWith(this.prefix)) {
+        out.push(t);
+        continue;
+      }
+      present.add(t.id);
+      const st = this.seen.get(t.id);
+      if (!st || now - st.last > this.releaseMs) this.seen.set(t.id, { first: now, last: now, tip: t });
+      else Object.assign(st, { last: now, tip: t });
+    }
+    for (const [id, st] of this.seen) {
+      if (now - st.last > this.releaseMs) {
+        this.seen.delete(id);
+        continue;
+      }
+      if (now - st.first >= this.holdMs && (present.has(id) || now - st.last <= this.releaseMs)) out.push(st.tip);
+    }
+    return out.sort((x, y) => ORDER[x.severity] - ORDER[y.severity]);
+  }
 }
 
 const ORDER: Record<TipSeverity, number> = { alta: 0, media: 1, baixa: 2 };

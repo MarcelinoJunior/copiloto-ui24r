@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AnalysisEngine, DEFAULT_ADVANCED } from '../src/analysis/engine.js';
-import { ChannelStats, computeTips } from '../src/tips.js';
+import { BalanceTracker, ChannelStats, computeTips, TipHold } from '../src/tips.js';
 
 function stats(values: number[]) {
   const s = new ChannelStats();
@@ -105,7 +105,7 @@ describe('equilíbrio de volumes (pelo VU)', () => {
       bus: 7,
       label: 'AUX 7+8',
       mode: 'observar' as const,
-      channels: [ch('i1', 'Voz Pastor', -22), ch('i2', 'Violão', -20), ch('i3', 'Baixo', -21), ch('i4', 'Bumbo', -8), ch('i5', 'Teclado', -21)],
+      channels: [ch('i1', 'Voz Pastor', -22), ch('i2', 'Violão', -20), ch('i3', 'Baixo', -21), ch('i4', 'Bumbo', -4), ch('i5', 'Teclado', -21)],
     };
     const ids = computeTips({ now: 0, channels: [], bus, types: { ...types } }).map((t) => t.id);
     expect(ids).toContain('bal-voz:7');
@@ -129,5 +129,55 @@ describe('equilíbrio de volumes (pelo VU)', () => {
     const bus = { bus: 7, label: 'AUX 7', mode: 'observar' as const, channels: [ch('i1', 'Voz', -14), ch('i2', 'Violão', -20), ch('i3', 'Baixo', -20), muted] };
     const ids = computeTips({ now: 0, channels: [], bus, types: { ...types } }).map((t) => t.id);
     expect(ids).not.toContain('bal-alto:7:i4');
+  });
+});
+
+describe('equilíbrio avaliado num período (sem dica por pico de bumbo)', () => {
+  const snap = (key: string, name: string, contributionDB: number) => ({
+    key,
+    name,
+    enabled: true,
+    status: 'ok' as const,
+    rawDB: -20,
+    levelDB: -20,
+    sendDB: 0,
+    muted: false,
+    contributionDB,
+    suggestedDeltaDB: 0,
+    manualForSec: 0,
+  });
+  const types = { i1: 'voz', i2: 'harmonico', i3: 'baixo', i17: 'bumbo', i9: 'desconhecido' } as const;
+
+  /** 60 s de mixagem: bumbo com picos que oscilam de -20 a -2, voz acima da banda. */
+  function run(bumbo: (t: number) => number) {
+    const tracker = new BalanceTracker();
+    const hold = new TipHold();
+    let shown: string[] = [];
+    for (let t = 0; t <= 60_000; t += 500) {
+      const chans = [snap('i1', 'MINISTRO', -14), snap('i2', 'VIOLAO', -20), snap('i3', 'BAIXO', -20), snap('i17', 'BUMBO', bumbo(t)), snap('i9', 'TALK BACK', -45)];
+      tracker.update(5, chans, t);
+      const bus = { bus: 5, label: 'AUX 5+6', mode: 'observar' as const, channels: tracker.view(5, chans, t) };
+      shown = hold.filter(computeTips({ now: t, channels: [], bus, types: { ...types } }), t).map((x) => x.id);
+    }
+    return shown;
+  }
+
+  it('bumbo com picos (às vezes muito acima) não vira dica; talk back não entra na conta', () => {
+    const ids = run((t) => ((t / 500) % 4 === 0 ? -2 : -20)); // um pico forte a cada 2 s
+    expect(ids.filter((id) => id.startsWith('bal-'))).toEqual([]);
+  });
+
+  it('bumbo alto o tempo todo vira dica, mas só depois de ~20 s persistente', () => {
+    expect(run(() => 0)).toContain('bal-alto:5:i17');
+    const tracker = new BalanceTracker();
+    const hold = new TipHold();
+    let early: string[] = [];
+    for (let t = 0; t <= 25_000; t += 500) {
+      const chans = [snap('i1', 'MINISTRO', -14), snap('i2', 'VIOLAO', -20), snap('i3', 'BAIXO', -20), snap('i17', 'BUMBO', 0)];
+      tracker.update(5, chans, t);
+      const bus = { bus: 5, label: 'AUX 5+6', mode: 'observar' as const, channels: tracker.view(5, chans, t) };
+      early = hold.filter(computeTips({ now: t, channels: [], bus, types: { ...types } }), t).map((x) => x.id);
+    }
+    expect(early).not.toContain('bal-alto:5:i17'); // 15 s de aquecimento + 20 s de persistência
   });
 });

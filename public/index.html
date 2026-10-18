@@ -232,7 +232,7 @@
     <ul id="tips-list" class="tips-list"></ul>
     <details class="tips-note">
       <summary>Nota: equilíbrio de volumes e equalização</summary>
-      <p><strong>Equilíbrio (pelo VU):</strong> o software compara quanto cada canal pesa na saída (nível médio enquanto toca + envio). Na live, a voz principal costuma ficar 3 a 6 dB acima da banda; backs uns 5 dB abaixo da voz; bumbo e baixo uns 6; violão/teclado uns 8; pratos bem mais baixos. Canal muito acima (+9 dB) ou quase sumido (−15 dB) da média vira dica com quanto mexer.</p>
+      <p><strong>Equilíbrio (pelo VU):</strong> o software compara quanto cada canal pesa na saída (nível médio enquanto toca + envio). Na live, a voz principal costuma ficar 3 a 6 dB acima da banda; backs uns 5 dB abaixo da voz; bumbo e baixo uns 6; violão/teclado uns 8; pratos bem mais baixos. Canal muito acima (+9 dB; percussão +13 dB, porque bumbo e caixa têm pico alto) ou quase sumido (−15 dB) da média vira dica com quanto mexer. A conta usa a <strong>média dos últimos ~30 s</strong> e a dica só aparece se o problema durar <strong>20 s seguidos</strong>: picos normais não viram aviso. Talk back fica de fora.</p>
       <p><strong>Antes de subir volume, equalize:</strong> som embolado (250–400 Hz) e grave sobrando (passa-altas desligado) fazem tudo parecer mais alto sem ficar mais claro. Cortar 2–4 dB no lugar certo costuma resolver melhor que subir o fader.</p>
       <p><strong>Tipo de som:</strong> no modo Áudio USB o software ouve cada canal e reconhece voz, bumbo, caixa, pratos, baixo ou violão/teclado; no modo VU usa o nome do canal. Isso alimenta estas dicas e o botão "Pelo tipo de som".</p>
     </details>
