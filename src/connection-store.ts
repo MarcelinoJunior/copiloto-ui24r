@@ -15,6 +15,8 @@ export interface BypassState {
   on: boolean;
   by?: string;
   at?: number;
+  /** exceção: saídas (auxes) em que o Copiloto PODE mexer nos envios mesmo com o bypass ligado */
+  allow?: number[];
 }
 
 interface Saved {
@@ -63,7 +65,9 @@ export class ConnectionStore {
   /** O bypass sobrevive a reinícios: se estava ligado, o programa volta só monitorando. */
   loadBypass(): BypassState {
     const b = this.load().bypass;
-    return b?.on ? { on: true, by: b.by, at: b.at } : { on: false };
+    if (!b?.on) return { on: false };
+    const allow = Array.isArray(b.allow) ? b.allow.filter((n) => Number.isInteger(n) && n >= 1 && n <= 10) : [];
+    return { on: true, by: b.by, at: b.at, allow };
   }
 
   saveBypass(bypass: BypassState): void {

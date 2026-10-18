@@ -177,6 +177,11 @@ function setPill(cls, text) {
 
 // ---------- render geral ----------
 
+/** A saída vista está protegida pelo bypass (bypass ligado e ela não está na exceção)? */
+function busBypassed(s) {
+  return Boolean(s.bypass?.on && !(s.bus && (s.bypass.allow ?? []).includes(s.bus.bus)));
+}
+
 function render() {
   const s = state;
   const isSim = s.source?.kind === 'simulador';
@@ -195,7 +200,13 @@ function render() {
 
   const mode = s.bus?.mode ?? 'desligado';
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-  $('#mode-help').textContent = !s.bus ? '' : s.bypass?.on ? 'BYPASS ligado: nada é mexido na mesa; as correções aparecem só como sugestão.' : MODE_HELP[mode];
+  $('#mode-help').textContent = !s.bus
+    ? ''
+    : busBypassed(s)
+      ? 'BYPASS ligado: nada é mexido nesta saída; as correções aparecem só como sugestão.'
+      : s.bypass?.on
+        ? `Saída liberada no bypass: ${MODE_HELP[mode]}`
+        : MODE_HELP[mode];
 
   $('#sim').hidden = !isSim;
   if (s.sim) document.querySelectorAll('[data-scene]').forEach((b) => b.classList.toggle('active', b.dataset.scene === s.sim.scene));
@@ -559,7 +570,7 @@ function updateChannelStrip(strip, ch, s) {
 
   let label = STATUS_LABEL[ch.status] ?? ch.status;
   if (ch.status === 'manual') label = `oper. ${ch.manualForSec}s`;
-  if (ch.status === 'corrigindo' && (s.bus.mode !== 'automatico' || s.bypass?.on)) label = 'corrigiria';
+  if (ch.status === 'corrigindo' && (s.bus.mode !== 'automatico' || busBypassed(s))) label = 'corrigiria';
   strip.status.textContent = label;
   strip.status.title = STATUS_HELP[ch.status] ?? '';
   strip.status.className = `status ${ch.status}`;
@@ -570,7 +581,7 @@ function updateChannelStrip(strip, ch, s) {
   setFader(strip, ch.sendDB);
 
   const applied = ch.sendDB !== undefined && ch.baseSendDB !== undefined ? ch.sendDB - ch.baseSendDB : 0;
-  setDelta(strip.delta, s.bus.mode === 'automatico' && !s.bypass?.on ? applied : ch.suggestedDeltaDB);
+  setDelta(strip.delta, s.bus.mode === 'automatico' && !busBypassed(s) ? applied : ch.suggestedDeltaDB);
 }
 
 function createFxStrip(bus, fx) {

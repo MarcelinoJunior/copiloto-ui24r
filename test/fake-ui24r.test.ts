@@ -35,6 +35,8 @@ class FakeUi24R {
     ['SETD^i.0.aux.6.mute', '0'],
     ['SETD^i.0.aux.6.post', '0'],
     ['SETD^i.0.aux.6.postproc', '1'],
+    ['SETD^i.0.aux.8.value', '0.5'],
+    ['SETD^i.0.aux.8.mute', '0'],
     ['SETD^a.6.stereoIndex', '0'],
     ['SETD^a.7.stereoIndex', '1'],
     ['SETD^hw.0.gain', '0.5'],
@@ -292,5 +294,40 @@ describe('programa inteiro com a mesa real pela rede (Ui24R falsa)', () => {
     app.handle({ type: 'setSend', bus: 7, key: 'i1', db: -6 }, admin);
     await until(() => fake.received.some((m) => m.startsWith('SETD^i.0.aux.6.value')));
     expect(new ConnectionStore(join(dir, 'conexao.json')).loadBypass().on).toBe(false);
+  });
+
+  it('BYPASS com exceção no AUX 9 (fone): só os envios do AUX 9 chegam na mesa; o resto continua bloqueado', async () => {
+    app.handle({ type: 'bypass', on: true }, admin);
+    app.handle({ type: 'bypass.allow', bus: 9 }, admin);
+    expect(app.snapshotFor(admin).bypass.allowLabels).toEqual(['AUX 9']);
+    expect(() => app.handle({ type: 'bypass.allow', bus: 0 }, admin)).toThrow(/master/);
+    await wait(300);
+    fake.received.length = 0;
+
+    app.handle({ type: 'setSend', bus: 9, key: 'i1', db: -8 }, admin); // liberado
+    app.handle({ type: 'setMute', bus: 9, key: 'i1', muted: false }, admin); // liberado
+    for (const cmd of [
+      { type: 'setSend', bus: 7, key: 'i1', db: -3 }, // outra saída
+      { type: 'setSend', bus: 0, key: 'i1', db: -3 }, // salão
+      { type: 'setEq', key: 'i1', param: 'b1.gain', value: 3 }, // canal inteiro
+      { type: 'setGain', key: 'i1', db: 20 },
+    ] as const) {
+      expect(() => app.handle(cmd as never, admin)).toThrow(/BYPASS/);
+    }
+    const internal = (app as unknown as { adapter: SoundcraftAdapter }).adapter;
+    internal.setSendDB(7, 'i1', -20); // por dentro, outra saída: barrado
+    internal.setFxSendDB(1, 'i1', -10); // envio para efeito (salão+live): barrado
+    await until(() => fake.received.length >= 2);
+    await wait(300);
+    const keys = fake.received.map((m) => m.split('^')[1]);
+    expect(keys.every((k) => k.startsWith('i.0.aux.8.'))).toBe(true); // AUX 9 = índice 8
+    expect(keys).toContain('i.0.aux.8.value');
+
+    // a exceção some quando o bypass é desligado e ligado de novo
+    app.handle({ type: 'bypass', on: false }, admin);
+    app.handle({ type: 'bypass', on: true }, admin);
+    expect(app.snapshotFor(admin).bypass.allow).toEqual([]);
+    expect(() => app.handle({ type: 'setSend', bus: 9, key: 'i1', db: -8 }, admin)).toThrow(/BYPASS/);
+    app.handle({ type: 'bypass', on: false }, admin);
   });
 });

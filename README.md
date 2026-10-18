@@ -204,6 +204,8 @@ Os dados ficam em `data/`, que não vai para o git:
 **Como faço o Copiloto parar de mexer em tudo, na hora?**
 Clique em **⛔ BYPASS** no topo da tela (qualquer pessoa logada pode). A partir daí o Copiloto **não manda nada para a mesa**: nem envios, faders, mute, EQ, ganho, phantom, presets ou o teste de comando. Os níveis, as dicas e as sugestões continuam na tela (as correções aparecem como "corrigiria"), e uma faixa vermelha avisa quem ligou e quando. Os controles que mexem na mesa ficam travados, e o servidor também recusa. O bypass continua ligado mesmo se o programa reiniciar. Para desligar: clique de novo e confirme.
 
+**Exceção do bypass (testar numa saída só):** com o bypass ligado, a faixa vermelha tem *mexer só em:* — escolha uma saída (ex.: o fone de um músico) e o Copiloto passa a mexer **só nos envios dela** (faders, mute, ajuste automático, presets). EQ, ganho, phantom, efeitos, o salão e as outras saídas continuam protegidos. Ao desligar e religar o bypass, a exceção some.
+
 **Ele mexe no som do salão?**
 Só se você escolher a saída **MASTER** (fica em vermelho e pede confirmação), mexer no **ganho** ou no **phantom**, ou mexer em **efeitos que tocam no salão**. Nos auxiliares, ele mexe só nos envios daquele aux.
 

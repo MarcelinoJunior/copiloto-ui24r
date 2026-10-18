@@ -182,7 +182,7 @@ export interface AppSnapshot {
   /** senha da mesa (Settings › Access) e teste de comando; a senha em si nunca vai para a tela */
   access: AccessInfo;
   /** botão de pânico: ligado = o Copiloto não manda nada para a mesa, só monitora */
-  bypass: BypassState & { blocked: number };
+  bypass: BypassState & { blocked: number; allowLabels: string[] };
   tips: Tip[];
   advanced: AdvancedInfo;
   /** canais com phantom 48V ligado (etiqueta na faixa) */
@@ -221,6 +221,7 @@ export type Command =
   | { type: 'conn.access'; enabled: boolean; password?: string | null }
   | { type: 'conn.writeTest' }
   | { type: 'bypass'; on: boolean }
+  | { type: 'bypass.allow'; bus: number | null }
   | { type: 'level.detect' }
   | { type: 'level.useVu' }
   | { type: 'level.useUsb'; device: string; channels: number }
@@ -351,7 +352,9 @@ export class App {
         const fn = value as (...args: unknown[]) => unknown;
         if (typeof prop === 'string' && MIXER_WRITES.has(prop)) {
           return (...args: unknown[]) => {
-            if (!this.bypass.on) return fn.apply(target, args);
+            // exceção do bypass: só envios/mute/master de um aux liberado (nunca EQ, ganho, phantom, FX ou o salão)
+            const busScoped = prop === 'setSendDB' || prop === 'setSendMute' || prop === 'setBusMasterDB';
+            if (!this.bypass.on || (busScoped && this.bypassAllows(args[0] as number))) return fn.apply(target, args);
             this.blockedWrites++;
             return prop === 'testWrite' ? Promise.resolve({ detail: 'bypass ligado: nada é enviado para a mesa' }) : undefined;
           };
@@ -359,6 +362,12 @@ export class App {
         return fn.bind(target);
       },
     });
+  }
+
+  /** Com o bypass ligado, esta saída está na exceção (o Copiloto pode mexer nos envios dela)? */
+  private bypassAllows(bus: number): boolean {
+    if (!this.bypass.on) return true;
+    return bus !== MASTER_BUS && (this.bypass.allow ?? []).includes(bus);
   }
 
   private attach(raw: MixerAdapter): MixerAdapter {
@@ -718,9 +727,10 @@ export class App {
 
   /** Manda envios para a mesa marcando-os como nossos (para o eco não parecer o operador). */
   private apply(actions: SendAction[]): void {
-    if (this.bypass.on) return; // pânico: só monitora (as sugestões continuam na tela)
     const now = Date.now();
     for (const a of actions) {
+      // pânico: só monitora (as sugestões continuam na tela), exceto nas saídas liberadas
+      if (!this.bypassAllows(a.bus)) continue;
       const c = this.controllers.get(a.bus);
       if (!c) continue;
       if (a.key.startsWith('f')) c.follower.markCommanded(a.key, a.toDB, now);
@@ -733,8 +743,8 @@ export class App {
   private runFades(): void {
     if (this.fades.size === 0) return;
     if (this.bypass.on) {
-      this.fades.clear();
-      return;
+      for (const [id, f] of this.fades) if (!this.bypassAllows(f.bus)) this.fades.delete(id);
+      if (this.fades.size === 0) return;
     }
     const now = Date.now();
     const actions: SendAction[] = [];
@@ -835,7 +845,8 @@ export class App {
   handle(cmd: Command, ctx: ClientCtx): void {
     const now = Date.now();
     const who = ctx.user.username;
-    if (this.bypass.on && WRITE_COMMANDS.has(cmd.type)) {
+    const scopedBus = 'bus' in cmd && BUS_SCOPED_COMMANDS.has(cmd.type) ? (cmd as { bus: number }).bus : undefined;
+    if (this.bypass.on && WRITE_COMMANDS.has(cmd.type) && !(scopedBus !== undefined && this.bypassAllows(scopedBus))) {
       throw new CommandError('BYPASS ligado: o Copiloto não mexe na mesa, só monitora. Desligue o bypass (botão vermelho no topo) para mexer.');
     }
 
@@ -1036,7 +1047,7 @@ export class App {
         // qualquer pessoa logada pode LIGAR (pânico); desligar pede confirmação na tela
         const on = Boolean(cmd.on);
         if (on === this.bypass.on) return;
-        this.bypass = on ? { on: true, by: who, at: now } : { on: false };
+        this.bypass = on ? { on: true, by: who, at: now, allow: [] } : { on: false };
         this.blockedWrites = 0;
         if (on) this.fades.clear();
         this.connStore.saveBypass(this.bypass);
@@ -1046,6 +1057,24 @@ export class App {
             : `${who}: bypass desligado — o Copiloto volta a mexer conforme o modo de cada saída`,
         );
         this.log.write('bypass', { on, quem: who });
+        return;
+      }
+      case 'bypass.allow': {
+        // exceção do bypass: liberar UMA saída (aux) para o Copiloto mexer nos envios dela
+        if (!this.bypass.on) throw new CommandError('O bypass está desligado: o Copiloto já pode mexer conforme o modo de cada saída.');
+        if (cmd.bus === null) {
+          this.bypass = { ...this.bypass, allow: [] };
+          this.event(`⛔ ${who}: bypass sem exceção — o Copiloto não mexe em nenhuma saída`);
+        } else {
+          const bus = Number(cmd.bus);
+          if (bus === MASTER_BUS) throw new CommandError('O master (salão) nunca entra na exceção do bypass.');
+          this.requireBus(ctx, bus);
+          this.bypass = { ...this.bypass, allow: [bus] };
+          this.event(`⛔ ${who}: bypass ligado, EXCETO ${this.labelOf(bus)}: o Copiloto só mexe nos envios dessa saída`);
+        }
+        this.fades.clear();
+        this.connStore.saveBypass(this.bypass);
+        this.log.write('bypass', { on: true, allow: this.bypass.allow, quem: who });
         return;
       }
       case 'conn.writeTest':
@@ -1347,7 +1376,11 @@ export class App {
         detection: this.usbDetection,
       },
       access: this.accessInfo(),
-      bypass: { ...this.bypass, blocked: this.blockedWrites },
+      bypass: {
+        ...this.bypass,
+        blocked: this.blockedWrites,
+        allowLabels: (this.bypass.allow ?? []).map((b) => this.labelOf(b)),
+      },
       tips: this.tipsFor(user, bus, now),
       phantom: [...this.preamps].filter(([, p]) => p.phantom).map(([k]) => k),
       advanced: this.advancedInfo(user, ctx.view.detail),
@@ -1524,6 +1557,9 @@ function fmt(db: number): string {
 
 /** Métodos do MixerAdapter que escrevem na mesa (barrados com o bypass ligado). */
 const MIXER_WRITES = new Set(['setSendDB', 'setSendMute', 'setEqRaw', 'setFxSendDB', 'setGainDB', 'setPhantom', 'setBusMasterDB', 'testWrite']);
+
+/** Comandos que mexem só numa saída: passam se a saída estiver na exceção do bypass. */
+const BUS_SCOPED_COMMANDS = new Set<Command['type']>(['setSend', 'setMute', 'setBusMaster', 'restore', 'preset.load']);
 
 /** Comandos do painel que mexeriam na mesa (recusados com o bypass ligado). */
 const WRITE_COMMANDS = new Set<Command['type']>([

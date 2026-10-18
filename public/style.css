@@ -712,3 +712,14 @@ table.users input, .new-user input, .new-user select, table.users select { backg
   opacity: 0.45;
 }
 .bypass-on .mixer, .bypass-on .bus { outline: 2px dashed var(--bad); outline-offset: -2px; }
+
+/* exceção do bypass: vendo a saída liberada, os faders e o mute dela funcionam (EQ/ganho continuam travados) */
+.bypass-on.bypass-allowed .strip .fader, .bypass-on.bypass-allowed .mute-btn, .bypass-on.bypass-allowed #restore,
+.bypass-on.bypass-allowed #preset-select, .bypass-on.bypass-allowed .dfader[data-kind="bus"] .fader, .bypass-on.bypass-allowed .dfader[data-kind="aux"] .fader {
+  pointer-events: auto;
+  opacity: 1;
+}
+.bypass-on.bypass-allowed #d-mute { pointer-events: auto; opacity: 1; }
+.bypass-on.bypass-allowed .bus { outline-color: var(--warn); }
+.bypass-allow { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.bypass-allow select { background: #fff; color: #7a1010; border-color: #fff; font-weight: 700; }
