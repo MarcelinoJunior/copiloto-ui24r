@@ -6,7 +6,7 @@
     "host": "127.0.0.1",
     "port": 8080
   },
-  "streamAuxes": [7],
+  "streamAuxes": [5],
   "initialMode": "observar",
   "leveler": {
     "tickMs": 500,

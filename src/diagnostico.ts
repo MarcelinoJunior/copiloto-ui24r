@@ -5,6 +5,9 @@
  *
  *   npm run diagnostico               (usa o IP do config/config.json)
  *   npm run diagnostico -- 192.168.0.122
+ *   npm run diagnostico -- 192.168.0.122 --testar-comando   (também confere se a mesa aceita comandos)
+ *
+ * Por padrão só LÊ a mesa: nada é enviado (a não ser o "estou vivo" da conexão).
  */
 import { loadConfig } from './config.js';
 import { eqFromRaw } from './mixer/eq.js';
@@ -13,7 +16,9 @@ import type { SendInfo } from './mixer/types.js';
 
 const LISTEN_SEC = 5;
 const cfg = loadConfig();
-const ip = process.argv[2] ?? cfg.mixer.ip;
+const args = process.argv.slice(2);
+const TESTAR_COMANDO = args.includes('--testar-comando');
+const ip = args.find((a) => !a.startsWith('--')) ?? cfg.mixer.ip;
 const adapter = new SoundcraftAdapter(ip);
 
 adapter.onStatus((state, detail) => console.log(`[conexão] ${state}${detail ? ` ${detail}` : ''}`));
@@ -104,10 +109,16 @@ if (access.found) {
   console.log('A mesa não informou nenhuma chave de acesso/senha pela conexão de controle.');
 }
 
-console.log('\n== TESTE DE COMANDO (sem mudar o som) ==');
-console.log('Mexendo no pan do canal 1 em 0,0002 (inaudível) e conferindo por uma segunda conexão…');
-const wt = await adapter.testWrite();
-console.log(wt.ok ? `✓ OK em ${wt.ms} ms: ${wt.detail}.` : wt.ok === false ? `✗ FALHOU: ${wt.detail}.` : `? ${wt.detail}.`);
+console.log('\n== TESTE DE COMANDO ==');
+if (TESTAR_COMANDO) {
+  console.log('Mexendo no pan do canal 1 em 0,0002 (inaudível) e conferindo por uma segunda conexão…');
+  const wt = await adapter.testWrite();
+  console.log(wt.ok ? `✓ OK em ${wt.ms} ms: ${wt.detail}.` : wt.ok === false ? `✗ FALHOU: ${wt.detail}.` : `? ${wt.detail}.`);
+} else {
+  console.log('Não feito: este diagnóstico só LEU a mesa (nada foi enviado).');
+  console.log('Para conferir se a mesa aceita comandos (mudança inaudível no pan do canal 1, que volta):');
+  console.log(`  npm run diagnostico -- ${ip} --testar-comando`);
+}
 
 await adapter.disconnect();
 process.exit(0);

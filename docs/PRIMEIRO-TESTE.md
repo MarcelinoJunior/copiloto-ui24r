@@ -7,7 +7,7 @@ Roteiro para a primeira vez com a Ui24R de verdade. Leva uns 15 minutos e **não
 - Ligue o PC na **mesma rede da mesa** (o Wi-Fi da igreja onde a Ui24R está, ou o Wi-Fi da própria mesa).
 - Abra `http://192.168.0.122` no navegador. Se a página da mesa abrir, a rede está certa. (Se a mesa tiver senha em *Settings › Access*, a página dela vai pedir a senha: isso é normal e **não** afeta o Copiloto, veja abaixo.)
 
-## 2. Diagnóstico (sem mudar nada)
+## 2. Diagnóstico (só lê a mesa)
 
 Na pasta do projeto:
 
@@ -25,13 +25,17 @@ Ou, com outro IP: `npm run diagnostico -- 192.168.0.122`. Confira:
 | ENVIOS | os canais que vão para a live, com valores parecidos com os da mesa |
 | EQ do canal 1 | valores brutos aparecendo (servem para calibrar o EQ) |
 | SENHA DA MESA | se a mesa informa a senha (o valor nunca é impresso) |
-| TESTE DE COMANDO | `✓ OK em … ms` |
+| TESTE DE COMANDO | "Não feito" (só leitura); com `--testar-comando`: `✓ OK em … ms` |
 
-O teste de comando mexe no **pan do canal 1 em 0,0002** (impossível de ouvir) e volta. Uma segunda conexão confere se a mesa repassou a mudança, como a página da mesa veria.
+Por padrão o diagnóstico **só lê**: a mesa recebe apenas o "estou vivo" da conexão e pedidos de lista (os mesmos da página da mesa). Para também conferir se a mesa aceita comandos, rode depois com `--testar-comando`: ele mexe no **pan do canal 1 em 0,0002** (impossível de ouvir) e volta, e uma segunda conexão confere se a mesa repassou a mudança.
+
+**Atenção às MATRIZES:** auxes marcados `[MATRIZ]` costumam alimentar caixas do salão (ex.: PA traseiro, sub). O Copiloto nunca oferece matrizes como saída, mas confira qual é o aux da **live** e coloque o número dele em `streamAuxes` no `config/config.json`.
 
 **Guarde o texto do diagnóstico.** Se algo vier diferente do esperado, ele mostra o que ajustar.
 
-## 3. Abrir o Copiloto
+## 3. Abrir o Copiloto (com o BYPASS ligado)
+
+Para a primeira vez, deixe o **⛔ BYPASS ligado antes de conectar**: assim o Copiloto não manda nada, nem o teste de comando, e você só confere se ele enxerga a mesa certa.
 
 - Dê dois cliques em **Abrir Copiloto** (área de trabalho) ou rode `npm start`.
 - Entre com o seu usuário. Na primeira vez é `admin` / `admin`: troque a senha.
