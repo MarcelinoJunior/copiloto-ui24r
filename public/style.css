@@ -693,3 +693,22 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 .access-form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
 .access-form .stack { display: flex; flex-direction: column; gap: 2px; }
 .access-form input[type=password] { min-width: 220px; }
+
+/* ================= BYPASS (botão de pânico) ================= */
+
+.bypass-btn { border: 2px solid var(--bad); color: var(--bad); background: transparent; font-weight: 800; letter-spacing: 0.04em; padding: 4px 12px; border-radius: 8px; white-space: nowrap; }
+.bypass-btn:hover { background: rgba(255, 92, 92, 0.12); }
+.bypass-btn.on { background: var(--bad); color: #fff; animation: bypass-pulse 1.6s ease-in-out infinite; }
+@keyframes bypass-pulse { 50% { box-shadow: 0 0 0 6px rgba(255, 92, 92, 0.25); } }
+.bypass-banner { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 6px 12px; background: var(--bad); color: #fff; font-weight: 700; border-radius: 8px; text-align: center; }
+.bypass-banner[hidden] { display: none; }
+.bypass-banner .small-btn { background: #fff; color: #7a1010; border-color: #fff; font-weight: 800; }
+.top .bypass-btn { margin-left: auto; margin-right: 8px; }
+/* com o bypass ligado, os controles que mexem na mesa ficam travados (o servidor também recusa) */
+.bypass-on .strip .fader, .bypass-on .mute-btn, .bypass-on .dfader .fader, .bypass-on #d-eq-bands input, .bypass-on #d-eq-on,
+.bypass-on #d-eq-advice button, .bypass-on #d-gain, .bypass-on #d-gminus, .bypass-on #d-gplus, .bypass-on #d-phantom, .bypass-on #d-mute,
+.bypass-on #restore, .bypass-on #preset-select, .bypass-on #write-test, .bypass-on .table-view .fader {
+  pointer-events: none;
+  opacity: 0.45;
+}
+.bypass-on .mixer, .bypass-on .bus { outline: 2px dashed var(--bad); outline-offset: -2px; }

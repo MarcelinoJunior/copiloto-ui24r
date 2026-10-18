@@ -57,6 +57,7 @@ O teste de comando mexe no **pan do canal 1 em 0,0002** (impossível de ouvir) e
 
 ## Se algo der errado
 
+- **⛔ BYPASS** no topo da tela: na hora, o Copiloto para de mexer na mesa e só monitora (continua ligado até alguém desligar, mesmo se o programa reiniciar).
 - **Fechar Copiloto** (ou Ctrl+C no terminal). Os envios ficam como estão; nada continua mexendo.
 - Não conecta: confira se o PC está na mesma rede (a tela Conexão mostra os IPs do PC e avisa "outra rede").
 - **Teste de comando FALHOU**: a mesa recebeu mas não repassou a mudança. Pode ser bloqueio por senha num firmware diferente. Mande o resultado do diagnóstico.

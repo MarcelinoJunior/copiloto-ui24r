@@ -10,9 +10,17 @@ export interface MixerAccess {
   password?: string;
 }
 
+/** Botão de pânico: com o bypass ligado o Copiloto não manda NADA para a mesa (só monitora). */
+export interface BypassState {
+  on: boolean;
+  by?: string;
+  at?: number;
+}
+
 interface Saved {
   ip?: string;
   access?: MixerAccess;
+  bypass?: BypassState;
 }
 
 /** Endereço da mesa escolhido no painel (tem prioridade sobre o config/config.json) e a senha da mesa. */
@@ -50,5 +58,15 @@ export class ConnectionStore {
 
   saveAccess(access: MixerAccess): void {
     this.save({ access });
+  }
+
+  /** O bypass sobrevive a reinícios: se estava ligado, o programa volta só monitorando. */
+  loadBypass(): BypassState {
+    const b = this.load().bypass;
+    return b?.on ? { on: true, by: b.by, at: b.at } : { on: false };
+  }
+
+  saveBypass(bypass: BypassState): void {
+    this.save({ bypass });
   }
 }

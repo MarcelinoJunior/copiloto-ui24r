@@ -248,4 +248,49 @@ describe('programa inteiro com a mesa real pela rede (Ui24R falsa)', () => {
     expect(keys).toEqual(expect.arrayContaining(['i.0.aux.6.value', 'i.0.aux.7.value', 'i.0.aux.6.mute']));
     app.handle({ type: 'setMute', bus: 7, key: 'i1', muted: false }, admin);
   });
+
+  it('BYPASS (pânico): nada chega na mesa, nem pelo painel nem por dentro do programa; e sobrevive a reinício', async () => {
+    const operador: ClientCtx = { user: { id: 2, username: 'op', role: 'operador', buses: [7], prefs: {}, createdAt: 0 } as User, view: { bus: 7 } };
+    await wait(300);
+    fake.received.length = 0;
+    app.handle({ type: 'bypass', on: true }, operador); // qualquer pessoa pode ligar o pânico
+    const snap = app.snapshotFor(admin);
+    expect(snap.bypass.on).toBe(true);
+    expect(snap.bypass.by).toBe('op');
+
+    // pelo painel: recusado com explicação
+    for (const cmd of [
+      { type: 'setSend', bus: 7, key: 'i1', db: -3 },
+      { type: 'setMute', bus: 7, key: 'i1', muted: true },
+      { type: 'setEq', key: 'i1', param: 'b1.gain', value: 3 },
+      { type: 'setGain', key: 'i1', db: 20 },
+      { type: 'setBusMaster', bus: 7, db: -5 },
+      { type: 'restore', bus: 7 },
+      { type: 'conn.writeTest' },
+    ] as const) {
+      expect(() => app.handle(cmd as never, admin)).toThrow(/BYPASS/);
+    }
+    // por dentro: mesmo chamando a conexão direto, a trava descarta
+    const internal = (app as unknown as { adapter: SoundcraftAdapter }).adapter;
+    internal.setSendDB(7, 'i1', -20);
+    internal.setSendMute(7, 'i1', true);
+    internal.setGainDB('i1', 50);
+    expect((await internal.testWrite()).detail).toContain('bypass');
+    // o que não mexe na mesa continua valendo (monitorar, gravar o volume ideal, trocar de modo)
+    app.handle({ type: 'capture', bus: 7 }, admin);
+    app.handle({ type: 'setMode', bus: 7, mode: 'automatico' }, admin);
+    await wait(1500); // ticks do ajuste automático rodando
+    expect(fake.received).toEqual([]);
+    expect(app.snapshotFor(admin).bypass.blocked).toBeGreaterThanOrEqual(4);
+
+    // reinício: continua em bypass
+    expect(new ConnectionStore(join(dir, 'conexao.json')).loadBypass().on).toBe(true);
+
+    // desligar: volta a mandar
+    app.handle({ type: 'setMode', bus: 7, mode: 'observar' }, admin);
+    app.handle({ type: 'bypass', on: false }, admin);
+    app.handle({ type: 'setSend', bus: 7, key: 'i1', db: -6 }, admin);
+    await until(() => fake.received.some((m) => m.startsWith('SETD^i.0.aux.6.value')));
+    expect(new ConnectionStore(join(dir, 'conexao.json')).loadBypass().on).toBe(false);
+  });
 });

@@ -181,6 +181,7 @@ function render() {
   const s = state;
   const isSim = s.source?.kind === 'simulador';
   document.body.classList.toggle('is-sim', isSim);
+  renderBypass(s, send);
 
   if (isSim) {
     setPill('simulador', 'SIMULADOR (mesa falsa)');
@@ -194,7 +195,7 @@ function render() {
 
   const mode = s.bus?.mode ?? 'desligado';
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-  $('#mode-help').textContent = s.bus ? MODE_HELP[mode] : '';
+  $('#mode-help').textContent = !s.bus ? '' : s.bypass?.on ? 'BYPASS ligado: nada é mexido na mesa; as correções aparecem só como sugestão.' : MODE_HELP[mode];
 
   $('#sim').hidden = !isSim;
   if (s.sim) document.querySelectorAll('[data-scene]').forEach((b) => b.classList.toggle('active', b.dataset.scene === s.sim.scene));
@@ -558,7 +559,7 @@ function updateChannelStrip(strip, ch, s) {
 
   let label = STATUS_LABEL[ch.status] ?? ch.status;
   if (ch.status === 'manual') label = `oper. ${ch.manualForSec}s`;
-  if (ch.status === 'corrigindo' && s.bus.mode !== 'automatico') label = 'corrigiria';
+  if (ch.status === 'corrigindo' && (s.bus.mode !== 'automatico' || s.bypass?.on)) label = 'corrigiria';
   strip.status.textContent = label;
   strip.status.title = STATUS_HELP[ch.status] ?? '';
   strip.status.className = `status ${ch.status}`;
@@ -569,7 +570,7 @@ function updateChannelStrip(strip, ch, s) {
   setFader(strip, ch.sendDB);
 
   const applied = ch.sendDB !== undefined && ch.baseSendDB !== undefined ? ch.sendDB - ch.baseSendDB : 0;
-  setDelta(strip.delta, s.bus.mode === 'automatico' ? applied : ch.suggestedDeltaDB);
+  setDelta(strip.delta, s.bus.mode === 'automatico' && !s.bypass?.on ? applied : ch.suggestedDeltaDB);
 }
 
 function createFxStrip(bus, fx) {

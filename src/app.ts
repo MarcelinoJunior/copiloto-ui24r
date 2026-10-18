@@ -1,6 +1,6 @@
 import { canUseBus, type User } from './auth.js';
 import type { AppConfig } from './config.js';
-import type { ConnectionStore, MixerAccess } from './connection-store.js';
+import type { BypassState, ConnectionStore, MixerAccess } from './connection-store.js';
 import { ConnectionHealth, type HealthSnapshot, isValidHost } from './health.js';
 import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
@@ -181,6 +181,8 @@ export interface AppSnapshot {
   levelSource: LevelSourceInfo;
   /** senha da mesa (Settings › Access) e teste de comando; a senha em si nunca vai para a tela */
   access: AccessInfo;
+  /** botão de pânico: ligado = o Copiloto não manda nada para a mesa, só monitora */
+  bypass: BypassState & { blocked: number };
   tips: Tip[];
   advanced: AdvancedInfo;
   /** canais com phantom 48V ligado (etiqueta na faixa) */
@@ -218,6 +220,7 @@ export type Command =
   | { type: 'conn.reconnect' }
   | { type: 'conn.access'; enabled: boolean; password?: string | null }
   | { type: 'conn.writeTest' }
+  | { type: 'bypass'; on: boolean }
   | { type: 'level.detect' }
   | { type: 'level.useVu' }
   | { type: 'level.useUsb'; device: string; channels: number }
@@ -307,6 +310,9 @@ export class App {
   private access: MixerAccess;
   private writeTest?: WriteTest & { at: number };
   private writeTesting = false;
+  /** botão de pânico (ver BypassState) e quantos envios foram barrados desde que ligou */
+  private bypass: BypassState;
+  private blockedWrites = 0;
   /** histórico curto do nível de cada canal, para as dicas */
   private readonly stats = new Map<string, ChannelStats>();
   private advanced: AdvancedSettings = structuredClone(DEFAULT_ADVANCED);
@@ -327,19 +333,44 @@ export class App {
     this.health = new ConnectionHealth({ kind: this.kind, ip: this.ip });
     this.adapter = this.attach(target.create(this.kind, this.ip));
     this.access = connStore.loadAccess();
+    this.bypass = connStore.loadBypass();
   }
 
   // ---------- ciclo de vida e conexão ----------
 
-  private attach(adapter: MixerAdapter): MixerAdapter {
-    adapter.onStatus((state, detail) => {
+  /**
+   * Trava de segurança do bypass, na própria conexão com a mesa: com o bypass ligado, qualquer
+   * escrita (envio, mute, EQ, ganho, phantom, master, teste de comando) é descartada aqui,
+   * mesmo que algum caminho do programa tente mandar.
+   */
+  private guard(adapter: MixerAdapter): MixerAdapter {
+    return new Proxy(adapter, {
+      get: (target, prop) => {
+        const value = Reflect.get(target, prop, target) as unknown;
+        if (typeof value !== 'function') return value;
+        const fn = value as (...args: unknown[]) => unknown;
+        if (typeof prop === 'string' && MIXER_WRITES.has(prop)) {
+          return (...args: unknown[]) => {
+            if (!this.bypass.on) return fn.apply(target, args);
+            this.blockedWrites++;
+            return prop === 'testWrite' ? Promise.resolve({ detail: 'bypass ligado: nada é enviado para a mesa' }) : undefined;
+          };
+        }
+        return fn.bind(target);
+      },
+    });
+  }
+
+  private attach(raw: MixerAdapter): MixerAdapter {
+    const adapter = this.guard(raw);
+    raw.onStatus((state, detail) => {
       if (adapter !== this.adapter) return; // adaptador antigo (mesa trocada)
       if (state !== this.connection) this.event(`Mesa: ${state}${detail ? ` (${detail})` : ''}`);
       this.connection = state;
       this.connectionDetail = detail;
       this.health.onState(state, detail);
     });
-    adapter.onRawMessage(() => {
+    raw.onRawMessage(() => {
       if (adapter === this.adapter) this.health.onMessage();
     });
     return adapter;
@@ -378,7 +409,10 @@ export class App {
         this.log.write('mesa', { ...info });
         this.wire();
         // mesa real: confere logo de cara se ela aceita comandos (mudança inaudível, ver WriteTest)
-        if (this.kind === 'mesa') setTimeout(() => gen === this.generation && void this.runWriteTest('ao conectar'), 3000);
+        // (com o bypass ligado nem o teste é feito: nada vai para a mesa)
+        if (this.kind === 'mesa' && !this.bypass.on) {
+          setTimeout(() => gen === this.generation && !this.bypass.on && void this.runWriteTest('ao conectar'), 3000);
+        }
         return;
       } catch (err) {
         if (gen !== this.generation) return;
@@ -684,6 +718,7 @@ export class App {
 
   /** Manda envios para a mesa marcando-os como nossos (para o eco não parecer o operador). */
   private apply(actions: SendAction[]): void {
+    if (this.bypass.on) return; // pânico: só monitora (as sugestões continuam na tela)
     const now = Date.now();
     for (const a of actions) {
       const c = this.controllers.get(a.bus);
@@ -697,6 +732,10 @@ export class App {
 
   private runFades(): void {
     if (this.fades.size === 0) return;
+    if (this.bypass.on) {
+      this.fades.clear();
+      return;
+    }
     const now = Date.now();
     const actions: SendAction[] = [];
     for (const [id, f] of this.fades) {
@@ -796,6 +835,9 @@ export class App {
   handle(cmd: Command, ctx: ClientCtx): void {
     const now = Date.now();
     const who = ctx.user.username;
+    if (this.bypass.on && WRITE_COMMANDS.has(cmd.type)) {
+      throw new CommandError('BYPASS ligado: o Copiloto não mexe na mesa, só monitora. Desligue o bypass (botão vermelho no topo) para mexer.');
+    }
 
     switch (cmd.type) {
       case 'view': {
@@ -988,6 +1030,22 @@ export class App {
         this.access = { enabled, password: enabled ? password : undefined };
         this.connStore.saveAccess(this.access);
         this.event(`${who}: mesa ${enabled ? 'COM senha (Access)' : 'sem senha'} registrada`);
+        return;
+      }
+      case 'bypass': {
+        // qualquer pessoa logada pode LIGAR (pânico); desligar pede confirmação na tela
+        const on = Boolean(cmd.on);
+        if (on === this.bypass.on) return;
+        this.bypass = on ? { on: true, by: who, at: now } : { on: false };
+        this.blockedWrites = 0;
+        if (on) this.fades.clear();
+        this.connStore.saveBypass(this.bypass);
+        this.event(
+          on
+            ? `⛔ ${who}: BYPASS LIGADO — o Copiloto parou de mexer na mesa (só monitora)`
+            : `${who}: bypass desligado — o Copiloto volta a mexer conforme o modo de cada saída`,
+        );
+        this.log.write('bypass', { on, quem: who });
         return;
       }
       case 'conn.writeTest':
@@ -1289,6 +1347,7 @@ export class App {
         detection: this.usbDetection,
       },
       access: this.accessInfo(),
+      bypass: { ...this.bypass, blocked: this.blockedWrites },
       tips: this.tipsFor(user, bus, now),
       phantom: [...this.preamps].filter(([, p]) => p.phantom).map(([k]) => k),
       advanced: this.advancedInfo(user, ctx.view.detail),
@@ -1462,6 +1521,24 @@ function fromWire(db: WireDB): number {
 function fmt(db: number): string {
   return Number.isFinite(db) ? db.toFixed(1) : '-∞';
 }
+
+/** Métodos do MixerAdapter que escrevem na mesa (barrados com o bypass ligado). */
+const MIXER_WRITES = new Set(['setSendDB', 'setSendMute', 'setEqRaw', 'setFxSendDB', 'setGainDB', 'setPhantom', 'setBusMasterDB', 'testWrite']);
+
+/** Comandos do painel que mexeriam na mesa (recusados com o bypass ligado). */
+const WRITE_COMMANDS = new Set<Command['type']>([
+  'setSend',
+  'setMute',
+  'setEq',
+  'eq.apply',
+  'setBusMaster',
+  'setFxSend',
+  'setGain',
+  'setPhantom',
+  'preset.load',
+  'restore',
+  'conn.writeTest',
+]);
 
 const EQ_BAND_NAME: Record<string, string> = { b1: 'banda 1', b2: 'banda 2', b3: 'banda 3', b4: 'banda 4' };
 

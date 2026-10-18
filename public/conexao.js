@@ -70,6 +70,7 @@ function render(s) {
   document.querySelectorAll('#ip-form button, #ip, #use-sim, #use-vu, #detect, #use-usb-sim, #usb-form button').forEach((el) => {
     if (!isAdmin) el.disabled = true;
   });
+  renderBypass(s, send);
   renderLevels(s, isAdmin);
   renderAccess(s, isAdmin);
 

@@ -100,6 +100,7 @@ npm run diagnostico
 **Barra de cima (1º andar):**
 - abas Mixagem, Análise, Conexão e Pessoas;
 - controles do simulador (só aparecem no simulador);
+- **⛔ BYPASS** (botão de pânico, também nas telas Análise e Conexão): um clique e o Copiloto **para de mexer na mesa** e só monitora. Veja abaixo;
 - **Dicas**, com um contador que fica laranja ou vermelho quando há algo importante;
 - selo da mesa (verde = mesa real com o tempo de resposta; roxo = simulador);
 - seu usuário.
@@ -199,6 +200,9 @@ Os dados ficam em `data/`, que não vai para o git:
 - As permissões valem **no servidor**: um operador não consegue mexer em saídas que não são dele nem pela API.
 
 ## Perguntas frequentes
+
+**Como faço o Copiloto parar de mexer em tudo, na hora?**
+Clique em **⛔ BYPASS** no topo da tela (qualquer pessoa logada pode). A partir daí o Copiloto **não manda nada para a mesa**: nem envios, faders, mute, EQ, ganho, phantom, presets ou o teste de comando. Os níveis, as dicas e as sugestões continuam na tela (as correções aparecem como "corrigiria"), e uma faixa vermelha avisa quem ligou e quando. Os controles que mexem na mesa ficam travados, e o servidor também recusa. O bypass continua ligado mesmo se o programa reiniciar. Para desligar: clique de novo e confirme.
 
 **Ele mexe no som do salão?**
 Só se você escolher a saída **MASTER** (fica em vermelho e pede confirmação), mexer no **ganho** ou no **phantom**, ou mexer em **efeitos que tocam no salão**. Nos auxiliares, ele mexe só nos envios daquele aux.

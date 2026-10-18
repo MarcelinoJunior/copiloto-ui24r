@@ -43,6 +43,7 @@ const setIfIdle = (el, value) => {
 };
 
 function render(s) {
+  renderBypass(s, send);
   const adv = s.advanced;
   const isAdmin = s.user.role === 'admin';
   const set = adv.settings;

@@ -25,6 +25,7 @@
     </div>
 
     <span class="spacer"></span>
+    <button type="button" id="bypass-btn" class="bypass-btn" aria-pressed="false">⛔ BYPASS</button>
     <button id="tips-btn" class="tips-btn" title="Dicas a partir do que o software está lendo (clip, volume baixo, ruído, microfonia…)">
       Dicas <span id="tips-count" class="tips-count">0</span>
     </button>
@@ -37,6 +38,10 @@
       </div>
     </details>
   </header>
+  <div id="bypass-banner" class="bypass-banner" role="alert" hidden>
+    <span class="bypass-text"></span>
+    <button type="button" id="bypass-off" class="small-btn">Desligar bypass</button>
+  </div>
 
   <!-- 2º andar: controles da mixagem, em grupos -->
   <div class="toolbar" role="toolbar" aria-label="Controles da mixagem">
@@ -284,6 +289,7 @@
     </section>
   </template>
 
+  <script src="bypass.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

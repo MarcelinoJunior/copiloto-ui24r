@@ -12,8 +12,13 @@
       <h1>Copiloto Ui24R</h1>
       <nav class="nav"><a href="/">Mixagem</a><a href="analise.html">Análise</a><a href="conexao.html" class="active" aria-current="page">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
     </div>
+    <button type="button" id="bypass-btn" class="bypass-btn" aria-pressed="false">⛔ BYPASS</button>
     <span id="quality" class="quality">…</span>
   </header>
+  <div id="bypass-banner" class="bypass-banner" role="alert" hidden>
+    <span class="bypass-text"></span>
+    <button type="button" id="bypass-off" class="small-btn">Desligar bypass</button>
+  </div>
 
   <section class="card">
     <h2>De onde vem o som</h2>
@@ -148,6 +153,7 @@
     </div>
   </section>
 
+  <script src="bypass.js"></script>
   <script src="conexao.js"></script>
 </body>
 </html>
