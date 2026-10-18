@@ -71,6 +71,7 @@ function render(s) {
     if (!isAdmin) el.disabled = true;
   });
   renderLevels(s, isAdmin);
+  renderAccess(s, isAdmin);
 
   const [label, cls] = QUALITY[h.quality] ?? ['—', ''];
   const q = $('#quality');
@@ -133,6 +134,66 @@ function render(s) {
       : `✗ ${t.ip} não respondeu. Confira o IP e se o PC está no mesmo Wi-Fi da mesa.`;
   }
 }
+
+const ACCESS_CHECK = {
+  confere: ['ok', 'Senha confere com a da mesa.'],
+  'nao-confere': ['bad', 'A senha cadastrada é diferente da que a mesa informa. Confira em Settings › Access (não impede o Copiloto de funcionar).'],
+  'nao-informado': ['', 'A mesa não mostra a senha pela conexão de controle, então não dá para conferir. Tudo bem: o controle funciona sem ela (veja o teste de comando).'],
+  'mesa-tem-senha': ['', 'A mesa informa que tem senha (Access). Marque "A mesa tem senha" e digite a senha para conferir.'],
+};
+let accessTouched = false;
+
+function renderAccess(s, isAdmin) {
+  const a = s.access;
+  if (!a) return;
+  if (!accessTouched) $('#acc-enabled').checked = a.enabled;
+  $('#acc-pass-wrap').hidden = !$('#acc-enabled').checked;
+  $('#acc-pass').placeholder = a.hasPassword ? '•••••• (guardada; digite para trocar)' : 'digite a senha da mesa';
+  for (const el of document.querySelectorAll('#access-form input, #access-form button, #write-test')) el.disabled = !isAdmin;
+
+  const st = $('#acc-status');
+  const isReal = s.source.kind === 'mesa';
+  const msg = !isReal
+    ? ['', 'No simulador não há senha: conecte na mesa real para conferir.']
+    : s.connection !== 'conectado'
+      ? ['', 'Conecte na mesa para conferir a senha.']
+      : a.check
+        ? ACCESS_CHECK[a.check]
+        : a.enabled
+          ? ['', 'Salvo.']
+          : ['', 'Mesa sem senha (ou a mesa não informou senha).'];
+  st.hidden = false;
+  st.className = `test-result ${msg[0]}`;
+  st.textContent = msg[1];
+
+  const out = $('#wt-result');
+  const wt = a.writeTest;
+  $('#write-test').textContent = a.writeTesting ? 'Testando…' : 'Testar comando';
+  if (a.writeTesting) $('#write-test').disabled = true;
+  out.hidden = !wt;
+  if (wt) {
+    out.className = `test-result ${wt.ok ? 'ok' : wt.ok === false ? 'bad' : ''}`;
+    const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+    out.textContent = wt.ok ? `✓ OK em ${wt.ms} ms: ${wt.detail}.` : wt.ok === false ? `✗ ${cap(wt.detail)}.` : `? ${cap(wt.detail)}.`;
+    $('#wt-when').textContent = `último teste: ${new Date(wt.at).toLocaleTimeString('pt-BR')}`;
+  } else {
+    $('#wt-when').textContent = '';
+  }
+}
+
+$('#acc-enabled').addEventListener('change', () => {
+  accessTouched = true;
+  $('#acc-pass-wrap').hidden = !$('#acc-enabled').checked;
+});
+$('#access-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const enabled = $('#acc-enabled').checked;
+  const password = $('#acc-pass').value;
+  send({ type: 'conn.access', enabled, password: enabled ? password || undefined : null });
+  $('#acc-pass').value = '';
+  accessTouched = false;
+});
+$('#write-test').addEventListener('click', () => send({ type: 'conn.writeTest' }));
 
 function renderLevels(s, isAdmin) {
   const lv = s.levelSource;

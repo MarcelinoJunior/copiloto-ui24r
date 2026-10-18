@@ -87,7 +87,7 @@ A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**
 5. Na **Mixagem**, escolha a **Saída** (ex.: AUX 7+8 · LIVE), deixe o **Ajuste automático de volume** em *Só sugerir*, faça a mixagem como sempre e clique em **Volume ideal › Gravar volumes atuais** num momento em que estiver soando bem (ou em **Pelo tipo de som**, com a banda e a voz tocando).
 6. A correção mostrada embaixo de cada fader fez sentido? Passe para **Ajustando**. O modo é por saída.
 
-Para descobrir qual aux é o da live e quais estão em link estéreo:
+Primeira vez com a mesa real? Siga o roteiro [docs/PRIMEIRO-TESTE.md](docs/PRIMEIRO-TESTE.md). Para descobrir qual aux é o da live, quais estão em link estéreo e se a mesa aceita os comandos (sem mudar o som):
 
 ```bash
 npm run diagnostico
@@ -142,6 +142,8 @@ Alertas ao vivo, loudness da live, fala × música (troca automática de preset 
 ### Conexão
 
 - **De onde vem o som:** mesa real (IP, com **Testar** e **Conectar**) ou simulador. A troca é na hora.
+- **Senha da mesa (Settings › Access):** marque *A mesa tem senha* e digite a senha. A conexão de controle da Ui24R **não pede senha** (só a página da mesa pede), então nada é enviado: o Copiloto guarda a senha só neste PC (`data/conexao.json`) para **conferir** com a que a mesa informa.
+- **Teste de comando:** roda sozinho ao conectar na mesa real (e pelo botão). Mexe no pan do canal 1 numa quantidade impossível de ouvir, volta, e confere por uma segunda conexão se a mesa aceitou. Mostra ✓ OK ou o motivo da falha.
 - **Medição de nível:** VU pela rede ou Áudio USB. Inclui **Procurar a Ui24R no USB**, que detecta a mesa no Windows e lista os dispositivos de áudio.
 - **Saúde da conexão:**
   - tempo de resposta (atual, média, melhor e pior);
@@ -207,6 +209,9 @@ Lê da própria mesa. O par aparece como uma saída só (ex.: AUX 7+8).
 **Preciso de plugins pagos?**
 Não. Para processar o áudio da transmissão, use os plugins **gratuitos** dentro do OBS (supressão de ruído RNNoise, compressor, limitador, ReaPlugs, LoudMax…). O Copiloto liga e desliga esses filtros pela tela Análise.
 
+**Minha mesa tem senha (Settings › Access). O Copiloto funciona?**
+Sim. Na Ui24R a senha é conferida pela **página da mesa** (navegador/tablet); a conexão de controle que o Copiloto e outros programas usam não pede senha (verificado pelo autor da biblioteca [soundcraft-ui](https://github.com/bitfocus/companion-module-soundcraft-ui/issues/49)). Na tela Conexão, marque *A mesa tem senha* e digite a senha para o Copiloto conferir; o **teste de comando** confirma, sem mudar o som, que a mesa aceita os comandos. Se um firmware futuro bloquear, o teste mostra FALHOU.
+
 **Os valores do equalizador batem com os da mesa?**
 A mesa guarda cada parâmetro do EQ como um número de 0 a 1 e a fórmula exata não é publicada. O Copiloto usa a conversão mais comum (frequência e Q em escala logarítmica, ganho linear de ±20 dB) e mostra "≈". Para conferir, rode `npm run diagnostico`: ele imprime o EQ do canal 1 (bruto e convertido). Compare com a interface web da mesa; se não bater, as constantes ficam todas em `src/mixer/eq.ts`. Contribuições com a calibração são bem-vindas.
 
@@ -228,6 +233,7 @@ npm run typecheck
 
 - Arquitetura e decisões: [docs/ARQUITETURA.md](docs/ARQUITETURA.md)
 - Recursos do modo USB (como cada detector funciona): [docs/RECURSOS-USB.md](docs/RECURSOS-USB.md)
+- Roteiro do primeiro teste com a mesa real: [docs/PRIMEIRO-TESTE.md](docs/PRIMEIRO-TESTE.md)
 - Como contribuir: [CONTRIBUINDO.md](CONTRIBUINDO.md)
 
 Usa a biblioteca [soundcraft-ui-connection](https://github.com/fmalcher/soundcraft-ui) (MIT) para conversar com a mesa e o [ffmpeg](https://ffmpeg.org/) (via `ffmpeg-static`, baixado no `npm install`) para capturar o áudio USB.

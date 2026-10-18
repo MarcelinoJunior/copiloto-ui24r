@@ -1,6 +1,7 @@
 import { clamp, dbToPow, FLOOR_DB, powToDb, sumDb } from '../util/db.js';
 import { DEFAULT_EQ_RAW } from './eq.js';
 import {
+  type AccessState,
   type BusInfo,
   type ChannelInfo,
   type ChannelVu,
@@ -10,6 +11,7 @@ import {
   type SendInfo,
   type Unsubscribe,
   type VuFrame,
+  type WriteTest,
   MASTER_BUS,
   channelKey,
   tapForSend,
@@ -164,6 +166,14 @@ export class SimulatorAdapter implements MixerAdapter {
 
   onVu(cb: (frame: VuFrame) => void): void {
     this.vuCb = cb;
+  }
+
+  accessState(): AccessState {
+    return { found: false, passwords: [], keys: [] };
+  }
+
+  async testWrite(): Promise<WriteTest> {
+    return { ok: true, ms: 0, detail: 'simulador: sempre aceita (nada é enviado para a Ui24R)' };
   }
 
   onRawMessage(): void {

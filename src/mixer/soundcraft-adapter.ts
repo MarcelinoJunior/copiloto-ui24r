@@ -1,4 +1,4 @@
-import { combineLatest, firstValueFrom, timeout, type Observable } from 'rxjs';
+import { combineLatest, filter, firstValueFrom, take, timeout, type Observable } from 'rxjs';
 import {
   ConnectionStatus,
   SoundcraftUI,
@@ -6,6 +6,7 @@ import {
   type InputChannelVuData,
 } from 'soundcraft-ui-connection';
 import {
+  type AccessState,
   type BusInfo,
   type ChannelInfo,
   type ChannelKind,
@@ -16,6 +17,7 @@ import {
   type SendInfo,
   type Unsubscribe,
   type VuFrame,
+  type WriteTest,
   MASTER_BUS,
   channelKey,
   parseChannelKey,
@@ -48,9 +50,11 @@ export class SoundcraftAdapter implements MixerAdapter {
   private buses: BusInfo[] = [];
   private statusCb?: (state: ConnectionState, detail?: string) => void;
   private nameCb?: (key: string, name: string) => void;
+  private state: Record<string, unknown> = {};
 
   constructor(private readonly ip: string) {
     this.ui = new SoundcraftUI(ip);
+    this.ui.store.state$.subscribe((s) => (this.state = s as Record<string, unknown>));
     this.ui.status$.subscribe((event) => {
       const detail = event.type === ConnectionStatus.Error ? errorText((event as { payload?: unknown }).payload) : undefined;
       this.statusCb?.(STATUS_MAP[event.type] ?? 'erro', detail);
@@ -137,7 +141,54 @@ export class SoundcraftAdapter implements MixerAdapter {
   }
 
   onRawMessage(cb: () => void): void {
-    this.ui.store.messages$.subscribe(() => cb());
+    // só o que CHEGA da mesa (o estado da biblioteca também inclui o que nós enviamos)
+    this.ui.conn.inbound$.subscribe(() => cb());
+  }
+
+  accessState(): AccessState {
+    const keys = Object.keys(this.state).filter((k) => ACCESS_KEY.test(k));
+    const passwords = keys
+      .filter((k) => PASSWORD_KEY.test(k))
+      .map((k) => this.state[k])
+      .filter((v): v is string => typeof v === 'string' && v.length > 0);
+    return { found: keys.length > 0, passwords, keys };
+  }
+
+  async testWrite(): Promise<WriteTest> {
+    const key = 'i.0.pan';
+    const current = Number(this.state[key]);
+    if (!Number.isFinite(current)) return { detail: 'a mesa ainda não informou o pan do canal 1; tente de novo em alguns segundos' };
+    const observer = new SoundcraftUI(this.ip);
+    try {
+      await withTimeout(observer.connect(), 6000, 'a segunda conexão de teste não abriu');
+      const seen = firstValueFrom(
+        observer.conn.inbound$.pipe(
+          filter((m) => m.startsWith(`SETD^${key}^`)),
+          take(1),
+          timeout(3000),
+        ),
+      ).then(
+        () => true,
+        () => false,
+      );
+      const start = performance.now();
+      // mudança de 0,0002 no pan: impossível de ouvir; volta ao valor original logo depois
+      this.ui.conn.setd(key, current < 0.9 ? current + 0.0002 : current - 0.0002);
+      const ok = await seen;
+      const ms = Math.round(performance.now() - start);
+      this.ui.conn.setd(key, current);
+      return ok
+        ? { ok: true, ms, detail: 'a mesa aceitou o comando do Copiloto e repassou para os outros aparelhos' }
+        : {
+            ok: false,
+            detail:
+              'a mesa não repassou a mudança para a outra conexão. Ela pode estar bloqueando comandos (senha em Settings › Access ou firmware diferente): mexa num fader pelo Copiloto e confira na mesa',
+          };
+    } catch (err) {
+      return { detail: `não consegui testar: ${err instanceof Error ? err.message : err}` };
+    } finally {
+      await withTimeout(observer.disconnect(), 2000, '').catch(() => undefined);
+    }
   }
 
   onVu(cb: (frame: VuFrame) => void): void {
@@ -279,6 +330,26 @@ export class SoundcraftAdapter implements MixerAdapter {
     if (kind === 'f') return this.ui.master.fx(number);
     return this.ui.master.input(number);
   }
+}
+
+/** Chaves do estado ligadas ao controle de acesso (Settings › Access) e às senhas. */
+const ACCESS_KEY = /access|passw|masterpass|(^|\.)(pass|pw|pwd)(\.|$)/i;
+const PASSWORD_KEY = /pass|(^|\.)(pw|pwd)(\.|$)/i;
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(message)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
 }
 
 function setFader(fader: Pick<Fader, 'setFaderLevelDB' | 'setFaderLevel'>, db: number): void {

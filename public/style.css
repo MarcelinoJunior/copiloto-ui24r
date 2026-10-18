@@ -686,3 +686,10 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 @media (max-width: 900px) { .cm-volumes { overflow: visible; } .cm-volumes .detail-faders { height: 340px; } }
 .cm-eq h3 span { text-transform: none; letter-spacing: 0; font-weight: 400; }
 @media (max-width: 900px) { .cm-head { flex-wrap: wrap; row-gap: 8px; } .cm-ident { order: 5; } .cm-head .spacer { display: none; } .cm-mute { margin-left: auto; } }
+
+/* tela Conexão: senha da mesa e teste de comando */
+.access-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.access-grid h3 { font-size: 14px; margin: 0 0 8px; }
+.access-form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.access-form .stack { display: flex; flex-direction: column; gap: 2px; }
+.access-form input[type=password] { min-width: 220px; }

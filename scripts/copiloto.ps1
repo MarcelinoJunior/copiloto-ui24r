@@ -42,6 +42,14 @@ function Abrir {
   $porta = Get-Porta
   $url = "http://localhost:$porta"
 
+  # O atalho é para a MESA REAL: se um simulador (npm run sim) estiver ocupando a porta, fecha ele antes.
+  $sim = Get-ProcessoCopiloto $porta
+  if ($sim -and $sim.CommandLine -like '*--sim*') {
+    Write-Host 'Um SIMULADOR do Copiloto estava aberto. Fechando para abrir a mesa real...'
+    & taskkill.exe /PID $sim.ProcessId /T /F | Out-Null
+    Start-Sleep -Seconds 1
+  }
+
   if (Test-Painel $porta) {
     Write-Host 'O Copiloto já está ligado. Abrindo o painel...'
     Start-Process $url

@@ -69,6 +69,29 @@ export interface MixerInfo {
   auxCount: number;
 }
 
+/**
+ * Teste de comando: o Copiloto muda um parâmetro inaudível (pan do canal 1 em 0,0002) e volta,
+ * enquanto uma SEGUNDA conexão confere se a mesa repassou a mudança. Prova que a mesa aceita
+ * comandos (ex.: mesmo com senha em Settings › Access).
+ */
+export interface WriteTest {
+  /** true = aceitou; false = não repassou a mudança; undefined = não deu para testar */
+  ok?: boolean;
+  /** tempo até a outra conexão receber a mudança */
+  ms?: number;
+  detail: string;
+}
+
+/** O que a mesa informa sobre o controle de acesso (Settings › Access), só para conferência. */
+export interface AccessState {
+  /** a mesa tem chaves de acesso/senha no estado */
+  found: boolean;
+  /** senhas que a mesa informa (só para comparar; nunca vão para a tela nem para o log) */
+  passwords: string[];
+  /** nomes das chaves (para o diagnóstico) */
+  keys: string[];
+}
+
 export type ConnectionState = 'conectando' | 'conectado' | 'reconectando' | 'desconectado' | 'erro';
 
 export interface MixerAdapter {
@@ -85,8 +108,12 @@ export interface MixerAdapter {
   onChannelName(cb: (key: string, name: string) => void): void;
   /** VU de entradas e de retornos de efeito (chaves "f1".."f4"). */
   onVu(cb: (frame: VuFrame) => void): void;
-  /** Qualquer mensagem recebida da mesa (para medir a saúde da conexão). */
+  /** Qualquer mensagem recebida da mesa (para medir a saúde da conexão). Não inclui o que o Copiloto envia. */
   onRawMessage(cb: () => void): void;
+  /** Controle de acesso informado pela mesa (a conexão de controle não pede senha). */
+  accessState(): AccessState;
+  /** Confere se a mesa aceita comandos, sem mudar o som (ver WriteTest). */
+  testWrite(): Promise<WriteTest>;
   /** Envio de um canal (ou retorno de efeito, "fN") para um bus. No master, é o fader do canal. */
   watchSend(bus: number, key: string, cb: (info: SendInfo) => void): Unsubscribe;
   setSendDB(bus: number, key: string, db: number): void;

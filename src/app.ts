@@ -1,6 +1,6 @@
 import { canUseBus, type User } from './auth.js';
 import type { AppConfig } from './config.js';
-import type { ConnectionStore } from './connection-store.js';
+import type { ConnectionStore, MixerAccess } from './connection-store.js';
 import { ConnectionHealth, type HealthSnapshot, isValidHost } from './health.js';
 import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
@@ -22,6 +22,7 @@ import {
   type MixerAdapter,
   type MixerInfo,
   type Unsubscribe,
+  type WriteTest,
   MASTER_BUS,
   busLabel,
   primaryBus,
@@ -135,6 +136,23 @@ export interface AdvancedInfo {
   presetsByBus: { bus: number; label: string; presets: { id: string; name: string }[] }[];
 }
 
+/**
+ * Situação da senha da mesa:
+ * - confere: a senha cadastrada é a mesma que a mesa informa
+ * - nao-confere: a mesa informa outra senha
+ * - nao-informado: a mesa não mostra a senha pela conexão de controle (normal em alguns firmwares)
+ * - mesa-tem-senha: a mesa informa uma senha, mas a opção "a mesa tem senha" está desligada
+ */
+export type AccessCheck = 'confere' | 'nao-confere' | 'nao-informado' | 'mesa-tem-senha';
+
+export interface AccessInfo {
+  enabled: boolean;
+  hasPassword: boolean;
+  check?: AccessCheck;
+  writeTest?: WriteTest & { at: number };
+  writeTesting: boolean;
+}
+
 export interface LevelSourceInfo {
   kind: 'vu' | 'usb';
   device?: string;
@@ -161,6 +179,8 @@ export interface AppSnapshot {
   sim?: { scene: Scene; offsets: Record<string, number> };
   health: HealthSnapshot;
   levelSource: LevelSourceInfo;
+  /** senha da mesa (Settings › Access) e teste de comando; a senha em si nunca vai para a tela */
+  access: AccessInfo;
   tips: Tip[];
   advanced: AdvancedInfo;
   /** canais com phantom 48V ligado (etiqueta na faixa) */
@@ -196,6 +216,8 @@ export type Command =
   | { type: 'conn.setIp'; ip: string }
   | { type: 'conn.useSim' }
   | { type: 'conn.reconnect' }
+  | { type: 'conn.access'; enabled: boolean; password?: string | null }
+  | { type: 'conn.writeTest' }
   | { type: 'level.detect' }
   | { type: 'level.useVu' }
   | { type: 'level.useUsb'; device: string; channels: number }
@@ -281,6 +303,10 @@ export class App {
   private readonly preamps = new Map<string, { gainDB: number; phantom: boolean }>();
   /** EQ de cada entrada, como a mesa guarda (0..1) */
   private readonly eqRaw = new Map<string, Record<string, number>>();
+  /** senha da mesa (só para conferência) e último teste de comando */
+  private access: MixerAccess;
+  private writeTest?: WriteTest & { at: number };
+  private writeTesting = false;
   /** histórico curto do nível de cada canal, para as dicas */
   private readonly stats = new Map<string, ChannelStats>();
   private advanced: AdvancedSettings = structuredClone(DEFAULT_ADVANCED);
@@ -300,6 +326,7 @@ export class App {
     this.presets = target.profiles[this.kind].presets;
     this.health = new ConnectionHealth({ kind: this.kind, ip: this.ip });
     this.adapter = this.attach(target.create(this.kind, this.ip));
+    this.access = connStore.loadAccess();
   }
 
   // ---------- ciclo de vida e conexão ----------
@@ -350,6 +377,8 @@ export class App {
         this.event(`Conectado: ${info.model} em ${info.address} (firmware ${info.firmware})`);
         this.log.write('mesa', { ...info });
         this.wire();
+        // mesa real: confere logo de cara se ela aceita comandos (mudança inaudível, ver WriteTest)
+        if (this.kind === 'mesa') setTimeout(() => gen === this.generation && void this.runWriteTest('ao conectar'), 3000);
         return;
       } catch (err) {
         if (gen !== this.generation) return;
@@ -379,6 +408,7 @@ export class App {
     this.fxInRoom.clear();
     this.preamps.clear();
     this.eqRaw.clear();
+    this.writeTest = undefined;
     this.stats.clear();
     this.stopAdvanced();
     this.usbCapture?.stop();
@@ -423,7 +453,8 @@ export class App {
     for (const ch of channels) {
       if (ch.kind !== 'i') continue;
       this.adapter.watchPreamp(ch.key, (p) => this.preamps.set(ch.key, p));
-      this.adapter.watchEq(ch.key, (raw) => this.eqRaw.set(ch.key, raw));
+      // só mostra o EQ quando a mesa informou os valores (senão a tela mostraria um EQ inventado)
+      this.adapter.watchEq(ch.key, (raw) => (Object.keys(raw).length ? this.eqRaw.set(ch.key, raw) : this.eqRaw.delete(ch.key)));
     }
     this.advanced = mergeAdvanced(this.persisted.advanced);
 
@@ -713,7 +744,8 @@ export class App {
 
   private requireEq(ctx: ClientCtx, key: string): void {
     if (!this.canEditEq(ctx.user)) throw new CommandError('O EQ muda o salão e todas as saídas: só o admin ou quem tem o master pode mexer.');
-    if (!/^i\d{1,2}$/.test(key) || !this.eqRaw.has(key)) throw new CommandError('Só canais de entrada têm equalizador.');
+    if (!/^i\d{1,2}$/.test(key)) throw new CommandError('Só canais de entrada têm equalizador.');
+    if (!this.eqRaw.has(key)) throw new CommandError('A mesa ainda não informou o EQ deste canal.');
   }
 
   private eqState(key: string): EqState | undefined {
@@ -943,6 +975,25 @@ export class App {
         this.event(this.kind === 'mesa' ? `Reconectando na mesa real em ${this.ip}…` : 'Reiniciando o simulador…');
         void this.switchMixer(this.kind, this.ip);
         return;
+      case 'conn.access': {
+        this.requireAdmin(ctx);
+        const enabled = Boolean(cmd.enabled);
+        // senha: string nova; null = apagar; ausente = manter a atual
+        let password = this.access.password;
+        if (cmd.password === null) password = undefined;
+        else if (typeof cmd.password === 'string' && cmd.password !== '') {
+          if (cmd.password.length > 64) throw new CommandError('Senha muito longa.');
+          password = cmd.password;
+        }
+        this.access = { enabled, password: enabled ? password : undefined };
+        this.connStore.saveAccess(this.access);
+        this.event(`${who}: mesa ${enabled ? 'COM senha (Access)' : 'sem senha'} registrada`);
+        return;
+      }
+      case 'conn.writeTest':
+        this.requireAdmin(ctx);
+        void this.runWriteTest(who);
+        return;
       case 'level.detect':
         this.requireAdmin(ctx);
         void detectUsbAudio().then((d) => {
@@ -1071,6 +1122,40 @@ export class App {
         if (this.usbCapture instanceof SimulatedAudio) this.usbCapture.clearInjections(cmd.key);
         return;
     }
+  }
+
+  /** Teste de comando (mudança inaudível conferida por uma segunda conexão). */
+  private async runWriteTest(who: string): Promise<void> {
+    if (this.writeTesting || this.connection !== 'conectado') return;
+    this.writeTesting = true;
+    const gen = this.generation;
+    try {
+      const result = await this.adapter.testWrite();
+      if (gen !== this.generation) return;
+      this.writeTest = { ...result, at: Date.now() };
+      const txt = result.ok ? `OK (${result.ms} ms)` : result.ok === false ? 'FALHOU' : 'não deu para testar';
+      this.event(`Teste de comando ${who === 'ao conectar' ? 'ao conectar' : `(${who})`}: ${txt}: ${result.detail}`);
+      this.log.write('teste-comando', { ok: result.ok, ms: result.ms, detalhe: result.detail, quem: who });
+    } finally {
+      this.writeTesting = false;
+    }
+  }
+
+  private accessInfo(): AccessInfo {
+    let check: AccessCheck | undefined;
+    if (this.kind === 'mesa' && this.connection === 'conectado') {
+      const st = this.adapter.accessState();
+      if (!this.access.enabled) check = st.passwords.length ? 'mesa-tem-senha' : undefined;
+      else if (!st.passwords.length) check = 'nao-informado';
+      else check = this.access.password && st.passwords.includes(this.access.password) ? 'confere' : 'nao-confere';
+    }
+    return {
+      enabled: this.access.enabled,
+      hasPassword: Boolean(this.access.password),
+      check,
+      writeTest: this.writeTest,
+      writeTesting: this.writeTesting,
+    };
   }
 
   private channelName(key: string): string {
@@ -1203,6 +1288,7 @@ export class App {
         usbAgeMs: this.usbCapture?.lastLevelsAt === undefined ? undefined : now - this.usbCapture.lastLevelsAt,
         detection: this.usbDetection,
       },
+      access: this.accessInfo(),
       tips: this.tipsFor(user, bus, now),
       phantom: [...this.preamps].filter(([, p]) => p.phantom).map(([k]) => k),
       advanced: this.advancedInfo(user, ctx.view.detail),

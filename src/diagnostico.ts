@@ -85,6 +85,7 @@ for (const ch of channels) {
 console.log('\nLegenda: M = envio mutado, P = pós-fader, p = pré-fader. Canais sem envio para esses auxes foram omitidos.');
 const eq = eqFromRaw(eqRaw);
 console.log('\n== EQ do canal 1 (para calibrar) ==');
+if (!Object.keys(eqRaw).length) console.log('⚠ A mesa não informou chaves "i.0.eq.*": o EQ do Copiloto fica escondido. Me avise.');
 console.log(`bruto (0..1): ${JSON.stringify(eqRaw)}`);
 console.log(
   `convertido ≈ HPF ${Math.round(eq.hpfHz)} Hz | ` +
@@ -92,6 +93,21 @@ console.log(
 );
 console.log('Compare com o EQ do canal 1 na interface web da mesa. Se não bater, ajuste as constantes em src/mixer/eq.ts.\n');
 console.log('Dica: no painel, um par estéreo (ex.: AUX 7+8) aparece como uma opção só; o software mexe nos dois juntos.');
+
+// Senha (Settings › Access): só os NOMES das chaves; o valor nunca é impresso.
+const access = adapter.accessState();
+console.log('\n== SENHA DA MESA (Settings › Access) ==');
+if (access.found) {
+  console.log(`A mesa informa ${access.keys.length} chave(s) de acesso: ${access.keys.join(', ')}`);
+  console.log(access.passwords.length ? `Senha informada pela mesa: sim (${access.passwords.length}). Valor não mostrado.` : 'Senha informada pela mesa: não (ou vazia).');
+} else {
+  console.log('A mesa não informou nenhuma chave de acesso/senha pela conexão de controle.');
+}
+
+console.log('\n== TESTE DE COMANDO (sem mudar o som) ==');
+console.log('Mexendo no pan do canal 1 em 0,0002 (inaudível) e conferindo por uma segunda conexão…');
+const wt = await adapter.testWrite();
+console.log(wt.ok ? `✓ OK em ${wt.ms} ms: ${wt.detail}.` : wt.ok === false ? `✗ FALHOU: ${wt.detail}.` : `? ${wt.detail}.`);
 
 await adapter.disconnect();
 process.exit(0);

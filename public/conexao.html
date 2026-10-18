@@ -44,6 +44,40 @@
     </div>
   </section>
 
+  <section class="card" id="access-card">
+    <h2>Senha da mesa e teste de comando</h2>
+    <div class="access-grid">
+      <div>
+        <h3>A mesa tem senha? <span class="muted small">(Settings › Access na Ui24R)</span></h3>
+        <form id="access-form" class="access-form">
+          <label class="toggle-btn"><input type="checkbox" id="acc-enabled"> A mesa tem senha</label>
+          <label class="stack small" id="acc-pass-wrap">Senha da mesa
+            <input id="acc-pass" type="password" autocomplete="off" maxlength="64" placeholder="(não mudar)">
+          </label>
+          <button type="submit" class="primary" id="acc-save">Salvar</button>
+        </form>
+        <p id="acc-status" class="test-result" hidden></p>
+        <p class="muted small">
+          A Ui24R só pede essa senha na <strong>página dela</strong> (navegador/tablet). A conexão de controle que o Copiloto usa
+          <strong>não pede senha</strong>: por isso nada é enviado. A senha fica guardada só neste computador
+          (<code>data/conexao.json</code>) para <strong>conferir</strong> com a que a mesa informa.
+        </p>
+      </div>
+      <div>
+        <h3>A mesa aceita os comandos do Copiloto?</h3>
+        <div class="row">
+          <button type="button" id="write-test" title="Muda o pan do canal 1 em 0,0002 (impossível de ouvir), volta ao valor original e confere por uma segunda conexão se a mesa repassou">Testar comando</button>
+          <span id="wt-when" class="muted small"></span>
+        </div>
+        <p id="wt-result" class="test-result" hidden></p>
+        <p class="muted small">
+          Roda sozinho toda vez que conecta na mesa real. Não muda o som: mexe no pan do canal 1 numa quantidade
+          impossível de ouvir e volta. Se falhar, a mesa pode estar bloqueando comandos: mexa num fader pelo Copiloto e confira na mesa.
+        </p>
+      </div>
+    </div>
+  </section>
+
   <p id="admin-note" class="setup-msg" hidden>Só o <strong>admin</strong> pode trocar a mesa ou a fonte de nível. Você está vendo as informações.</p>
   <p id="error" class="form-error" role="alert" hidden></p>
 
