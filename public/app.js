@@ -120,6 +120,8 @@ async function api(method, url, body) {
     method,
     headers: body ? { 'content-type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
+  }).catch(() => {
+    throw new Error('O Copiloto não está ligado. Dê dois cliques em “Abrir Copiloto” na área de trabalho e tente de novo.');
   });
   if (res.status === 401) {
     location.href = '/login.html';

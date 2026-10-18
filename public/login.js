@@ -2,6 +2,7 @@
 
 const $ = (sel) => document.querySelector(sel);
 let setup = false;
+const PROGRAMA_FECHADO = 'O Copiloto não está ligado. Dê dois cliques em “Abrir Copiloto” na área de trabalho e tente de novo.';
 
 function showError(text) {
   const el = $('#error');
@@ -10,7 +11,10 @@ function showError(text) {
 }
 
 async function post(url, body) {
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {
+    // sem resposta: o programa está fechado (não é erro de senha)
+    throw new Error(PROGRAMA_FECHADO);
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? 'Não consegui entrar.');
   return data;
@@ -50,4 +54,4 @@ $('#form').addEventListener('submit', async (e) => {
   }
 });
 
-init().catch(() => showError('Não consegui falar com o programa. Ele está aberto?'));
+init().catch(() => showError(PROGRAMA_FECHADO));
