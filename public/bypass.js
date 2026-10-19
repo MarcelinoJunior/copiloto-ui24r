@@ -33,9 +33,37 @@
     last.send({ type: 'bypass.allow', bus });
   });
 
+  // ---- ⏻ Desligar o Copiloto (só admin) ----
+  document.addEventListener('click', async (e) => {
+    if (!e.target.closest('#shutdown-btn')) return;
+    const ok = confirm(
+      'Desligar o Copiloto?\n\nO programa fecha para TODO MUNDO (painel, celulares, tablets). Os envios da mesa ficam como estão: nada muda no som.\n\nPara ligar de novo: ícone "Abrir Copiloto" na área de trabalho.',
+    );
+    if (!ok) return;
+    try {
+      const res = await fetch('/api/shutdown', { method: 'POST' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Não consegui desligar.');
+      showOff();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  function showOff() {
+    if (document.getElementById('off-screen')) return;
+    const el = document.createElement('div');
+    el.id = 'off-screen';
+    el.className = 'off-screen';
+    el.innerHTML =
+      '<div><h2>⏻ Copiloto desligado</h2><p>Os envios da mesa ficaram como estavam: nada mudou no som.</p><p>Para ligar de novo, dê dois cliques em <strong>Abrir Copiloto</strong> na área de trabalho. Esta página volta sozinha quando ele ligar.</p></div>';
+    document.body.appendChild(el);
+  }
+
   window.renderBypass = function (s, send) {
     if (!s.bypass) return;
     last = { s, send };
+    const off = document.getElementById('shutdown-btn');
+    if (off) off.hidden = s.user?.role !== 'admin';
     const b = s.bypass;
     const allow = b.on ? b.allow ?? [] : [];
     document.body.classList.toggle('bypass-on', b.on);

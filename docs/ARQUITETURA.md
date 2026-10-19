@@ -61,6 +61,7 @@ docs/                        esta documentação
 - **Mute:** `MixerAdapter.setSendMute(bus, key, muted)`; o estado vem no `SendInfo.muted` e aparece em `ChannelSnapshot.muted` / `FxSnapshot.muted`. Canal mutado não entra nas dicas de equilíbrio.
 - **Equalizador:** o adaptador assina as chaves `i.<n>.eq.*` do estado da mesa (`watchEq`) e escreve valores brutos (`setEqRaw`, só parâmetros da lista branca). A conversão para Hz/dB/Q fica em `mixer/eq.ts` e é **uma suposição** (log para frequência e Q, linear para ganho), por isso a tela mostra "≈"; `npm run diagnostico` imprime o EQ bruto do canal 1 para calibrar.
 - **Tipo de som:** `App.identityOf(key)` usa o áudio (modo USB, `AnalysisEngine.identification`) e, sem ele, o nome do canal. Alimenta `suggestTargets` (volume ideal = voz principal + `TYPE_OFFSET_DB`), as dicas de equilíbrio (`balanceTips`) e o papel "automático" do fala × música.
+- **Desligar pelo painel:** `POST /api/shutdown` (só admin) chama o mesmo `shutdown()` do Ctrl+C em `main.ts`: registra no log, para o App e o servidor e sai. O servidor corta WebSockets e conexões keep-alive (`terminate`/`closeAllConnections`), e há um prazo de 3 s para sair mesmo se algo travar.
 - **Recarregamento automático:** o servidor manda um `build` em cada estado; se o programa reinicia, as páginas abertas recarregam sozinhas.
 
 ## Dados

@@ -738,3 +738,11 @@ table.users input, .new-user input, .new-user select, table.users select { backg
   opacity: 0.45;
 }
 .risk-locked .bus { outline: 2px dashed var(--warn); outline-offset: -2px; }
+
+/* ⏻ desligar o Copiloto (só admin) */
+.shutdown-btn { border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px 10px; border-radius: 8px; }
+.shutdown-btn:hover { border-color: var(--bad); color: var(--bad); }
+.top .shutdown-btn { margin-right: 8px; }
+.off-screen { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: rgba(8, 10, 14, 0.94); color: var(--text); text-align: center; padding: 24px; }
+.off-screen h2 { font-size: 28px; margin: 0 0 12px; }
+.off-screen p { color: var(--muted); max-width: 520px; margin: 8px auto; line-height: 1.5; }

@@ -26,6 +26,8 @@ export interface ServerDeps {
   app: App;
   auth: AuthService;
   views: ViewStore;
+  /** botão "Desligar o Copiloto" do painel (só admin): encerra o programa com calma */
+  onShutdown?: (who: string) => void;
 }
 
 class HttpError extends Error {
@@ -116,6 +118,13 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
     if (path === '/api/logout' && method === 'POST') {
       auth.logout(parseCookies(req.headers.cookie)[COOKIE]);
       return json(res, 200, { ok: true }, { 'set-cookie': `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
+    }
+    if (path === '/api/shutdown' && method === 'POST') {
+      const u = needAdmin();
+      if (!deps.onShutdown) throw new HttpError(501, 'Desligar pelo painel não está disponível.');
+      json(res, 200, { ok: true });
+      setTimeout(() => deps.onShutdown?.(u.username), 300); // dá tempo da resposta chegar
+      return;
     }
     if (path === '/api/me/password' && method === 'POST') {
       const u = need();
@@ -297,9 +306,11 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
         () =>
           new Promise<void>((done) => {
             clearInterval(pushTimer);
-            for (const ws of clients.keys()) ws.close();
+            // corta na hora: esperar o navegador fechar a conexão (WebSocket ou keep-alive) pode nunca acontecer
+            for (const ws of clients.keys()) ws.terminate();
             wss.close();
             server.close(() => done());
+            server.closeAllConnections();
           }),
       );
     });

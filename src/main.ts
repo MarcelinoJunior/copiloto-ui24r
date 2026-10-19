@@ -59,7 +59,12 @@ const auth = new AuthService(db);
 const createdAdmin = auth.ensureDefaultAdmin();
 const views = new ViewStore(db);
 
-const stopServer = await startServer({ app, auth, views }, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
+// botão ⏻ do painel (só admin) usa o mesmo desligamento do Ctrl+C
+const onShutdown = (who: string) => {
+  app.announceShutdown(who);
+  void shutdown();
+};
+const stopServer = await startServer({ app, auth, views, onShutdown }, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\nA porta ${cfg.server.port} já está em uso: o Copiloto já está aberto em outra janela?`);
     console.error(`Feche a outra janela ou use outra porta, ex.: PORT=${cfg.server.port + 1} npm start\n`);
@@ -91,8 +96,10 @@ async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
   console.log('Encerrando…');
-  await app.stop();
-  await stopServer();
+  // prazo de segurança: se algo travar (mesa sem resposta, conexão presa), sai mesmo assim
+  setTimeout(() => process.exit(0), 3000);
+  await app.stop().catch(() => undefined);
+  await stopServer().catch(() => undefined);
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

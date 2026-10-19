@@ -101,6 +101,7 @@ npm run diagnostico
 - abas Mixagem, Análise, Conexão e Pessoas;
 - controles do simulador (só aparecem no simulador);
 - **⛔ BYPASS** (botão de pânico, também nas telas Análise e Conexão): um clique e o Copiloto **para de mexer na mesa** e só monitora. Veja abaixo;
+- **⏻ Desligar o Copiloto** (só o admin; também nas telas Análise e Conexão): fecha o programa para todo mundo depois de confirmar. Os envios da mesa ficam como estão. Para ligar de novo, use o ícone *Abrir Copiloto*;
 - **Dicas**, com um contador que fica laranja ou vermelho quando há algo importante;
 - selo da mesa (verde = mesa real com o tempo de resposta; roxo = simulador);
 - seu usuário.

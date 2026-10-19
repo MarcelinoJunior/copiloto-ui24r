@@ -401,6 +401,12 @@ export class App {
     void this.connectLoop(this.generation);
   }
 
+  /** Desligamento pelo painel: avisa no log de eventos e no log do culto. */
+  announceShutdown(who: string): void {
+    this.event(`⏻ ${who}: desligou o Copiloto pelo painel (os envios da mesa ficam como estão)`);
+    this.log.write('desligar', { quem: who });
+  }
+
   async stop(): Promise<void> {
     this.stopped = true;
     this.timers.forEach(clearInterval);
