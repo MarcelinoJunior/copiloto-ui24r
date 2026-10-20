@@ -240,14 +240,17 @@ describe('programa inteiro com a mesa real pela rede (Ui24R falsa)', () => {
     expect(new ConnectionStore(join(dir, 'conexao.json')).loadAccess()).toEqual({ enabled: true, password: 'louvor123' });
   });
 
-  it('fader do painel e mute chegam na mesa com as chaves do AUX 7 (e do par AUX 8)', async () => {
+  it('par estéreo: envio, mute e master da saída chegam nos DOIS lados (AUX 7 e AUX 8)', async () => {
     fake.received.length = 0;
     app.handle({ type: 'setSend', bus: 7, key: 'i1', db: -6 }, admin);
     app.handle({ type: 'setMute', bus: 7, key: 'i1', muted: true }, admin);
-    await until(() => fake.received.length >= 3);
+    app.handle({ type: 'setBusMaster', bus: 7, db: -3 }, admin);
+    await until(() => fake.received.length >= 6);
     await wait(100);
     const keys = fake.received.map((m) => m.split('^')[1]);
-    expect(keys).toEqual(expect.arrayContaining(['i.0.aux.6.value', 'i.0.aux.7.value', 'i.0.aux.6.mute']));
+    expect(keys).toEqual(
+      expect.arrayContaining(['i.0.aux.6.value', 'i.0.aux.7.value', 'i.0.aux.6.mute', 'i.0.aux.7.mute', 'a.6.mix', 'a.7.mix']),
+    );
     app.handle({ type: 'setMute', bus: 7, key: 'i1', muted: false }, admin);
   });
 

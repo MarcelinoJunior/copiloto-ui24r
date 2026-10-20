@@ -55,7 +55,7 @@ Para a primeira vez, deixe o **⛔ BYPASS ligado antes de conectar**: assim o Co
 
 ## 4a. Saídas testadas
 
-Em `config/config.json`, `safeBuses` lista as saídas já testadas (na igreja: `[5, 9]` = LIVE e o fone F. SAMUEL). As outras ficam travadas com aviso de risco; ganho, phantom, EQ e efeitos também. Quando conectar na mesa real, o Copiloto grava os nomes dela em `data/mesa-espelho.json` e o simulador passa a ser igual à mesa da igreja.
+Em `config/config.json`, `safeBuses` lista as saídas já testadas (na igreja: `[5, 6, 9]` = LIVE estéreo 5+6 e o fone F. SAMUEL; num par estéreo o Copiloto sempre mexe nos dois lados juntos). As outras ficam travadas com aviso de risco; ganho, phantom, EQ e efeitos também. Quando conectar na mesa real, o Copiloto grava os nomes dela em `data/mesa-espelho.json` e o simulador passa a ser igual à mesa da igreja.
 
 ## 4b. Testar numa saída só (ex.: um fone)
 

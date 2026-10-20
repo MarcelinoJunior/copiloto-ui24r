@@ -181,8 +181,8 @@ Arquivo [config/config.json](config/config.json):
 | `server.host` | `127.0.0.1` | Use `0.0.0.0` para abrir o painel em celulares e tablets da mesma rede (todos precisam de login) |
 | `server.port` | `8080` | Porta do painel (ou `PORT=8081 npm start`) |
 | (variável) `COPILOTO_DATA` | `./data` | Outra pasta de dados, ex.: para rodar uma cópia de teste isolada |
-| `streamAuxes` | `[5]` | Saída da live: já começa em `initialMode` e aparece primeiro (confira com `npm run diagnostico`) |
-| `safeBuses` | `[5, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados com aviso de risco** até alguém clicar em *Liberar (risco)* (vale 10 min, só para quem liberou). Sem esta linha, tudo fica liberado |
+| `streamAuxes` | `[5, 6]` | Saída da live: já começa em `initialMode` e aparece primeiro (confira com `npm run diagnostico`). Par estéreo: pode escrever os dois números ou só um; o Copiloto mexe nos dois lados juntos |
+| `safeBuses` | `[5, 6, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados com aviso de risco** até alguém clicar em *Liberar (risco)* (vale 10 min, só para quem liberou). Sem esta linha, tudo fica liberado |
 | `initialMode` | `observar` | Modo inicial dessa saída (`desligado`, `observar` = *Só sugerir*, `automatico` = *Ajustando*); as outras começam desligadas |
 | `leveler.*` | | Limites do automático: tolerância, quanto pode subir/descer, velocidade, pausa depois que o operador mexe, fade dos presets, "efeito acompanha" |
 

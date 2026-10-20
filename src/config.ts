@@ -43,7 +43,8 @@ export interface AppConfig {
   server: { host: string; port: number };
   streamAuxes: number[];
   /**
-   * Saídas já testadas com o Copiloto (ex.: a live e um fone). As outras, o master e os
+   * Saídas já testadas com o Copiloto (ex.: a live e um fone). Par estéreo: basta um dos
+   * números (5 ou 6 = a LIVE 5+6 inteira). As outras, o master e os
    * comandos que mexem no canal inteiro (EQ, ganho, phantom, efeitos) ficam travados com aviso
    * de risco até alguém liberar por 10 min. Sem esta opção, tudo fica liberado.
    */

@@ -567,7 +567,7 @@ export class App {
 
   private addController(bus: number): void {
     let mode =
-      this.persisted.modes?.[String(bus)] ?? (this.cfg.streamAuxes.includes(bus) ? this.cfg.initialMode : 'desligado');
+      this.persisted.modes?.[String(bus)] ?? (this.inList(this.cfg.streamAuxes, bus) ? this.cfg.initialMode : 'desligado');
     // saída ainda não testada nunca começa corrigindo sozinha (precisa liberar com aviso de risco)
     if (mode === 'automatico' && !this.isSafeBus(bus)) {
       mode = 'observar';
@@ -1251,10 +1251,32 @@ export class App {
     }
   }
 
+  /**
+   * A saída está na lista do config? Par estéreo conta pelos dois números: "5" ou "6" são a
+   * mesma LIVE 5+6 (o Copiloto controla o par pelo número menor e a mesa repete no outro lado).
+   */
+  private inList(list: number[] | undefined, bus: number): boolean {
+    if (!list) return false;
+    const partner = this.adapter.listBuses().find((b) => b.id === bus)?.linkedWith;
+    return list.includes(bus) || (partner !== undefined && list.includes(partner));
+  }
+
+  /** Saídas testadas como a tela as vê: um número por saída (o menor do par estéreo), sem repetir. */
+  private safeOutputs(): number[] | null {
+    const safe = this.cfg.safeBuses;
+    if (!safe) return null;
+    const buses = this.adapter.listBuses();
+    const ids = safe.map((n) => {
+      const info = buses.find((b) => b.id === n);
+      return info ? primaryBus(info) : n;
+    });
+    return [...new Set(ids)].sort((x, y) => x - y);
+  }
+
   /** Saída já testada com o Copiloto (sem aviso de risco)? Sem `safeBuses` no config, todas são. */
   private isSafeBus(bus: number): boolean {
     const safe = this.cfg.safeBuses;
-    return !safe || safe.includes(bus);
+    return !safe || this.inList(safe, bus);
   }
 
   /** Escopo de risco de um comando: a saída que ele mexe ("bus:N") ou o canal inteiro ("canal"). */
@@ -1417,7 +1439,7 @@ export class App {
   /** Saída que a pessoa vê quando ainda não escolheu: a da live (config), senão a primeira liberada. */
   private defaultBus(user: User): number | undefined {
     const allowed = this.busChoices(user).map((b) => b.id);
-    return this.cfg.streamAuxes.find((b) => allowed.includes(b)) ?? allowed.find((b) => b !== MASTER_BUS) ?? allowed[0];
+    return allowed.find((b) => b !== MASTER_BUS && this.inList(this.cfg.streamAuxes, b)) ?? allowed.find((b) => b !== MASTER_BUS) ?? allowed[0];
   }
 
   snapshotFor(ctx: ClientCtx): AppSnapshot {
@@ -1475,8 +1497,8 @@ export class App {
       },
       access: this.accessInfo(),
       safety: {
-        safeBuses: this.cfg.safeBuses ?? null,
-        safeLabels: (this.cfg.safeBuses ?? []).map((b) => this.labelOf(b)),
+        safeBuses: this.safeOutputs(),
+        safeLabels: (this.safeOutputs() ?? []).map((b) => this.labelOf(b)),
         acks: Object.entries(ctx.view.riskAcks ?? {})
           .filter(([, until]) => until > now)
           .map(([scope, until]) => ({ scope, until })),

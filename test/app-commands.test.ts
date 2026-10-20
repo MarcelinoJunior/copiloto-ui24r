@@ -91,7 +91,7 @@ describe('saídas testadas (safeBuses): o resto fica travado com aviso de risco'
   beforeAll(async () => {
     const profile = () => ({ store: new StateStore(join(dir2, `e-${Math.random()}.json`)), presets: new PresetStore(join(dir2, `p-${Math.random()}.json`)) });
     app2 = new App(
-      { ...loadConfig(), streamAuxes: [7], safeBuses: [7, 9] },
+      { ...loadConfig(), streamAuxes: [8], safeBuses: [8, 9] }, // "8" = o par 7+8 inteiro
       { kind: 'simulador', ip: 'simulador', create: () => new SimulatorAdapter(), profiles: { mesa: profile(), simulador: profile() }, dataDir: dir2 },
       new SessionLog(join(dir2, 'sessoes'), 'teste'),
       new ConnectionStore(join(dir2, 'conexao.json')),
@@ -116,6 +116,7 @@ describe('saídas testadas (safeBuses): o resto fica travado com aviso de risco'
     app2.handle({ type: 'setMode', bus: 1, mode: 'observar' }, a); // só sugerir não mexe: liberado
     expect(() => app2.handle({ type: 'setGain', key: 'i1', db: 30 }, a)).toThrow(/canal inteiro/);
     expect(app2.snapshotFor(a).safety.safeLabels).toEqual(['AUX 7+8', 'AUX 9']);
+    expect(app2.snapshotFor(a).safety.safeBuses).toEqual([7, 9]);
 
     app2.handle({ type: 'risk.ack', scope: 'bus:1' }, a);
     app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a); // liberado com aviso
