@@ -110,6 +110,23 @@ function Abrir([switch]$SemNavegador) {
 
 function Fechar {
   $fechou = $false
+  $porta = Get-Porta
+
+  # 0) jeito limpo: pede para o próprio Copiloto desligar (chave local em data\copiloto.token).
+  #    Não depende de listar processos do Windows (WMI), que às vezes trava.
+  $tokenFile = Join-Path $dados 'copiloto.token'
+  if ((Test-Path $tokenFile) -and (Test-Painel $porta)) {
+    try {
+      $token = (Get-Content $tokenFile -Raw).Trim()
+      Invoke-WebRequest "http://127.0.0.1:$porta/api/shutdown-local" -Method Post -Headers @{ 'x-copiloto-token' = $token } -UseBasicParsing -TimeoutSec 5 | Out-Null
+      for ($i = 0; $i -lt 10 -and (Test-Painel $porta); $i++) { Start-Sleep -Milliseconds 700 }
+      if (-not (Test-Painel $porta)) {
+        Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+        Write-Host 'Copiloto fechado.' -ForegroundColor Green
+        return
+      }
+    } catch {}
+  }
 
   # 1) a janela que o atalho "Abrir" ligou (confere que é mesmo ela antes de fechar)
   if (Test-Path $pidFile) {

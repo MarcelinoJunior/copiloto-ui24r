@@ -28,6 +28,11 @@ export interface ServerDeps {
   views: ViewStore;
   /** botão "Desligar o Copiloto" do painel (só admin): encerra o programa com calma */
   onShutdown?: (who: string) => void;
+  /**
+   * Chave local (gravada em data/copiloto.token ao ligar): o atalho "Fechar Copiloto" e o
+   * desinstalador usam para pedir o desligamento sem login, só deste computador.
+   */
+  localToken?: string;
 }
 
 class HttpError extends Error {
@@ -118,6 +123,14 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
     if (path === '/api/logout' && method === 'POST') {
       auth.logout(parseCookies(req.headers.cookie)[COOKIE]);
       return json(res, 200, { ok: true }, { 'set-cookie': `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
+    }
+    if (path === '/api/shutdown-local' && method === 'POST') {
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '');
+      const token = String(req.headers['x-copiloto-token'] ?? '');
+      if (!deps.localToken || !deps.onShutdown || !local || token !== deps.localToken) throw new HttpError(403, 'Não autorizado.');
+      json(res, 200, { ok: true });
+      setTimeout(() => deps.onShutdown?.('atalho Fechar Copiloto'), 300);
+      return;
     }
     if (path === '/api/shutdown' && method === 'POST') {
       const u = needAdmin();

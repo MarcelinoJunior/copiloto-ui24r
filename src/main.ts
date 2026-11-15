@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { App, type Profile, type SourceKind } from './app.js';
 import { AuthService } from './auth.js';
@@ -66,11 +67,17 @@ const createdAdmin = auth.ensureDefaultAdmin();
 const views = new ViewStore(db);
 
 // botão ⏻ do painel (só admin) usa o mesmo desligamento do Ctrl+C
+// chave local para o "Fechar Copiloto" desligar com calma sem precisar listar processos do Windows
+const localToken = randomBytes(16).toString('hex');
+const tokenFile = resolve(dataDir, 'copiloto.token');
+mkdirSync(dataDir, { recursive: true });
+writeFileSync(tokenFile, localToken);
+
 const onShutdown = (who: string) => {
   app.announceShutdown(who);
   void shutdown();
 };
-const stopServer = await startServer({ app, auth, views, onShutdown }, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
+const stopServer = await startServer({ app, auth, views, onShutdown, localToken }, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\nA porta ${cfg.server.port} já está em uso: o Copiloto já está aberto em outra janela?`);
     console.error(`Feche a outra janela ou use outra porta, ex.: PORT=${cfg.server.port + 1} npm start\n`);
@@ -125,6 +132,7 @@ async function shutdown(): Promise<void> {
   console.log('Encerrando…');
   // prazo de segurança: se algo travar (mesa sem resposta, conexão presa), sai mesmo assim
   setTimeout(() => process.exit(0), 3000);
+  rmSync(tokenFile, { force: true });
   await app.stop().catch(() => undefined);
   await stopServer().catch(() => undefined);
   process.exit(0);
