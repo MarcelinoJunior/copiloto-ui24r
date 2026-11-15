@@ -111,12 +111,13 @@ $env:PORT = '8093'
 $env:COPILOTO_SEM_ATUALIZACAO = '1'
 $srv = Start-Process (Join-Path $destino 'node\node.exe') -ArgumentList 'node_modules\tsx\dist\cli.mjs', '--disable-warning=ExperimentalWarning', 'src\main.ts', '--sim' -WorkingDirectory $destino -WindowStyle Hidden -PassThru
 try {
+  # a primeira execução logo depois de instalar pode demorar (antivírus conferindo o node.exe)
   $ok = $false
-  for ($i = 0; $i -lt 40 -and -not $ok; $i++) {
+  for ($i = 0; $i -lt 90 -and -not $ok -and -not $srv.HasExited; $i++) {
     Start-Sleep -Seconds 1
     try { $ok = (Invoke-WebRequest 'http://127.0.0.1:8093/login.html' -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch {}
   }
-  if (-not $ok) { throw 'o Copiloto instalado não respondeu' }
+  if (-not $ok) { throw $(if ($srv.HasExited) { "o Copiloto instalado fechou sozinho (código $($srv.ExitCode))" } else { 'o Copiloto instalado não respondeu em 90 s' }) }
   Write-Host 'Copiloto instalado ligou e respondeu.' -ForegroundColor Green
   # desliga como o atalho Fechar Copiloto: pela chave local (sem listar processos)
   $token = (Get-Content (Join-Path $dadosTeste 'copiloto.token') -Raw).Trim()
