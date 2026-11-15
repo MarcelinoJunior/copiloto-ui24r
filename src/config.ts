@@ -81,7 +81,7 @@ export function loadConfig(path = resolve('config/config.json')): AppConfig {
   const raw = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) as Partial<AppConfig>;
   const config: AppConfig = {
     mixer: { ip: raw.mixer?.ip ?? '192.168.0.122' },
-    server: { host: raw.server?.host ?? '127.0.0.1', port: raw.server?.port ?? 8080 },
+    server: { host: raw.server?.host ?? '127.0.0.1', port: raw.server?.port ?? 8124 },
     streamAuxes: raw.streamAuxes ?? [7],
     safeBuses: raw.safeBuses,
     initialMode: raw.initialMode ?? 'observar',

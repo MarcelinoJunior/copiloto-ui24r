@@ -77,15 +77,33 @@ const onShutdown = (who: string) => {
   app.announceShutdown(who);
   void shutdown();
 };
-const stopServer = await startServer({ app, auth, views, onShutdown, localToken }, cfg.server.host, cfg.server.port).catch((err: NodeJS.ErrnoException) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`\nA porta ${cfg.server.port} já está em uso: o Copiloto já está aberto em outra janela?`);
-    console.error(`Feche a outra janela ou use outra porta, ex.: PORT=${cfg.server.port + 1} npm start\n`);
-  } else {
-    console.error('\nNão consegui abrir o painel:', err.message, '\n');
+// Porta ocupada por OUTRO programa (ex.: o AmpSim usa a 8080): tenta as próximas, até 10.
+// A porta usada vai para data/copiloto.porta, que o atalho lê para abrir a janela certa.
+// Com PORT= definido (cópias de teste) não troca: falha avisando.
+const portFile = resolve(dataDir, 'copiloto.porta');
+const wantedPort = cfg.server.port;
+const tries = process.env.PORT ? 1 : 10;
+let stopServer: (() => Promise<void>) | undefined;
+for (let i = 0; i < tries && !stopServer; i++) {
+  const port = wantedPort + i;
+  try {
+    stopServer = await startServer({ app, auth, views, onShutdown, localToken }, cfg.server.host, port);
+    cfg.server.port = port;
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    if (err.code !== 'EADDRINUSE') {
+      console.error('\nNão consegui abrir o painel:', err.message, '\n');
+      process.exit(1);
+    }
+    console.error(`A porta ${port} está ocupada por outro programa (ou outro Copiloto).`);
   }
+}
+if (!stopServer) {
+  console.error(`\nNenhuma porta livre entre ${wantedPort} e ${wantedPort + tries - 1}. Feche o outro programa ou mude server.port.\n`);
   process.exit(1);
-});
+}
+if (cfg.server.port !== wantedPort) console.log(`Usando a porta ${cfg.server.port} (a ${wantedPort} está ocupada).`);
+writeFileSync(portFile, String(cfg.server.port));
 await app.start();
 
 // Atualização pelo GitHub: confere 20 s depois de ligar e a cada 30 min; aplicar é um clique do admin.
@@ -133,8 +151,9 @@ async function shutdown(): Promise<void> {
   // prazo de segurança: se algo travar (mesa sem resposta, conexão presa), sai mesmo assim
   setTimeout(() => process.exit(0), 3000);
   rmSync(tokenFile, { force: true });
+  rmSync(portFile, { force: true });
   await app.stop().catch(() => undefined);
-  await stopServer().catch(() => undefined);
+  await stopServer?.().catch(() => undefined);
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

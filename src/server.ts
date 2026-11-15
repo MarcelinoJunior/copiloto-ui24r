@@ -318,7 +318,12 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
   }, PUSH_INTERVAL_MS);
 
   return new Promise((resolveStart, rejectStart) => {
-    server.once('error', rejectStart);
+    // porta ocupada etc.: desfaz o que foi criado (quem chamou pode tentar outra porta)
+    server.once('error', (err) => {
+      clearInterval(pushTimer);
+      wss.close();
+      rejectStart(err);
+    });
     server.listen(port, host, () => {
       resolveStart(
         () =>

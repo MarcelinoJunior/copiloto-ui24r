@@ -37,7 +37,7 @@ Por padrão o diagnóstico **só lê**: a mesa recebe apenas o "estou vivo" da c
 
 Para a primeira vez, deixe o **⛔ BYPASS ligado antes de conectar**: assim o Copiloto não manda nada, nem o teste de comando, e você só confere se ele enxerga a mesa certa.
 
-- Dê dois cliques em **Copiloto Ui24R** (área de trabalho): ele abre na própria janela (fechar a janela desliga o Copiloto). Ou rode `npm start` e abra `http://localhost:8080`.
+- Dê dois cliques em **Copiloto Ui24R** (área de trabalho): ele abre na própria janela (fechar a janela desliga o Copiloto). Ou rode `npm start` e abra `http://localhost:8124`.
 - Entre com o seu usuário. Na primeira vez é `admin` / `admin`: troque a senha.
 - Vá em **Conexão**:
   - **IP da mesa** `192.168.0.122` e **Salvar e reconectar** se precisar;

@@ -21,7 +21,7 @@ npm install
 npm run sim
 ```
 
-O comando acima abre o simulador em http://localhost:8080 (usuário `admin`, senha `admin`). Em Conexão, "Usar USB simulado" liga os recursos do modo USB sem precisar da mesa.
+O comando acima abre o simulador em http://localhost:8124 (usuário `admin`, senha `admin`). Em Conexão, "Usar USB simulado" liga os recursos do modo USB sem precisar da mesa.
 
 Para rodar uma segunda cópia, isolada, sem misturar dados:
 

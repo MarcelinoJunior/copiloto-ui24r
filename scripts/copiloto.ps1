@@ -26,21 +26,42 @@ $titulo = 'Copiloto Ui24R'
 
 $nodeLocal = Join-Path $raiz 'node\node.exe'
 
-function Get-Porta {
+function Get-PortaConfig {
   # data\config.json (deste computador) tem prioridade sobre o config\config.json do programa
   foreach ($c in @((Join-Path $dados 'config.json'), (Join-Path $raiz 'config\config.json'))) {
     if (Test-Path $c) {
       try { return [int](Get-Content $c -Raw | ConvertFrom-Json).server.port } catch {}
     }
   }
-  return 8080
+  return 8124
 }
 
+# Porta em que o Copiloto está: se a configurada estiver ocupada por outro programa (ex.: o AmpSim
+# usa a 8080), ele mesmo escolhe a próxima livre e grava em data\copiloto.porta.
+function Get-Porta {
+  $f = Join-Path $dados 'copiloto.porta'
+  if (Test-Path $f) {
+    try {
+      $p = [int](Get-Content $f -Raw).Trim()
+      if (Test-Painel $p) { return $p }
+    } catch {}
+  }
+  return Get-PortaConfig
+}
+
+# $true só se quem responde na porta é MESMO o Copiloto (outro programa na mesma porta não conta).
 function Test-Painel([int]$porta) {
   try {
-    Invoke-WebRequest "http://127.0.0.1:$porta/login.html" -UseBasicParsing -TimeoutSec 2 | Out-Null
-    return $true
+    $info = Invoke-RestMethod "http://127.0.0.1:$porta/api/ping" -TimeoutSec 2
+    return $info.app -eq 'copiloto-ui24r'
   } catch { return $false }
+}
+
+function Avisar([string]$texto) {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    [void][System.Windows.Forms.MessageBox]::Show($texto, $titulo, 'OK', 'Warning')
+  } catch {}
 }
 
 # Processo que está ouvindo a porta do painel, se for o Copiloto (src/main.ts).
@@ -114,10 +135,12 @@ function Abrir([switch]$SemNavegador) {
   $proc = Start-Process cmd.exe -ArgumentList '/c', $cmd -WorkingDirectory $raiz -WindowStyle Hidden -PassThru
   Set-Content -Path $pidFile -Value $proc.Id -Encoding ascii
 
-  for ($i = 0; $i -lt 60; $i++) {
+  # a primeira vez depois de instalar pode demorar (antivírus conferindo o node.exe)
+  for ($i = 0; $i -lt 90; $i++) {
+    $porta = Get-Porta # pode ter ido para outra porta (a configurada estava ocupada)
     if (Test-Painel $porta) {
       Write-Host 'Pronto! Abrindo a janela do Copiloto...' -ForegroundColor Green
-      if (-not $SemNavegador) { Abrir-Janela $url }
+      if (-not $SemNavegador) { Abrir-Janela "http://localhost:$porta" }
       return
     }
     if ($proc.HasExited) { break }
@@ -126,8 +149,13 @@ function Abrir([switch]$SemNavegador) {
   }
   Write-Host ''
   Write-Host 'O Copiloto não respondeu. Últimas mensagens dele:' -ForegroundColor Red
-  if (Test-Path $log) { Get-Content $log -Tail 15 | ForEach-Object { Write-Host "  $_" } }
+  $ultimas = if (Test-Path $log) { @(Get-Content $log -Tail 15) } else { @() }
+  $ultimas | ForEach-Object { Write-Host "  $_" }
   Write-Host "(arquivo completo: $log)"
+  # o atalho roda minimizado: avisa numa caixa para ninguém ficar sem saber
+  if (-not $SemNavegador) {
+    Avisar ("O Copiloto não conseguiu abrir.`n`nÚltimas mensagens:`n" + (($ultimas | Select-Object -Last 6) -join "`n") + "`n`nArquivo completo: $log")
+  }
   exit 1
 }
 
@@ -238,7 +266,7 @@ function Atalhos {
   foreach ($pasta in $destinos) {
     try {
       # um ícone só: para desligar, use o botão ⏻ na tela do Copiloto
-      Novo-Atalho $pasta 'Copiloto Ui24R' 'Abrir Copiloto.bat' 'abrir.ico' 'Liga o Copiloto Ui24R e abre o painel (para desligar: botão ⏻ na tela)'
+      Novo-Atalho $pasta 'Copiloto Ui24R' 'Abrir Copiloto.bat' 'abrir.ico' 'Abre o Copiloto Ui24R na própria janela (fechar a janela desliga)'
       Write-Host "Atalhos criados em: $pasta" -ForegroundColor Green
       return
     } catch {

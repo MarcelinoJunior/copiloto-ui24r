@@ -82,7 +82,7 @@ Dê dois cliques em **`Criar atalhos na area de trabalho.bat`** (na pasta do pro
 
 **Para desligar: feche a janela** (ou o botão **⏻** no topo, só o admin). Um "vigia" escondido percebe a janela fechada e desliga o programa com calma. Sem Edge nem Chrome, o painel abre no navegador padrão.
 
-**Celulares e tablets:** com `server.host` = `0.0.0.0` (padrão), a mesma tela abre em qualquer aparelho da rede, no endereço mostrado em **Conexão › Este computador** (ex.: `http://192.168.0.117:8080`), cada pessoa com o próprio login. Na primeira vez o Windows pode perguntar se permite o acesso pela rede: escolha **Redes privadas** e **Permitir**. Para deixar só neste computador, use `127.0.0.1`. Em emergência (painel fechado), há o **Fechar Copiloto.bat** na pasta do programa (e no Menu Iniciar, quando instalado pelo Setup). Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
+**Celulares e tablets:** com `server.host` = `0.0.0.0` (padrão), a mesma tela abre em qualquer aparelho da rede, no endereço mostrado em **Conexão › Este computador** (ex.: `http://192.168.0.117:8124`), cada pessoa com o próprio login. Na primeira vez o Windows pode perguntar se permite o acesso pela rede: escolha **Redes privadas** e **Permitir**. Para deixar só neste computador, use `127.0.0.1`. Em emergência (painel fechado), há o **Fechar Copiloto.bat** na pasta do programa (e no Menu Iniciar, quando instalado pelo Setup). Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
 
 A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**, que é um driver de hardware do Windows. Só é necessário para o modo Áudio USB, e só se o Windows não reconhecer a mesa sozinho.
 
@@ -97,7 +97,7 @@ A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**
      ```bash
      npm run sim
      ```
-2. Abra **http://localhost:8080** e entre com usuário **admin** e senha **admin**. Esse usuário é criado sozinho na primeira vez. **Troque a senha** em *Conta*: o projeto é público e todo mundo conhece a senha padrão. Enquanto ela não for trocada, aparece um aviso vermelho.
+2. Abra **http://localhost:8124** e entre com usuário **admin** e senha **admin**. Esse usuário é criado sozinho na primeira vez. **Troque a senha** em *Conta*: o projeto é público e todo mundo conhece a senha padrão. Enquanto ela não for trocada, aparece um aviso vermelho.
 3. Em **Conexão**, confira o IP da mesa (padrão `192.168.0.122`; no hotspot da Ui24R costuma ser `10.10.1.1`). O PC precisa estar na mesma rede da mesa.
 4. Em **Pessoas**, cadastre quem vai operar e marque as saídas de cada um (ex.: "live" só com o AUX 7+8).
 5. Na **Mixagem**, escolha a **Saída** (ex.: AUX 7+8 · LIVE), deixe o **Ajuste automático de volume** em *Só sugerir*, faça a mixagem como sempre e clique em **Volume ideal › Gravar volumes atuais** num momento em que estiver soando bem (ou em **Pelo tipo de som**, com a banda e a voz tocando).
@@ -195,7 +195,7 @@ Arquivo [config/config.json](config/config.json):
 |---|---|---|
 | `mixer.ip` | `192.168.0.122` | IP da mesa (dá para trocar na tela Conexão) |
 | `server.host` | `127.0.0.1` | Use `0.0.0.0` para abrir o painel em celulares e tablets da mesma rede (todos precisam de login) |
-| `server.port` | `8080` | Porta do painel (ou `PORT=8081 npm start`) |
+| `server.port` | `8124` | Porta do painel (ou `PORT=8081 npm start`). Se outro programa já usa essa porta (ex.: o AmpSim usa a 8080), o Copiloto usa a próxima livre e o atalho acha sozinho |
 | (variável) `COPILOTO_DATA` | `./data` | Outra pasta de dados, ex.: para rodar uma cópia de teste isolada |
 | `streamAuxes` | `[5, 6]` | Saída da live: já começa em `initialMode` e aparece primeiro (confira com `npm run diagnostico`). Par estéreo: pode escrever os dois números ou só um; o Copiloto mexe nos dois lados juntos |
 | `safeBuses` | `[5, 6, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados com aviso de risco** até alguém clicar em *Liberar (risco)* (vale 10 min, só para quem liberou). Sem esta linha, tudo fica liberado |
