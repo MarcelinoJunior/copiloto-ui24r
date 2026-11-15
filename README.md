@@ -6,6 +6,12 @@
 
 Licença: **GPL-3.0** (software livre de cooperação: quem distribuir uma versão modificada precisa compartilhar o código). Contribuições são bem-vindas, veja [CONTRIBUINDO.md](CONTRIBUINDO.md).
 
+## ⬇ Baixar (Windows)
+
+**[Baixar o instalador mais recente: Copiloto-Setup.exe](https://github.com/MarcelinoJunior/copiloto-ui24r/releases/latest/download/Copiloto-Setup.exe)** · [todas as versões e novidades](https://github.com/MarcelinoJunior/copiloto-ui24r/releases)
+
+Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que precisa e cria os ícones **Abrir Copiloto** e **Fechar Copiloto**. Depois de instalado, ele avisa sozinho quando houver versão nova (**Atualizar agora**, no topo da tela). Detalhes em [Instalação](#instalação).
+
 ---
 
 ## Sumário
@@ -54,7 +60,7 @@ Licença: **GPL-3.0** (software livre de cooperação: quem distribuir uma vers�
 
 ### Jeito fácil (Windows): instalador
 
-Baixe o **`Copiloto-Setup-<versão>.exe`** e dê dois cliques. Ele instala sem pedir administrador, já traz o Node.js e as bibliotecas (nada para instalar à parte) e cria os ícones **Abrir Copiloto** e **Fechar Copiloto** na área de trabalho. O Windows pode mostrar "O Windows protegeu o computador" (o instalador não é assinado): clique em **Mais informações › Executar assim mesmo**.
+Baixe o **[Copiloto-Setup.exe](https://github.com/MarcelinoJunior/copiloto-ui24r/releases/latest/download/Copiloto-Setup.exe)** (sempre a versão mais recente) e dê dois cliques. Ele instala sem pedir administrador, já traz o Node.js e as bibliotecas (nada para instalar à parte) e cria os ícones **Abrir Copiloto** e **Fechar Copiloto** na área de trabalho. O Windows pode mostrar "O Windows protegeu o computador" (o instalador não é assinado): clique em **Mais informações › Executar assim mesmo**.
 
 **Atualizações:** o Copiloto confere o GitHub ao ligar e a cada 30 minutos. Quando houver versão nova, aparece uma faixa azul no topo: **Atualizar agora** (só o admin). Ele nunca atualiza sozinho (para não reiniciar no meio do culto). Ao atualizar, baixa a versão nova, mantém os dados (usuários, presets, senha da mesa, `data/`) e reinicia em ~30 s; a página volta sozinha. A tela **Conexão › Versão do Copiloto** mostra a versão instalada e tem *Conferir atualização agora*. Configuração própria deste computador vai em `data/config.json` (a atualização nunca apaga; tem prioridade sobre `config/config.json`).
 
