@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readVersion, Updater, windowsTar, writeVersion } from '../src/updater.js';
+import { depsHash, readVersion, Updater, windowsTar, writeVersion } from '../src/updater.js';
 
 const NEW = 'b'.repeat(40);
 const OLD = 'a'.repeat(40);
@@ -53,6 +53,21 @@ describe('atualização pelo GitHub (instalado pelo Setup, sem git)', () => {
 
     writeVersion(root, { commit: NEW });
     expect((await up.check()).available).toBe(false);
+  });
+
+  it('versao.json com BOM (gravado pelo instalador antigo) é lido', () => {
+    const root = tmp('copiloto-inst-');
+    writeFileSync(join(root, 'versao.json'), String.fromCharCode(0xfeff) + JSON.stringify({ commit: OLD, files: ['src/main.ts'] }));
+    expect(readVersion(root)?.commit).toBe(OLD);
+    expect(readVersion(root)?.files).toEqual(['src/main.ts']);
+  });
+
+  it('package-lock com fim de linha do Windows (instalador) e do GitHub: mesmas bibliotecas', () => {
+    const root = tmp('copiloto-inst-');
+    const lf = JSON.stringify({ version: '0.2.1', packages: { '': { version: '0.2.1' }, 'node_modules/ws': { version: '8.0.0' } } }, null, 2);
+    put(root, 'a.json', lf.replace(/\n/g, '\r\n'));
+    put(root, 'b.json', lf.replace(/0\.2\.1/g, '0.2.2'));
+    expect(depsHash(join(root, 'a.json'))).toBe(depsHash(join(root, 'b.json')));
   });
 
   it('sem internet: só adia (não é erro)', async () => {

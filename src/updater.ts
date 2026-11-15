@@ -259,7 +259,9 @@ export function readVersion(root: string): VersionFile | undefined {
   const p = join(root, VERSION_FILE);
   if (!existsSync(p)) return undefined;
   try {
-    return JSON.parse(readFileSync(p, 'utf8')) as VersionFile;
+    // instaladores até a 0.2.1 gravaram com BOM: sem tirar, o commit instalado ficava "desconhecido"
+    const text = readFileSync(p, 'utf8');
+    return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) as VersionFile;
   } catch {
     return undefined;
   }

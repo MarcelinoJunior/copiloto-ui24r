@@ -84,7 +84,8 @@ $info = [ordered]@{
   message = (git -C $raiz log -1 --format=%s).Trim()
   files   = @($arquivos)
 }
-$info | ConvertTo-Json -Depth 3 | Out-File (Join-Path $stage 'versao.json') -Encoding utf8
+# sem BOM (o Out-File -Encoding utf8 do Windows PowerShell grava BOM e o JSON.parse não aceita)
+[IO.File]::WriteAllText((Join-Path $stage 'versao.json'), ($info | ConvertTo-Json -Depth 3), (New-Object Text.UTF8Encoding $false))
 
 # ---- 5. instalador ----
 Passo 'Gerando o instalador (Inno Setup)'
