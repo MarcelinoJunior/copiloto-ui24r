@@ -12,7 +12,7 @@
   "leveler": {
     "tickMs": 500,
     "gateDB": -50,
-    "averagingSec": 4,
+    "averagingSec": 10,
     "minActiveSec": 2,
     "releaseSec": 1.5,
     "deadbandDB": 2,

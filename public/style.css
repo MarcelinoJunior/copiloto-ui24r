@@ -746,3 +746,19 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 .off-screen { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: rgba(8, 10, 14, 0.94); color: var(--text); text-align: center; padding: 24px; }
 .off-screen h2 { font-size: 28px; margin: 0 0 12px; }
 .off-screen p { color: var(--muted); max-width: 520px; margin: 8px auto; line-height: 1.5; }
+
+/* ================= efeito acompanha a live + tempo de análise ================= */
+
+.avg-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-left: 6px; }
+.avg-pick select { font-size: 13px; padding: 3px 6px; }
+.fxlink-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 5px 10px; border: 1px solid var(--fx); border-radius: 8px; background: rgba(199, 125, 255, 0.07); }
+.fxlink-bar[hidden] { display: none; }
+.fxlink-title { font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fx); white-space: nowrap; }
+.fxlink-rows { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.fxlink-row { display: inline-flex; align-items: center; gap: 6px; }
+.fxl-name { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.seg.small button { padding: 2px 7px; font-size: 11px; }
+.seg.small button.active { background: var(--fx); border-color: var(--fx); color: #2a0633; font-weight: 800; }
+.fxl-btn { width: 100%; flex: 0 0 auto; height: 16px; padding: 1px 0; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; border-radius: 4px; color: var(--muted); }
+.fxl-btn.on { background: rgba(199, 125, 255, 0.25); border-color: var(--fx); color: var(--text); }
+.bypass-on .fxlink-bar button, .bypass-on .fxl-btn { pointer-events: none; opacity: 0.45; }

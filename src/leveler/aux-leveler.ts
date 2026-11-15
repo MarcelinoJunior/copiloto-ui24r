@@ -111,7 +111,7 @@ export class AuxLeveler {
 
   constructor(
     readonly bus: number,
-    private readonly cfg: LevelerConfig,
+    private cfg: LevelerConfig,
   ) {}
 
   setMode(mode: Mode): void {
@@ -137,6 +137,16 @@ export class AuxLeveler {
       status: 'sem-alvo',
       suggestedDeltaDB: 0,
     });
+  }
+
+  /** Tempo de análise (média do nível de cada canal) desta saída, em segundos. */
+  setAveragingSec(sec: number): void {
+    this.cfg = { ...this.cfg, averagingSec: sec };
+    for (const ch of this.channels.values()) ch.level.setTau(sec);
+  }
+
+  get averagingSec(): number {
+    return this.cfg.averagingSec;
   }
 
   setName(key: string, name: string): void {

@@ -127,3 +127,61 @@ describe('saídas testadas (safeBuses): o resto fica travado com aviso de risco'
     expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a)).toThrow(/Liberar/);
   });
 });
+
+describe('efeito acompanha a live + tempo de análise (programa inteiro, simulador)', () => {
+  const dir3 = mkdtempSync(join(tmpdir(), 'copiloto-fxlink-'));
+  let app3: App;
+  const adm = (detail?: string): ClientCtx => ({ user: user('admin', []), view: { bus: 7, detail } });
+  const fxOf = (key: string, fx: string) => app3.snapshotFor(adm(key)).detail?.fx.find((f) => f.key === fx)?.db;
+
+  beforeAll(async () => {
+    const profile = () => ({ store: new StateStore(join(dir3, `e-${Math.random()}.json`)), presets: new PresetStore(join(dir3, `p-${Math.random()}.json`)) });
+    app3 = new App(
+      { ...loadConfig(), streamAuxes: [7], safeBuses: undefined },
+      { kind: 'simulador', ip: 'simulador', create: () => new SimulatorAdapter(), profiles: { mesa: profile(), simulador: profile() }, dataDir: dir3 },
+      new SessionLog(join(dir3, 'sessoes'), 'teste'),
+      new ConnectionStore(join(dir3, 'conexao.json')),
+    );
+    await app3.start();
+    await until(() => app3.snapshotFor(adm()).connection === 'conectado' && app3.snapshotFor(adm()).bus);
+  });
+
+  afterAll(async () => {
+    await app3.stop();
+    rmSync(dir3, { recursive: true, force: true });
+  });
+
+  it('FX2 a −8 dB da live: alinha, acompanha cada mexida e respeita o botão de ignorar', async () => {
+    const a = adm();
+    expect(app3.snapshotFor(a).fxLink.liveLabel).toBe('AUX 7+8');
+    app3.handle({ type: 'setSend', bus: 7, key: 'i1', db: -12 }, a);
+    await until(() => app3.snapshotFor(a).bus?.channels.find((c) => c.key === 'i1')?.sendDB === -12);
+    app3.handle({ type: 'fxlink.set', fx: 'f2', offset: -8, align: true }, a);
+    await until(() => fxOf('i1', 'f2') === -20);
+    // o "ACOMP." antigo do FX2 na live foi desligado para não brigar
+    expect(app3.snapshotFor(a).bus?.fx.find((f) => f.key === 'f2')?.follow).toBe(false);
+
+    app3.handle({ type: 'setSend', bus: 7, key: 'i1', db: -6 }, a); // sobe na live
+    await until(() => fxOf('i1', 'f2') === -14);
+
+    app3.handle({ type: 'fxlink.ignore', key: 'i2', ignored: true }, a);
+    const before = fxOf('i2', 'f2');
+    app3.handle({ type: 'setSend', bus: 7, key: 'i2', db: -3 }, a);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(fxOf('i2', 'f2')).toBe(before);
+    expect(app3.snapshotFor(a).fxLink.ignore).toEqual(['i2']);
+    expect(app3.snapshotFor(a).fxLink.fx.find((f) => f.key === 'f2')?.offset).toBe(-8);
+
+    // bypass: nada vai para a mesa
+    app3.handle({ type: 'bypass', on: true }, a);
+    app3.handle({ type: 'bypass', on: false }, a);
+  });
+
+  it('tempo de análise por saída: 5/10/20/30/60 s', () => {
+    const a = adm();
+    expect(app3.snapshotFor(a).bus?.averagingSec).toBe(10);
+    app3.handle({ type: 'setAveraging', bus: 7, sec: 30 }, a);
+    expect(app3.snapshotFor(a).bus?.averagingSec).toBe(30);
+    expect(() => app3.handle({ type: 'setAveraging', bus: 7, sec: 7 }, a)).toThrow(/inválido/);
+  });
+});

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import type { AdvancedSettings } from './analysis/engine.js';
 import type { Mode, PersistedChannel } from './leveler/aux-leveler.js';
+import type { FxLinkState } from './leveler/fx-link.js';
 
 /**
  * Estado da mixagem por saída (chave "0" = master, "7" = aux 7): alvos, canais com AUTO,
@@ -14,6 +15,10 @@ export interface PersistedState {
   modes?: Record<string, Mode>;
   activePresets?: Record<string, string>;
   levelSource?: { kind: 'vu' | 'usb'; device?: string; channels?: number };
+  /** "efeito acompanha a live": diferença por efeito e canais ignorados */
+  fxLink?: FxLinkState;
+  /** tempo de análise do ajuste automático por saída (s) */
+  averaging?: Record<string, number>;
   /** recursos avançados do modo Áudio USB (microfonia, loudness, OBS…) */
   advanced?: AdvancedSettings;
 }

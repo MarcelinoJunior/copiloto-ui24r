@@ -62,6 +62,12 @@
         <button data-mode="observar" title="Mostra embaixo de cada fader quanto mexeria, mas NÃO mexe na mesa">Só sugerir</button>
         <button data-mode="automatico" title="Corrige os envios devagar para cada canal ficar no volume ideal">Ajustando</button>
       </div>
+      <label class="avg-pick" title="Quanto tempo de som o ajuste automático usa para decidir. Mais tempo = reage mais devagar e ignora picos (bumbo, uma frase mais forte). Menos tempo = reage rápido.">
+        analisar os últimos
+        <select id="avg-select" aria-label="Tempo de análise do ajuste automático">
+          <option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="30">30 s</option><option value="60">60 s</option>
+        </select>
+      </label>
     </div>
 
     <div class="tgroup g-alvo" title="VOLUME IDEAL: o volume de cada canal que o ajuste automático vai manter. Gravar = a mixagem de agora vira a ideal. Pelo tipo de som = calcula a partir da voz principal. Desfazer ajustes = volta os envios para como estavam antes das correções.">
@@ -99,6 +105,11 @@
     <div class="h g-alvo"><strong>Volume ideal</strong> É a referência do ajuste automático. <em>Gravar volumes atuais</em>: com a mixagem soando bem, o volume de cada canal vira o ideal. <em>Pelo tipo de som</em>: a voz principal vira referência e cada tipo (backs, bumbo, baixo, violão…) fica alguns dB abaixo dela. <em>Desfazer ajustes</em>: volta os envios para antes das correções (botão de pânico).</div>
     <div class="h g-preset"><strong>Preset</strong> Mixagens salvas desta saída (ex.: "Música – mais batera", "Fala"). Escolher na lista carrega com fade suave. <em>+</em> salva nova, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
     <div class="h g-tela"><strong>Tela</strong> Como os faders aparecem: quantos cabem na tela e quais canais (✎ cria seus modos). <em>Expandir canal</em>: clicar no nome do canal abre ganho, phantom, mute, equalizador, master, efeitos e espectro.</div>
+  </div>
+
+  <div id="fxlink-bar" class="fxlink-bar" hidden>
+    <span class="fxlink-title" title="EFEITO ACOMPANHA A LIVE: o envio de cada canal para o efeito segue o envio dele para a live, com a diferença escolhida. Mexeu o fader do canal na live (na mesa, aqui ou pelo ajuste automático), o efeito daquele canal vai junto. O botão FX em cima de cada canal liga/desliga isso só para ele.">Efeito acompanha a live <span class="ti">ⓘ</span></span>
+    <div id="fxlink-rows" class="fxlink-rows"></div>
   </div>
 
   <div id="risk-bar" class="risk-bar" role="alert" hidden>

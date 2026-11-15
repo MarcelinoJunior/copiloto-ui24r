@@ -25,7 +25,8 @@ Licença: **GPL-3.0** (software livre de cooperação: quem distribuir uma vers�
 
 **Sempre (pela rede, sem cabo extra):**
 - **Equilíbrio automático de auxiliares** (ex.: o aux da live). Lê o nível de cada canal e corrige devagar o envio quando alguém fica alto ou baixo demais, dentro de limites em torno da sua mixagem. Canal em silêncio nunca é mexido, para não virar ruído.
-- **Efeito acompanha:** quando o envio de um canal desce, o reverb dele desce junto na saída, sem a voz "dentro do banheiro".
+- **Efeito acompanha a live:** o envio de cada canal para o efeito (FX1, FX2…) segue o fader dele na live, com a diferença escolhida na tela (**mesma, −2, −4, −8, −10, −15, −20 dB** ou **manter como está**). Mexeu o canal na live, na mesa ou pelo ajuste automático, o efeito daquele canal vai junto. Um botão **FX** em cima de cada canal deixa ignorar canais (ex.: bumbo, baixo). Se o efeito toca no salão, o reverb do salão também muda (a tela avisa).
+- **Tempo de análise** do ajuste automático na tela: 5, 10, 20, 30 ou 60 s por saída (mais tempo = ignora picos).
 - **Tela de mixagem em tela cheia**, como na mesa:
   - todos os canais lado a lado, com o número embaixo;
   - os efeitos e um único master no canto (do aux escolhido ou do salão);

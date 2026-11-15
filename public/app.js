@@ -177,6 +177,57 @@ function setPill(cls, text) {
 
 // ---------- render geral ----------
 
+// ---------- efeito acompanha a live ----------
+
+const FXL_LABEL = (o) => (o === null ? 'desligado' : o === 'manter' ? 'manter como está' : o === 0 ? 'mesma' : `${o} dB`);
+
+function renderFxLink(s) {
+  const fl = s.fxLink;
+  const bar = $('#fxlink-bar');
+  const show = Boolean(fl && s.bus && fl.liveBus === s.bus.bus && fl.fx.length);
+  bar.hidden = !show;
+  if (!show) return;
+  const sig = JSON.stringify([fl.fx, fl.allowed]);
+  if (bar.dataset.sig === sig) return;
+  bar.dataset.sig = sig;
+  const choices = [null, ...fl.offsets, 'manter'];
+  $('#fxlink-rows').innerHTML = fl.fx
+    .map((f) => {
+      const badge = f.inRoom ? '<span class="fx-badge room" title="Este efeito toca no salão: mudar o envio muda o salão também">salão</span>' : '<span class="fx-badge live">só live</span>';
+      const btns = choices
+        .map((o) => {
+          const active = o === f.offset;
+          return `<button type="button" data-fx="${f.key}" data-off="${o === null ? '' : o}" class="${active ? 'active' : ''}" ${fl.allowed ? '' : 'disabled'} title="${escapeHtml(o === null ? 'Este efeito não acompanha a live' : o === 'manter' ? 'Cada canal mantém a diferença que tem agora e só acompanha as mudanças' : `Envio para o efeito = envio para a live ${o === 0 ? '(mesmo volume)' : `${o} dB`}`)}">${FXL_LABEL(o)}</button>`;
+        })
+        .join('');
+      return `<div class="fxlink-row"><span class="fxl-name">FX${f.key.slice(1)} · ${escapeHtml(f.name)} ${badge}</span><div class="seg small">${btns}</div></div>`;
+    })
+    .join('');
+}
+
+$('#fxlink-rows').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-fx]');
+  if (!b || b.classList.contains('active') || !state?.fxLink) return;
+  const fx = b.dataset.fx;
+  const raw = b.dataset.off;
+  const offset = raw === '' ? null : raw === 'manter' ? 'manter' : Number(raw);
+  const f = state.fxLink.fx.find((x) => x.key === fx);
+  const where = f?.inRoom ? '\n\nAtenção: este efeito toca no SALÃO; o reverb do salão também muda.' : '';
+  let align = false;
+  if (typeof offset === 'number') {
+    align = confirm(
+      `FX${fx.slice(1)} (${f?.name ?? ''}) vai acompanhar a live com ${FXL_LABEL(offset)}.\n\nAlinhar TODOS os canais agora? (OK = alinhar já; Cancelar = só acompanhar as próximas mexidas)${where}`,
+    );
+  } else if (offset === 'manter' && where && !confirm(`FX${fx.slice(1)} vai acompanhar a live mantendo a diferença de cada canal.${where}`)) {
+    return;
+  }
+  send({ type: 'fxlink.set', fx, offset, align });
+});
+
+$('#avg-select').addEventListener('change', (e) => {
+  if (state?.bus) send({ type: 'setAveraging', bus: state.bus.bus, sec: Number(e.target.value) });
+});
+
 /** Liberação de risco ativa para este escopo ("bus:N" ou "canal")? */
 function riskAcked(s, scope) {
   return (s.safety?.acks ?? []).some((a) => a.scope === scope && a.until > Date.now());
@@ -241,6 +292,8 @@ function render() {
   }
 
   const mode = s.bus?.mode ?? 'desligado';
+  renderFxLink(s);
+  if (s.bus && document.activeElement !== $('#avg-select')) $('#avg-select').value = String(s.bus.averagingSec);
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
   $('#mode-help').textContent = !s.bus
     ? ''
@@ -494,6 +547,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     <div class="strip-tag"><span class="tag-text"></span></div>
     <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
     <button class="mute-btn" type="button">MUTE</button>
+    <button class="fxl-btn" type="button" title="Este canal acompanha os efeitos da live (clique para ignorar)">FX</button>
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
       ${scaleHtml()}
@@ -513,6 +567,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     status: $('.status', el),
     toggle: $('.auto-btn', el),
     mute: $('.mute-btn', el),
+    fxl: $('.fxl-btn', el),
     fill: $('.fill', el),
     avg: $('.avg', el),
     target: $('.target', el),
@@ -581,6 +636,7 @@ function createChannelStrip(bus, ch) {
     openDetail(ch.key);
   });
   bindMute(strip, bus, ch.key);
+  strip.fxl.addEventListener('click', () => send({ type: 'fxlink.ignore', key: ch.key, ignored: strip.fxl.classList.contains('on') }));
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: ch.key, db }));
   return strip;
 }
@@ -609,6 +665,16 @@ function updateChannelStrip(strip, ch, s) {
   if (!strip.el.hidden) setStripName(strip, ch.name);
   strip.toggle.classList.toggle('on', ch.enabled);
   setMuted(strip, ch.muted);
+  // botão FX: só na live e com algum efeito acompanhando
+  const fl = s.fxLink;
+  const linkHere = Boolean(fl && s.bus.bus === fl.liveBus && fl.fx.some((f) => f.offset !== null));
+  strip.fxl.style.visibility = linkHere ? 'visible' : 'hidden';
+  const ignored = Boolean(fl?.ignore.includes(ch.key));
+  strip.fxl.classList.toggle('on', !ignored);
+  strip.fxl.textContent = ignored ? 'FX ✕' : 'FX';
+  strip.fxl.title = ignored
+    ? 'Ignorado: os efeitos deste canal NÃO acompanham a live (clique para voltar a acompanhar)'
+    : 'Os efeitos deste canal acompanham o fader dele na live (clique para ignorar, ex.: bumbo, baixo)';
   const phantom = s.phantom?.includes(ch.key);
   strip.tag.textContent = phantom ? '48V' : '';
   strip.tag.className = `tag-text ${phantom ? 'p48' : ''}`;
@@ -647,6 +713,7 @@ function createFxStrip(bus, fx) {
     send({ type: 'setFxFollow', bus: bus.bus, key: fx.key, follow: !strip.toggle.classList.contains('on') }),
   );
   bindMute(strip, bus, fx.key);
+  strip.fxl.style.visibility = 'hidden'; // o botão FX é só dos canais
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: fx.key, db }));
   return strip;
 }
@@ -659,6 +726,8 @@ function updateFxStrip(strip, fx, s) {
   strip.toggle.classList.toggle('on', fx.follow);
   setMuted(strip, fx.muted);
   let label = FX_STATUS_LABEL[fx.status] ?? fx.status;
+  const link = s.fxLink && s.bus.bus === s.fxLink.liveBus ? s.fxLink.fx.find((f) => f.key === fx.key) : undefined;
+  if (link && link.offset !== null) label = link.offset === 'manter' ? 'segue live' : link.offset === 0 ? 'live =' : `live ${link.offset}`;
   if (fx.status === 'acompanhando' && s.bus.mode !== 'automatico') label = 'acomp.?';
   strip.status.textContent = label;
   strip.status.className = `status ${fx.status}`;
@@ -682,6 +751,7 @@ function createMasterStrip(bus) {
   strip.toggle.disabled = true;
   strip.toggle.title = 'Volume geral desta saída: não muda o equilíbrio entre os canais';
   strip.mute.style.visibility = 'hidden'; // mantém o fader alinhado com os canais
+  strip.fxl.style.visibility = 'hidden';
   bindFader(strip, (db) => send({ type: 'setBusMaster', bus: bus.bus, db }));
   return strip;
 }

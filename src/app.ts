@@ -4,6 +4,7 @@ import type { BypassState, ConnectionStore, MixerAccess } from './connection-sto
 import { ConnectionHealth, type HealthSnapshot, isValidHost } from './health.js';
 import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
+import { FX_OFFSETS, type FxOffset, FxLink, type FxSendAction, type LiveSend } from './leveler/fx-link.js';
 import { resolve } from 'node:path';
 import { type AdvancedSettings, type AnalysisSnapshot, AnalysisEngine, DEFAULT_ADVANCED } from './analysis/engine.js';
 import type { EqAdvice } from './analysis/eq-advice.js';
@@ -87,6 +88,8 @@ export interface ViewedBus {
   stereo: boolean;
   mode: Mode;
   outDB?: number;
+  /** tempo de análise do ajuste automático desta saída (s) */
+  averagingSec: number;
   masterDB?: number;
   channels: ChannelSnapshot[];
   fx: FxSnapshot[];
@@ -126,6 +129,17 @@ export interface ChannelIdentity {
   label: string;
   confidence: number;
   by: 'audio' | 'nome';
+}
+
+export interface FxLinkInfo {
+  /** saída da live (referência) */
+  liveBus?: number;
+  liveLabel?: string;
+  /** pode mudar as diferenças (mexe no envio para os efeitos: salão e live) */
+  allowed: boolean;
+  fx: { key: string; name: string; inRoom: boolean; offset: FxOffset | null }[];
+  ignore: string[];
+  offsets: readonly number[];
 }
 
 /** Recursos avançados (modo Áudio USB): configuração visível no painel (sem a senha do OBS). */
@@ -186,6 +200,8 @@ export interface AppSnapshot {
   access: AccessInfo;
   /** saídas já testadas (sem aviso) e o que esta pessoa liberou com risco */
   safety: { safeBuses: number[] | null; safeLabels: string[]; acks: { scope: string; until: number }[] };
+  /** "efeito acompanha a live" (envio de cada canal para o FX segue o envio para a live) */
+  fxLink: FxLinkInfo;
   /** botão de pânico: ligado = o Copiloto não manda nada para a mesa, só monitora */
   bypass: BypassState & { blocked: number; allowLabels: string[] };
   tips: Tip[];
@@ -228,6 +244,9 @@ export type Command =
   | { type: 'bypass'; on: boolean }
   | { type: 'bypass.allow'; bus: number | null }
   | { type: 'risk.ack'; scope: string }
+  | { type: 'fxlink.set'; fx: string; offset: FxOffset | null; align?: boolean }
+  | { type: 'fxlink.ignore'; key: string; ignored: boolean }
+  | { type: 'setAveraging'; bus: number; sec: number }
   | { type: 'risk.release'; scope?: string }
   | { type: 'level.detect' }
   | { type: 'level.useVu' }
@@ -312,6 +331,9 @@ export class App {
   private usbDetection?: UsbDetection;
   /** ganho/phantom de cada entrada */
   private readonly preamps = new Map<string, { gainDB: number; phantom: boolean }>();
+  /** "efeito acompanha a live" e o último envio de cada canal para a live */
+  private fxLink = new FxLink();
+  private readonly liveSends = new Map<string, LiveSend>();
   /** EQ de cada entrada, como a mesa guarda (0..1) */
   private readonly eqRaw = new Map<string, Record<string, number>>();
   /** senha da mesa (só para conferência) e último teste de comando */
@@ -493,6 +515,8 @@ export class App {
     if (this.wired) return;
     this.wired = true;
     this.persisted = this.store.load();
+    this.fxLink = new FxLink(this.persisted.fxLink);
+    this.liveSends.clear();
     const channels = this.adapter.listChannels();
 
     for (const fx of this.adapter.listFxReturns()) {
@@ -500,6 +524,7 @@ export class App {
         this.adapter.watchFxSend(fx.number, ch.key, (db) => {
           this.fxSends.set(`${fx.key}:${ch.key}`, db);
           for (const c of this.controllers.values()) c.follower.onFxSend(fx.key, ch.key, db);
+          this.fxLink.onFxSend(fx.key, ch.key, db, this.liveSends.get(ch.key), Date.now());
         });
       }
       this.adapter.watchSend(MASTER_BUS, fx.key, (info) =>
@@ -589,6 +614,7 @@ export class App {
         this.adapter.watchSend(bus, ch.key, (info) => {
           const change = leveler.onSend(ch.key, info, Date.now());
           if (change) this.operatorMoved(bus, ch.key, leveler.channelName(ch.key), change);
+          if (bus === this.liveBus()) this.onLiveSend(ch.key, info);
         }),
       );
     }
@@ -606,6 +632,51 @@ export class App {
       );
     }
     c.unsubs.push(this.adapter.watchBusMaster(bus, (db) => (c.masterDB = db)));
+    const avg = this.persisted.averaging?.[String(bus)];
+    if (avg) leveler.setAveragingSec(avg);
+    // efeito que acompanha a live: o "ACOMP." antigo (retorno do efeito) fica desligado na live
+    if (bus === this.liveBus()) for (const fx of this.adapter.listFxReturns()) if (this.fxLink.offset(fx.key) !== undefined) follower.setFollow(fx.key, false);
+  }
+
+  /** Saída da live (referência do "efeito acompanha"): a primeira de streamAuxes. */
+  private liveBus(): number | undefined {
+    return this.allBuses().find((b) => b.id !== MASTER_BUS && this.inList(this.cfg.streamAuxes, b.id))?.id;
+  }
+
+  /** O envio de um canal para a live mudou (mesa, painel ou ajuste automático): o efeito acompanha. */
+  private onLiveSend(key: string, info: { db: number; muted: boolean }): void {
+    const prev = this.liveSends.get(key);
+    const now: LiveSend = { db: info.db, muted: info.muted };
+    this.liveSends.set(key, now);
+    // a 1ª leitura (ao conectar) só registra; e repetições do mesmo valor não contam
+    if (!prev || (prev.muted === now.muted && (prev.db === now.db || Math.abs(prev.db - now.db) < 0.05))) return;
+    if (!this.fxLink.active()) return;
+    this.applyFx(this.fxLink.onLiveSend(key, now, this.fxSends, Date.now()));
+  }
+
+  private applyFx(actions: FxSendAction[]): void {
+    for (const a of actions) {
+      this.adapter.setFxSendDB(Number(a.fx.slice(1)), a.key, a.db);
+      const fxName = this.adapter.listFxReturns().find((f) => f.key === a.fx)?.name ?? a.fx.toUpperCase();
+      this.event(`FX acompanha a live: ${this.channelName(a.key)} → FX${a.fx.slice(1)} (${fxName}) ${fmt(a.db)} dB`, `fxlink:${a.fx}:${a.key}`);
+    }
+  }
+
+  private fxLinkInfo(user: User): FxLinkInfo {
+    const live = this.liveBus();
+    return {
+      liveBus: live,
+      liveLabel: live === undefined ? undefined : this.labelOf(live),
+      allowed: this.adapter.listFxReturns().every((fx) => this.canEditFx(user, fx.key)),
+      fx: this.adapter.listFxReturns().map((fx) => ({
+        key: fx.key,
+        name: fx.name,
+        inRoom: this.fxInRoom.get(fx.key) ?? false,
+        offset: this.fxLink.offset(fx.key) ?? null,
+      })),
+      ignore: this.fxLink.export().ignore,
+      offsets: FX_OFFSETS,
+    };
   }
 
   private labelOf(bus: number): string {
@@ -1095,6 +1166,51 @@ export class App {
         this.log.write('risco', { scope, quem: who });
         return;
       }
+      case 'fxlink.set': {
+        const fx = this.adapter.listFxReturns().find((f) => f.key === cmd.fx);
+        if (!fx) throw new CommandError('Efeito inválido.');
+        const offset = cmd.offset;
+        if (offset !== null && offset !== 'manter' && !(FX_OFFSETS as readonly number[]).includes(offset)) throw new CommandError('Diferença inválida.');
+        if (!this.canEditFx(ctx.user, fx.key)) {
+          throw new CommandError(`${fx.name} toca no salão: só o admin ou quem tem o master pode ligar o "efeito acompanha".`);
+        }
+        const live = this.liveBus();
+        if (live === undefined) throw new CommandError('Não achei a saída da live (streamAuxes no config).');
+        const actions = this.fxLink.setOffset(fx.key, offset, this.liveSends, this.fxSends, Boolean(cmd.align), now);
+        if (offset !== null) {
+          // o "ACOMP." antigo (ajuste do retorno do efeito) brigaria com este: desliga na live
+          const c = this.controllers.get(live);
+          c?.follower.setFollow(fx.key, false);
+          if (c) this.persistController(c);
+        }
+        this.persisted.fxLink = this.fxLink.export();
+        this.dirty = true;
+        const what = offset === null ? 'desligado' : offset === 'manter' ? 'mantendo a diferença de cada canal' : offset === 0 ? 'mesmo volume da live' : `${offset} dB da live`;
+        this.event(`${who}: FX${fx.number} (${fx.name}) acompanha a live: ${what}${actions.length ? ` (${actions.length} canais alinhados)` : ''}`);
+        this.log.write('fx-acompanha', { fx: fx.key, offset, alinhar: Boolean(cmd.align), canais: actions.length, quem: who });
+        this.applyFx(actions);
+        return;
+      }
+      case 'fxlink.ignore': {
+        const live = this.liveBus();
+        if (live === undefined) throw new CommandError('Não achei a saída da live.');
+        this.requireBus(ctx, live);
+        if (!/^[ilp]\d{1,2}$/.test(cmd.key)) throw new CommandError('Canal inválido.');
+        this.fxLink.setIgnored(cmd.key, Boolean(cmd.ignored));
+        this.persisted.fxLink = this.fxLink.export();
+        this.dirty = true;
+        this.event(`${who}: ${this.channelName(cmd.key)} ${cmd.ignored ? 'NÃO acompanha' : 'volta a acompanhar'} os efeitos da live`, `fxign:${cmd.key}`);
+        return;
+      }
+      case 'setAveraging': {
+        const c = this.requireBus(ctx, cmd.bus);
+        if (!AVERAGING_OPTIONS.includes(cmd.sec)) throw new CommandError('Tempo inválido.');
+        c.leveler.setAveragingSec(cmd.sec);
+        (this.persisted.averaging ??= {})[String(c.bus)] = cmd.sec;
+        this.dirty = true;
+        this.event(`${who}: ${this.labelOf(c.bus)} analisa os últimos ${cmd.sec} s para o ajuste automático`, `avg:${c.bus}`);
+        return;
+      }
       case 'risk.release':
         if (cmd.scope) delete ctx.view.riskAcks?.[cmd.scope];
         else ctx.view.riskAcks = {};
@@ -1459,6 +1575,7 @@ export class App {
         name: this.adapter.busName(c.bus),
         stereo: info?.linkedWith !== undefined,
         mode: c.mode,
+        averagingSec: c.leveler.averagingSec,
         outDB: out === undefined ? undefined : round1(out),
         masterDB: c.masterDB === undefined || !Number.isFinite(c.masterDB) ? undefined : round1(c.masterDB),
         channels: c.leveler.snapshot(now),
@@ -1496,6 +1613,7 @@ export class App {
         detection: this.usbDetection,
       },
       access: this.accessInfo(),
+      fxLink: this.fxLinkInfo(user),
       safety: {
         safeBuses: this.safeOutputs(),
         safeLabels: (this.safeOutputs() ?? []).map((b) => this.labelOf(b)),
@@ -1685,6 +1803,9 @@ function fmt(db: number): string {
 
 /** Métodos do MixerAdapter que escrevem na mesa (barrados com o bypass ligado). */
 const MIXER_WRITES = new Set(['setSendDB', 'setSendMute', 'setEqRaw', 'setFxSendDB', 'setGainDB', 'setPhantom', 'setBusMasterDB', 'testWrite']);
+
+/** Tempos de análise oferecidos na tela (s). */
+const AVERAGING_OPTIONS = [5, 10, 20, 30, 60];
 
 /** Liberação de risco vale por 10 minutos. */
 const RISK_ACK_MS = 10 * 60_000;

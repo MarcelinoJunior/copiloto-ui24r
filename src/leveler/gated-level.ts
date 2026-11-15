@@ -14,10 +14,15 @@ export class GatedLevel {
   private activeSinceT?: number;
 
   constructor(
-    private readonly tauSec: number,
+    private tauSec: number,
     private readonly gateDB: number,
     private readonly releaseSec: number,
   ) {}
+
+  /** Troca o tempo da média (tela: "Analisar os últimos X s"); o valor acumulado continua valendo. */
+  setTau(sec: number): void {
+    this.tauSec = sec;
+  }
 
   update(db: number, now: number): void {
     const dt = this.lastT === undefined ? 0 : Math.max(0, (now - this.lastT) / 1000);
