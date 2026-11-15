@@ -21,7 +21,7 @@ async function api(method, url, body) {
     headers: body ? { 'content-type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
   }).catch(() => {
-    throw new Error('O Copiloto não está ligado. Dê dois cliques em “Abrir Copiloto” na área de trabalho e tente de novo.');
+    throw new Error('O Copiloto não está ligado. Dê dois cliques em “Copiloto Ui24R” na área de trabalho e tente de novo.');
   });
   if (res.status === 401) location.href = '/login.html';
   const data = await res.json().catch(() => ({}));

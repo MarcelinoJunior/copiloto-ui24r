@@ -53,10 +53,10 @@ Source: "{#AppSrc}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 Name: "{app}\data"
 
 [Icons]
-; um ícone só; para desligar, o botão ⏻ na tela do Copiloto (o "Fechar" fica só no Menu Iniciar, para emergência)
+; um ícone só: abre o Copiloto na própria janela; fechar a janela desliga (o "Fechar" fica só no Menu Iniciar, para emergência)
 Name: "{autoprograms}\Copiloto Ui24R\Copiloto Ui24R"; Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\abrir.ico"; Comment: "Liga o Copiloto e abre o painel"; Flags: runminimized
 Name: "{autoprograms}\Copiloto Ui24R\Fechar o Copiloto (emergência)"; Filename: "{app}\Fechar Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\fechar.ico"; Flags: runminimized
-Name: "{autodesktop}\Copiloto Ui24R"; Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\abrir.ico"; Comment: "Liga o Copiloto e abre o painel (para desligar: botão ⏻ na tela)"; Flags: runminimized; Tasks: atalho
+Name: "{autodesktop}\Copiloto Ui24R"; Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\abrir.ico"; Comment: "Abre o Copiloto na própria janela (fechar a janela desliga)"; Flags: runminimized; Tasks: atalho
 
 [Run]
 Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; Description: "Abrir o Copiloto agora"; Flags: postinstall nowait skipifsilent runminimized shellexec

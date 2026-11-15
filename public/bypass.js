@@ -37,7 +37,7 @@
   document.addEventListener('click', async (e) => {
     if (!e.target.closest('#shutdown-btn')) return;
     const ok = confirm(
-      'Desligar o Copiloto?\n\nO programa fecha para TODO MUNDO (painel, celulares, tablets). Os envios da mesa ficam como estão: nada muda no som.\n\nPara ligar de novo: ícone "Abrir Copiloto" na área de trabalho.',
+      'Desligar o Copiloto?\n\nO programa fecha para TODO MUNDO (painel, celulares, tablets). Os envios da mesa ficam como estão: nada muda no som.\n\nPara ligar de novo: ícone "Copiloto Ui24R" na área de trabalho.',
     );
     if (!ok) return;
     try {
@@ -55,7 +55,7 @@
     el.id = 'off-screen';
     el.className = 'off-screen';
     el.innerHTML =
-      '<div><h2>⏻ Copiloto desligado</h2><p>Os envios da mesa ficaram como estavam: nada mudou no som.</p><p>Para ligar de novo, dê dois cliques em <strong>Abrir Copiloto</strong> na área de trabalho. Esta página volta sozinha quando ele ligar.</p></div>';
+      '<div><h2>⏻ Copiloto desligado</h2><p>Os envios da mesa ficaram como estavam: nada mudou no som.</p><p>Para ligar de novo, dê dois cliques em <strong>Copiloto Ui24R</strong> na área de trabalho. Esta página volta sozinha quando ele ligar.</p></div>';
     document.body.appendChild(el);
   }
 
@@ -103,10 +103,38 @@
     return String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
 
+  // ---- sem conexão com a mesa: aviso em todas as telas (o Copiloto abre mesmo assim) ----
+  function renderConn(s) {
+    let el = document.getElementById('conn-banner');
+    const off = s.source?.kind === 'mesa' && s.connection !== 'conectado';
+    if (!off) {
+      if (el) el.hidden = true;
+      return;
+    }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'conn-banner';
+      el.className = 'conn-banner';
+      el.setAttribute('role', 'status');
+      const anchor = document.getElementById('bypass-banner');
+      if (anchor) anchor.before(el);
+      else document.body.prepend(el);
+    }
+    el.hidden = false;
+    const estado = s.connection === 'conectando' || s.connection === 'reconectando' ? 'tentando conectar…' : 'tentando de novo a cada 5 s';
+    const detalhe = s.connectionDetail ? ` (${escape(s.connectionDetail)})` : '';
+    const link = location.pathname.endsWith('conexao.html') ? '' : '<a class="small-btn" href="conexao.html">Ver teste de conexão</a>';
+    const sig = [s.source.ip, s.connection, s.connectionDetail].join('|');
+    if (el.dataset.sig === sig) return;
+    el.dataset.sig = sig;
+    el.innerHTML = `<span>⚠ <strong>Sem conexão com a mesa</strong> em ${escape(s.source.ip)}: ${estado}${detalhe}. O Copiloto está aberto, mas não lê nem mexe na mesa. Confira se este computador está na rede da mesa.</span>${link}`;
+  }
+
   window.renderBypass = function (s, send) {
     if (!s.bypass) return;
     last = { s, send };
     renderUpdate(s);
+    renderConn(s);
     const off = document.getElementById('shutdown-btn');
     if (off) off.hidden = s.user?.role !== 'admin';
     const b = s.bypass;

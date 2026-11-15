@@ -76,7 +76,9 @@ export const DEFAULT_LEVELER: LevelerConfig = {
 const MODES: Mode[] = ['desligado', 'observar', 'automatico'];
 
 export function loadConfig(path = resolve('config/config.json')): AppConfig {
-  const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<AppConfig>;
+  // tira o BOM (Bloco de Notas e PowerShell às vezes gravam): sem isso o JSON não abre
+  const text = readFileSync(path, 'utf8');
+  const raw = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) as Partial<AppConfig>;
   const config: AppConfig = {
     mixer: { ip: raw.mixer?.ip ?? '192.168.0.122' },
     server: { host: raw.server?.host ?? '127.0.0.1', port: raw.server?.port ?? 8080 },

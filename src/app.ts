@@ -197,6 +197,8 @@ export interface AppSnapshot {
   sim?: { scene: Scene; offsets: Record<string, number> };
   health: HealthSnapshot;
   levelSource: LevelSourceInfo;
+  /** acesso pela rede (celulares/tablets): ligado quando o painel escuta a rede local */
+  web: { lan: boolean; port: number };
   /** senha da mesa (Settings › Access) e teste de comando; a senha em si nunca vai para a tela */
   access: AccessInfo;
   /** saídas já testadas (sem aviso) e o que esta pessoa liberou com risco */
@@ -1656,6 +1658,7 @@ export class App {
         detection: this.usbDetection,
       },
       access: this.accessInfo(),
+      web: { lan: this.cfg.server.host === '0.0.0.0' || this.cfg.server.host === '::', port: this.cfg.server.port },
       fxLink: this.fxLinkInfo(user),
       update: this.updater ? { ...this.updater.status(), allowed: user.role === 'admin' } : undefined,
       safety: {

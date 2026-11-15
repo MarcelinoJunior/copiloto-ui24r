@@ -768,3 +768,13 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 .update-banner[hidden] { display: none; }
 .update-banner .small-btn { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 800; }
 .update-err { color: var(--warn); font-size: 12px; }
+
+/* acesso pela rede (Conexão) */
+.web-access { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: rgba(74, 168, 255, 0.08); font-size: 13px; line-height: 1.6; }
+.web-access[hidden] { display: none; }
+.web-access a { font-weight: 700; font-family: ui-monospace, monospace; }
+
+/* sem conexão com a mesa */
+.conn-banner { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 6px 12px; border-radius: 8px; border: 2px solid var(--warn); background: rgba(245, 182, 66, 0.14); color: var(--text); font-size: 13px; }
+.conn-banner[hidden] { display: none; }
+.conn-banner .small-btn { border-color: var(--warn); color: var(--warn); font-weight: 700; text-decoration: none; }

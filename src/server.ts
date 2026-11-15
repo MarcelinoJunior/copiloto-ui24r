@@ -14,10 +14,11 @@ const USER_REFRESH_MS = 2000;
 const MAX_BODY = 64 * 1024;
 const COOKIE = 'copiloto_sid';
 /** Páginas e arquivos que abrem sem login. */
-const OPEN_FILES = new Set(['/login.html', '/login.js', '/style.css']);
+const OPEN_FILES = new Set(['/login.html', '/login.js', '/style.css', '/favicon.ico']);
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.ico': 'image/x-icon',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
 };

@@ -2,7 +2,7 @@
 
 const $ = (sel) => document.querySelector(sel);
 let setup = false;
-const PROGRAMA_FECHADO = 'O Copiloto não está ligado. Dê dois cliques em “Abrir Copiloto” na área de trabalho e tente de novo.';
+const PROGRAMA_FECHADO = 'O Copiloto não está ligado. Dê dois cliques em “Copiloto Ui24R” na área de trabalho e tente de novo.';
 
 function showError(text) {
   const el = $('#error');

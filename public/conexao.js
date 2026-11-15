@@ -122,6 +122,17 @@ function render(s) {
         .join('')
     : '<li class="muted">Nenhuma rede ativa encontrada</li>';
 
+  // a mesma tela em celulares e tablets da rede (com login)
+  const web = $('#web-access');
+  const lanIps = h.pc.filter((p) => !p.address.startsWith('169.254.'));
+  web.hidden = !s.web;
+  if (s.web?.lan) {
+    const links = lanIps.map((p) => `<a href="http://${escapeHtml(p.address)}:${s.web.port}" target="_blank" rel="noopener">http://${escapeHtml(p.address)}:${s.web.port}</a>${p.sameSubnet ? ' <span class="tag ok">rede da mesa</span>' : ''}`);
+    web.innerHTML = `<strong>Abrir em outro aparelho</strong> (celular, tablet, outro PC na mesma rede; cada pessoa entra com o próprio usuário):<br>${links.join('<br>') || 'sem rede ativa'}`;
+  } else if (s.web) {
+    web.innerHTML = 'Acesso pela rede desligado: o painel só abre neste computador (config: <code>server.host</code> = <code>0.0.0.0</code> para liberar).';
+  }
+
   $('#history').innerHTML = h.history
     .map((e) => `<li><time>${new Date(e.t).toLocaleTimeString('pt-BR')}</time>${escapeHtml(e.text)}</li>`)
     .join('');

@@ -2,16 +2,19 @@
 # É chamado pelos arquivos "Abrir Copiloto.bat", "Fechar Copiloto.bat" e
 # "Criar atalhos na area de trabalho.bat" (na pasta do projeto).
 #
-#   abrir    instala as dependências na primeira vez, liga o programa numa janela
-#            minimizada e abre o painel no navegador (se já estiver ligado, só abre o painel)
+#   abrir    instala as dependências na primeira vez, liga o programa (escondido, mensagens em
+#            data\copiloto.log) e abre a JANELA do Copiloto (se já estiver ligado, só abre a janela)
+#   janela   (interno) abre a janela própria (Edge em modo aplicativo) e, quando ela é fechada,
+#            desliga o Copiloto, como um programa normal
 #   fechar   desliga o programa
-#   atalhos  cria os atalhos com ícone na área de trabalho (ou na pasta do projeto)
-#   reiniciar  espera o Copiloto fechar e liga de novo sem abrir outra aba (usado depois de atualizar)
+#   atalhos  cria o atalho com ícone na área de trabalho (ou na pasta do projeto)
+#   reiniciar  espera o Copiloto fechar e liga de novo sem abrir outra janela (usado depois de atualizar)
 #
 # Instalado pelo Copiloto-Setup.exe, usa o Node que vem junto (pasta node\): nada para instalar à parte.
+# A mesma tela continua disponível pela rede (celulares e tablets), enquanto a janela estiver aberta.
 
 param(
-  [ValidateSet('abrir', 'fechar', 'atalhos', 'reiniciar')]
+  [ValidateSet('abrir', 'fechar', 'atalhos', 'reiniciar', 'janela')]
   [string]$Acao = 'abrir'
 )
 
@@ -79,8 +82,8 @@ function Abrir([switch]$SemNavegador) {
   }
 
   if (Test-Painel $porta) {
-    Write-Host 'O Copiloto já está ligado. Abrindo o painel...'
-    if (-not $SemNavegador) { Start-Process $url }
+    Write-Host 'O Copiloto já está ligado. Abrindo a janela...'
+    if (-not $SemNavegador) { Abrir-Janela $url }
     return
   }
 
@@ -104,16 +107,17 @@ function Abrir([switch]$SemNavegador) {
 
   Write-Host 'Ligando o Copiloto...'
   New-Item -ItemType Directory -Force $dados | Out-Null
-  # Janela minimizada com o programa. Se der erro, a janela fica aberta mostrando o motivo.
+  # O programa roda escondido; as mensagens vão para data\copiloto.log (mostradas aqui se der erro).
+  $log = Join-Path $dados 'copiloto.log'
   $inicio = if ($embutido) { 'node\node.exe node_modules\tsx\dist\cli.mjs --disable-warning=ExperimentalWarning src\main.ts' } else { 'npm.cmd start' }
-  $cmd = "title $titulo - NAO FECHE (use o atalho Fechar Copiloto) && $inicio || pause"
-  $proc = Start-Process cmd.exe -ArgumentList '/c', $cmd -WorkingDirectory $raiz -WindowStyle Minimized -PassThru
+  $cmd = "title $titulo && $inicio > ""$log"" 2>&1"
+  $proc = Start-Process cmd.exe -ArgumentList '/c', $cmd -WorkingDirectory $raiz -WindowStyle Hidden -PassThru
   Set-Content -Path $pidFile -Value $proc.Id -Encoding ascii
 
   for ($i = 0; $i -lt 60; $i++) {
     if (Test-Painel $porta) {
-      Write-Host 'Pronto! Abrindo o painel no navegador...' -ForegroundColor Green
-      if (-not $SemNavegador) { Start-Process $url }
+      Write-Host 'Pronto! Abrindo a janela do Copiloto...' -ForegroundColor Green
+      if (-not $SemNavegador) { Abrir-Janela $url }
       return
     }
     if ($proc.HasExited) { break }
@@ -121,8 +125,63 @@ function Abrir([switch]$SemNavegador) {
     Write-Host '.' -NoNewline
   }
   Write-Host ''
-  Write-Host 'O Copiloto não respondeu. Veja a janela "Copiloto Ui24R" na barra de tarefas para o motivo.' -ForegroundColor Red
+  Write-Host 'O Copiloto não respondeu. Últimas mensagens dele:' -ForegroundColor Red
+  if (Test-Path $log) { Get-Content $log -Tail 15 | ForEach-Object { Write-Host "  $_" } }
+  Write-Host "(arquivo completo: $log)"
   exit 1
+}
+
+# Edge (vem no Windows) ou Chrome, para abrir a janela própria (modo aplicativo, sem abas).
+function Find-Navegador {
+  foreach ($p in @(
+      "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+      "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+      "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe",
+      "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+      "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe")) {
+    if ($p -and (Test-Path $p)) { return $p }
+  }
+  return $null
+}
+
+function Get-ArgsJanela([string]$url) {
+  $perfil = Join-Path $dados 'janela'
+  return @("--app=$url", "--user-data-dir=`"$perfil`"", '--no-first-run', '--no-default-browser-check', '--disable-background-mode', '--start-maximized')
+}
+
+# Abre a janela do Copiloto; um "vigia" escondido desliga o programa quando ela for fechada.
+function Abrir-Janela([string]$url) {
+  $nav = Find-Navegador
+  if (-not $nav) { Start-Process $url; return } # sem Edge/Chrome: abre no navegador padrão
+  $lock = Join-Path $dados 'janela.pid'
+  if (Test-Path $lock) {
+    $vigia = Get-Process -Id ([int](Get-Content $lock -Raw).Trim()) -ErrorAction SilentlyContinue
+    if ($vigia) {
+      # já tem janela vigiada: só abre outra, sem um segundo vigia
+      Start-Process $nav -ArgumentList (Get-ArgsJanela $url)
+      return
+    }
+  }
+  Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", 'janela' -WindowStyle Hidden
+}
+
+# (vigia) abre a janela, espera ela fechar e desliga o Copiloto, como um programa normal.
+function Janela {
+  $porta = Get-Porta
+  $nav = Find-Navegador
+  if (-not $nav) { return }
+  $lock = Join-Path $dados 'janela.pid'
+  Set-Content -Path $lock -Value $PID -Encoding ascii
+  try {
+    $t0 = Get-Date
+    $p = Start-Process $nav -ArgumentList (Get-ArgsJanela "http://localhost:$porta") -PassThru
+    $p.WaitForExit()
+    # o navegador pode repassar para uma janela do mesmo perfil já aberta e sair na hora: aí não desliga
+    if (((Get-Date) - $t0).TotalSeconds -lt 5) { return }
+    [void](Fechar-PorChave $porta)
+  } finally {
+    Remove-Item $lock -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Fechar {
@@ -201,6 +260,7 @@ function Reiniciar {
 switch ($Acao) {
   'abrir' { Abrir }
   'reiniciar' { Reiniciar }
+  'janela' { Janela }
   'fechar' { Fechar }
   'atalhos' { Atalhos }
 }

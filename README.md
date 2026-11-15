@@ -10,7 +10,7 @@ Licença: **GPL-3.0** (software livre de cooperação: quem distribuir uma vers�
 
 **[Baixar o instalador mais recente: Copiloto-Setup.exe](https://github.com/MarcelinoJunior/copiloto-ui24r/releases/latest/download/Copiloto-Setup.exe)** · [todas as versões e novidades](https://github.com/MarcelinoJunior/copiloto-ui24r/releases)
 
-Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que precisa e cria o ícone **Copiloto Ui24R** na área de trabalho. Para desligar, use o botão **⏻** na tela do Copiloto. Depois de instalado, ele avisa sozinho quando houver versão nova (**Atualizar agora**, no topo da tela). Detalhes em [Instalação](#instalação).
+Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que precisa e cria o ícone **Copiloto Ui24R** na área de trabalho. O Copiloto abre na **própria janela** (como um programa normal); **fechar a janela desliga o Copiloto**. Enquanto ele estiver aberto, a **mesma tela** fica disponível pela rede para celulares e tablets (cada pessoa com o próprio login): o endereço aparece em **Conexão › Este computador**. Depois de instalado, ele avisa sozinho quando houver versão nova (**Atualizar agora**, no topo da tela). Detalhes em [Instalação](#instalação).
 
 ---
 
@@ -78,9 +78,11 @@ O `npm install` baixa **tudo**: o banco (SQLite já vem no Node) e o **ffmpeg** 
 
 ### Atalhos na área de trabalho (para quem não usa terminal)
 
-Dê dois cliques em **`Criar atalhos na area de trabalho.bat`** (na pasta do projeto). Aparece um ícone, **Copiloto Ui24R**: na primeira vez instala o que falta (`npm install`), liga o programa numa janela minimizada "Copiloto Ui24R" e abre o painel no navegador. Se já estiver ligado, só abre o painel.
+Dê dois cliques em **`Criar atalhos na area de trabalho.bat`** (na pasta do projeto). Aparece um ícone, **Copiloto Ui24R**: na primeira vez instala o que falta (`npm install`), liga o programa (escondido; mensagens em `data\copiloto.log`) e abre a **janela do Copiloto** (Microsoft Edge em modo aplicativo, que já vem no Windows: sem abas nem barra de endereço). Se já estiver ligado, só abre a janela.
 
-Para desligar: botão **⏻** no topo da tela do Copiloto (só o admin). Não feche a janela minimizada "Copiloto Ui24R" na mão. Em emergência (painel fechado), há o **Fechar Copiloto.bat** na pasta do programa (e no Menu Iniciar, quando instalado pelo Setup). Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
+**Para desligar: feche a janela** (ou o botão **⏻** no topo, só o admin). Um "vigia" escondido percebe a janela fechada e desliga o programa com calma. Sem Edge nem Chrome, o painel abre no navegador padrão.
+
+**Celulares e tablets:** com `server.host` = `0.0.0.0` (padrão), a mesma tela abre em qualquer aparelho da rede, no endereço mostrado em **Conexão › Este computador** (ex.: `http://192.168.0.117:8080`), cada pessoa com o próprio login. Na primeira vez o Windows pode perguntar se permite o acesso pela rede: escolha **Redes privadas** e **Permitir**. Para deixar só neste computador, use `127.0.0.1`. Em emergência (painel fechado), há o **Fechar Copiloto.bat** na pasta do programa (e no Menu Iniciar, quando instalado pelo Setup). Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
 
 A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**, que é um driver de hardware do Windows. Só é necessário para o modo Áudio USB, e só se o Windows não reconhecer a mesa sozinho.
 
