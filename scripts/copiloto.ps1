@@ -130,21 +130,25 @@ function Fechar {
 
   # 1) a janela que o atalho "Abrir" ligou (confere que é mesmo ela antes de fechar)
   if (Test-Path $pidFile) {
-    $id = (Get-Content $pidFile -Raw).Trim()
-    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
-    if ($p -and $p.Name -eq 'cmd.exe' -and $p.CommandLine -like "*$titulo*") {
+    $id = [int](Get-Content $pidFile -Raw).Trim()
+    # confere que é a mesma janela (cmd) que o Abrir ligou: nome e hora de início (sem WMI)
+    $p = Get-Process -Id $id -ErrorAction SilentlyContinue
+    $gravado = (Get-Item $pidFile).LastWriteTime
+    if ($p -and $p.ProcessName -eq 'cmd' -and $p.StartTime -le $gravado.AddSeconds(5)) {
       & taskkill.exe /PID $id /T /F | Out-Null
       $fechou = $true
     }
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
   }
 
-  # 2) o Copiloto ligado de outro jeito (ex.: npm start no terminal)
+  # 2) o Copiloto ligado de outro jeito (ex.: npm start no terminal): só procura se o painel ainda responde
   Start-Sleep -Milliseconds 500
-  $p = Get-ProcessoCopiloto (Get-Porta)
-  if ($p) {
-    & taskkill.exe /PID $p.ProcessId /T /F | Out-Null
-    $fechou = $true
+  if (Test-Painel $porta) {
+    $p = Get-ProcessoCopiloto $porta
+    if ($p) {
+      & taskkill.exe /PID $p.ProcessId /T /F | Out-Null
+      $fechou = $true
+    }
   }
 
   if ($fechou) { Write-Host 'Copiloto fechado.' -ForegroundColor Green }

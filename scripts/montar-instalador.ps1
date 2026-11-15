@@ -118,12 +118,19 @@ try {
   }
   if (-not $ok) { throw 'o Copiloto instalado não respondeu' }
   Write-Host 'Copiloto instalado ligou e respondeu.' -ForegroundColor Green
+  # desliga como o atalho Fechar Copiloto: pela chave local (sem listar processos)
+  $token = (Get-Content (Join-Path $dadosTeste 'copiloto.token') -Raw).Trim()
+  Invoke-WebRequest 'http://127.0.0.1:8093/api/shutdown-local' -Method Post -Headers @{ 'x-copiloto-token' = $token } -UseBasicParsing -TimeoutSec 5 | Out-Null
+  if (-not $srv.WaitForExit(15000)) { throw 'o Copiloto instalado não desligou pela chave local' }
+  Write-Host 'Copiloto instalado desligou pela chave local.' -ForegroundColor Green
 } finally {
-  & taskkill.exe /PID $srv.Id /T /F | Out-Null
+  if (-not $srv.HasExited) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
   Remove-Item Env:COPILOTO_DATA, Env:PORT, Env:COPILOTO_SEM_ATUALIZACAO -ErrorAction SilentlyContinue
 }
+# o desinstalador se copia para uma pasta temporária e roda de lá: espera os arquivos sumirem
 $unins = Get-ChildItem $destino -Filter 'unins*.exe' | Select-Object -First 1
 Start-Process $unins.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
-Start-Sleep -Seconds 2
+for ($i = 0; $i -lt 90 -and (Test-Path (Join-Path $destino 'src\main.ts')); $i++) { Start-Sleep -Seconds 1 }
+if (Test-Path (Join-Path $destino 'src\main.ts')) { throw 'a desinstalação não terminou em 90 s' }
 Remove-Item $destino, $dadosTeste -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host 'Teste do instalador: OK (instalou, ligou, respondeu e desinstalou).' -ForegroundColor Green
+Write-Host 'Teste do instalador: OK (instalou, ligou, respondeu, desligou e desinstalou).' -ForegroundColor Green
