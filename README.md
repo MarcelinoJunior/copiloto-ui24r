@@ -52,6 +52,16 @@ Licença: **GPL-3.0** (software livre de cooperação: quem distribuir uma vers�
 
 ## Instalação
 
+### Jeito fácil (Windows): instalador
+
+Baixe o **`Copiloto-Setup-<versão>.exe`** e dê dois cliques. Ele instala sem pedir administrador, já traz o Node.js e as bibliotecas (nada para instalar à parte) e cria os ícones **Abrir Copiloto** e **Fechar Copiloto** na área de trabalho. O Windows pode mostrar "O Windows protegeu o computador" (o instalador não é assinado): clique em **Mais informações › Executar assim mesmo**.
+
+**Atualizações:** o Copiloto confere o GitHub ao ligar e a cada 30 minutos. Quando houver versão nova, aparece uma faixa azul no topo: **Atualizar agora** (só o admin). Ele nunca atualiza sozinho (para não reiniciar no meio do culto). Ao atualizar, baixa a versão nova, mantém os dados (usuários, presets, senha da mesa, `data/`) e reinicia em ~30 s; a página volta sozinha. A tela **Conexão › Versão do Copiloto** mostra a versão instalada e tem *Conferir atualização agora*. Configuração própria deste computador vai em `data/config.json` (a atualização nunca apaga; tem prioridade sobre `config/config.json`).
+
+Para montar o instalador (quem desenvolve): `powershell -ExecutionPolicy Bypass -File scripts\montar-instalador.ps1` (precisa do Inno Setup 6; `-Testar` instala, liga e desinstala numa pasta de teste).
+
+### Jeito manual (quem desenvolve)
+
 Precisa do **[Node.js 22 ou mais novo](https://nodejs.org/)**. Depois, na pasta do projeto:
 
 ```bash

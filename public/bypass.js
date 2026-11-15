@@ -59,9 +59,54 @@
     document.body.appendChild(el);
   }
 
+  // ---- versão nova no GitHub (aviso no topo; só o admin atualiza) ----
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#update-apply') || !last) return;
+    const ok = confirm(
+      'Atualizar o Copiloto agora?\n\nNÃO faça isso durante o culto: o Copiloto reinicia (uns 30 segundos) e a página volta sozinha. Os envios da mesa ficam como estão; usuários, presets e configurações são mantidos.',
+    );
+    if (ok) last.send({ type: 'update.apply' });
+  });
+
+  function renderUpdate(s) {
+    const up = s.update;
+    let el = document.getElementById('update-banner');
+    const show = Boolean(up && up.latest && (up.available || up.state === 'atualizando'));
+    if (!show) {
+      if (el) el.hidden = true;
+      return;
+    }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'update-banner';
+      el.className = 'update-banner';
+      el.setAttribute('role', 'status');
+      const anchor = document.getElementById('bypass-banner');
+      if (anchor) anchor.after(el);
+      else document.body.prepend(el);
+    }
+    el.hidden = false;
+    const when = up.latest.date ? new Date(up.latest.date).toLocaleDateString('pt-BR') : '';
+    const what = escape(up.latest.message);
+    let action;
+    if (up.state === 'atualizando') action = '<strong>Atualizando… o Copiloto reinicia sozinho.</strong>';
+    else if (up.allowed) action = '<button type="button" id="update-apply" class="small-btn">Atualizar agora</button>';
+    else action = '<span>Peça ao admin para atualizar.</span>';
+    const err = up.state === 'erro' && up.detail ? `<span class="update-err">Última tentativa falhou: ${escape(up.detail)}</span>` : '';
+    const sig = [what, when, up.state, up.allowed, err].join('|');
+    if (el.dataset.sig === sig) return;
+    el.dataset.sig = sig;
+    el.innerHTML = `<span>⬆ <strong>Versão nova do Copiloto</strong>${when ? ` (${when})` : ''}: ${what}</span>${action}${err}`;
+  }
+
+  function escape(t) {
+    return String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
   window.renderBypass = function (s, send) {
     if (!s.bypass) return;
     last = { s, send };
+    renderUpdate(s);
     const off = document.getElementById('shutdown-btn');
     if (off) off.hidden = s.user?.role !== 'admin';
     const b = s.bypass;

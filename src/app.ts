@@ -17,6 +17,7 @@ import { SimulatedAudio } from './mixer/sim-audio.js';
 import { SimulatorAdapter, type Scene } from './mixer/simulator.js';
 import { ObsClient, type ObsStatus } from './obs.js';
 import { BalanceTracker, ChannelStats, computeTips, type Tip, TipHold } from './tips.js';
+import type { UpdateStatus, Updater } from './updater.js';
 import {
   type BusInfo,
   type ChannelVu,
@@ -202,6 +203,8 @@ export interface AppSnapshot {
   safety: { safeBuses: number[] | null; safeLabels: string[]; acks: { scope: string; until: number }[] };
   /** "efeito acompanha a live" (envio de cada canal para o FX segue o envio para a live) */
   fxLink: FxLinkInfo;
+  /** versão nova no GitHub (aviso no topo; atualizar é só do admin) */
+  update?: UpdateStatus & { allowed: boolean };
   /** botão de pânico: ligado = o Copiloto não manda nada para a mesa, só monitora */
   bypass: BypassState & { blocked: number; allowLabels: string[] };
   tips: Tip[];
@@ -247,6 +250,8 @@ export type Command =
   | { type: 'fxlink.set'; fx: string; offset: FxOffset | null; align?: boolean }
   | { type: 'fxlink.ignore'; key: string; ignored: boolean }
   | { type: 'setAveraging'; bus: number; sec: number }
+  | { type: 'update.check' }
+  | { type: 'update.apply' }
   | { type: 'risk.release'; scope?: string }
   | { type: 'level.detect' }
   | { type: 'level.useVu' }
@@ -333,6 +338,9 @@ export class App {
   private readonly preamps = new Map<string, { gainDB: number; phantom: boolean }>();
   /** "efeito acompanha a live" e o último envio de cada canal para a live */
   private fxLink = new FxLink();
+  /** atualização pelo GitHub (main.ts liga) e o que fazer depois de atualizar (reiniciar) */
+  private updater?: Updater;
+  onRestart?: () => void;
   private readonly liveSends = new Map<string, LiveSend>();
   /** EQ de cada entrada, como a mesa guarda (0..1) */
   private readonly eqRaw = new Map<string, Record<string, number>>();
@@ -421,6 +429,10 @@ export class App {
     this.timers.push(setInterval(() => this.persistIfDirty(), 5000));
     this.health.start();
     void this.connectLoop(this.generation);
+  }
+
+  setUpdater(updater: Updater): void {
+    this.updater = updater;
   }
 
   /** Desligamento pelo painel: avisa no log de eventos e no log do culto. */
@@ -1211,6 +1223,32 @@ export class App {
         this.event(`${who}: ${this.labelOf(c.bus)} analisa os últimos ${cmd.sec} s para o ajuste automático`, `avg:${c.bus}`);
         return;
       }
+      case 'update.check':
+        this.requireAdmin(ctx);
+        if (!this.updater) throw new CommandError('Atualização automática indisponível nesta instalação.');
+        void this.updater.check().then((st) =>
+          this.event(st.available ? `Versão nova disponível: ${st.latest?.message ?? ''}` : st.detail ? `Atualização: ${st.detail}` : 'O Copiloto já está na versão mais nova.'),
+        );
+        return;
+      case 'update.apply': {
+        this.requireAdmin(ctx);
+        const updater = this.updater;
+        if (!updater) throw new CommandError('Atualização automática indisponível nesta instalação.');
+        this.event(`⬆ ${who}: atualizando o Copiloto… (ele reinicia sozinho; os envios da mesa ficam como estão)`);
+        this.log.write('atualizacao', { quem: who, de: updater.status().current });
+        void updater
+          .apply((text) => this.event(`⬆ ${text}`, 'update'))
+          .then((latest) => {
+            this.event(`⬆ Atualizado para "${latest.message}". Reiniciando…`);
+            this.log.write('atualizacao', { para: latest.sha, ok: true });
+            setTimeout(() => this.onRestart?.(), 1500);
+          })
+          .catch((err) => {
+            this.event(`⬆ A atualização falhou: ${err instanceof Error ? err.message : err}. O Copiloto continua na versão atual.`);
+            this.log.write('atualizacao', { ok: false, erro: String(err) });
+          });
+        return;
+      }
       case 'risk.release':
         if (cmd.scope) delete ctx.view.riskAcks?.[cmd.scope];
         else ctx.view.riskAcks = {};
@@ -1614,6 +1652,7 @@ export class App {
       },
       access: this.accessInfo(),
       fxLink: this.fxLinkInfo(user),
+      update: this.updater ? { ...this.updater.status(), allowed: user.role === 'admin' } : undefined,
       safety: {
         safeBuses: this.safeOutputs(),
         safeLabels: (this.safeOutputs() ?? []).map((b) => this.labelOf(b)),

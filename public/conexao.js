@@ -73,6 +73,7 @@ function render(s) {
   renderBypass(s, send);
   renderLevels(s, isAdmin);
   renderAccess(s, isAdmin);
+  renderVersion(s, isAdmin);
 
   const [label, cls] = QUALITY[h.quality] ?? ['—', ''];
   const q = $('#quality');
@@ -135,6 +136,24 @@ function render(s) {
       : `✗ ${t.ip} não respondeu. Confira o IP e se o PC está no mesmo Wi-Fi da mesa.`;
   }
 }
+
+function renderVersion(s, isAdmin) {
+  const up = s.update;
+  const card = $('#version-card');
+  card.hidden = !up;
+  if (!up) return;
+  const mode = up.mode === 'git' ? 'cópia com git (desenvolvimento)' : 'instalado pelo Copiloto-Setup';
+  const cur = up.current ? up.current.slice(0, 7) : 'desconhecida';
+  const checked = up.checkedAt ? new Date(up.checkedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'ainda não';
+  let state = up.available ? `versão nova disponível: "${up.latest?.message ?? ''}"` : 'está na versão mais nova';
+  if (up.state === 'conferindo') state = 'conferindo…';
+  if (up.state === 'atualizando') state = 'atualizando…';
+  if (up.detail) state += ` (${up.detail})`;
+  $('#ver-text').textContent = `Versão instalada: ${cur} · ${mode} · conferido às ${checked}: ${state}.`;
+  $('#ver-check').disabled = !isAdmin || up.state !== 'parado';
+}
+
+$('#ver-check').addEventListener('click', () => send({ type: 'update.check' }));
 
 const ACCESS_CHECK = {
   confere: ['ok', 'Senha confere com a da mesa.'],

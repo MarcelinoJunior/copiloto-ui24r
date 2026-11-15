@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { App, type Profile, type SourceKind } from './app.js';
 import { AuthService } from './auth.js';
@@ -12,17 +14,21 @@ import { PresetStore } from './preset-store.js';
 import { startServer } from './server.js';
 import { SessionLog } from './session-log.js';
 import { StateStore } from './state-store.js';
+import { Updater } from './updater.js';
 
 // npm start      → começa na MESA REAL
 // npm run sim    → começa no SIMULADOR
 // Dá para trocar entre os dois a qualquer momento na tela "Conexão".
 const startKind: SourceKind = process.argv.includes('--sim') ? 'simulador' : 'mesa';
-const cfg = loadConfig();
-// PORT=8081 npm start  → permite rodar duas cópias ao mesmo tempo
-if (process.env.PORT) cfg.server.port = Number(process.env.PORT);
-
 // Pasta de dados (padrão: ./data). COPILOTO_DATA=outra/pasta permite rodar uma cópia de teste isolada.
 const dataDir = resolve(process.env.COPILOTO_DATA ?? 'data');
+
+// Configuração: data/config.json (deste computador, a atualização nunca apaga) tem prioridade sobre
+// o config/config.json que vem com o programa.
+const localConfig = resolve(dataDir, 'config.json');
+const cfg = loadConfig(existsSync(localConfig) ? localConfig : undefined);
+// PORT=8081 npm start  → permite rodar duas cópias ao mesmo tempo
+if (process.env.PORT) cfg.server.port = Number(process.env.PORT);
 
 // O endereço escolhido na tela "Conexão" tem prioridade sobre o config/config.json.
 const connStore = new ConnectionStore(resolve(dataDir, 'conexao.json'));
@@ -74,6 +80,27 @@ const stopServer = await startServer({ app, auth, views, onShutdown }, cfg.serve
   process.exit(1);
 });
 await app.start();
+
+// Atualização pelo GitHub: confere 20 s depois de ligar e a cada 30 min; aplicar é um clique do admin.
+// (COPILOTO_SEM_ATUALIZACAO=1 desliga: cópias de teste)
+if (!process.env.COPILOTO_SEM_ATUALIZACAO) {
+  const updater = new Updater(process.cwd());
+  app.setUpdater(updater);
+  setTimeout(() => void updater.check(), 20_000).unref();
+  setInterval(() => void updater.check(), 30 * 60_000).unref();
+  // depois de atualizar: liga de novo pelo mesmo script dos atalhos (sem abrir outra aba) e sai
+  app.onRestart = () => {
+    const script = resolve('scripts', 'copiloto.ps1');
+    if (existsSync(script)) {
+      spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, 'reiniciar'], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      }).unref();
+    }
+    void shutdown();
+  };
+}
 
 const panel = `http://${cfg.server.host === '0.0.0.0' ? 'localhost' : cfg.server.host}:${cfg.server.port}`;
 console.log('');

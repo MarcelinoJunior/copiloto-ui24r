@@ -762,3 +762,9 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 .fxl-btn { width: 100%; flex: 0 0 auto; height: 16px; padding: 1px 0; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; border-radius: 4px; color: var(--muted); }
 .fxl-btn.on { background: rgba(199, 125, 255, 0.25); border-color: var(--fx); color: var(--text); }
 .bypass-on .fxlink-bar button, .bypass-on .fxl-btn { pointer-events: none; opacity: 0.45; }
+
+/* versão nova disponível */
+.update-banner { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 6px 12px; border-radius: 8px; background: #123a5c; border: 1px solid var(--accent); color: var(--text); font-size: 13px; }
+.update-banner[hidden] { display: none; }
+.update-banner .small-btn { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 800; }
+.update-err { color: var(--warn); font-size: 12px; }

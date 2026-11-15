@@ -6,9 +6,12 @@
 #            minimizada e abre o painel no navegador (se já estiver ligado, só abre o painel)
 #   fechar   desliga o programa
 #   atalhos  cria os atalhos com ícone na área de trabalho (ou na pasta do projeto)
+#   reiniciar  espera o Copiloto fechar e liga de novo sem abrir outra aba (usado depois de atualizar)
+#
+# Instalado pelo Copiloto-Setup.exe, usa o Node que vem junto (pasta node\): nada para instalar à parte.
 
 param(
-  [ValidateSet('abrir', 'fechar', 'atalhos')]
+  [ValidateSet('abrir', 'fechar', 'atalhos', 'reiniciar')]
   [string]$Acao = 'abrir'
 )
 
@@ -18,8 +21,16 @@ $dados = Join-Path $raiz 'data'
 $pidFile = Join-Path $dados 'copiloto.pid'
 $titulo = 'Copiloto Ui24R'
 
+$nodeLocal = Join-Path $raiz 'node\node.exe'
+
 function Get-Porta {
-  try { return [int](Get-Content (Join-Path $raiz 'config\config.json') -Raw | ConvertFrom-Json).server.port } catch { return 8080 }
+  # data\config.json (deste computador) tem prioridade sobre o config\config.json do programa
+  foreach ($c in @((Join-Path $dados 'config.json'), (Join-Path $raiz 'config\config.json'))) {
+    if (Test-Path $c) {
+      try { return [int](Get-Content $c -Raw | ConvertFrom-Json).server.port } catch {}
+    }
+  }
+  return 8080
 }
 
 function Test-Painel([int]$porta) {
@@ -38,7 +49,7 @@ function Get-ProcessoCopiloto([int]$porta) {
   return $null
 }
 
-function Abrir {
+function Abrir([switch]$SemNavegador) {
   $porta = Get-Porta
   $url = "http://localhost:$porta"
 
@@ -52,18 +63,19 @@ function Abrir {
 
   if (Test-Painel $porta) {
     Write-Host 'O Copiloto já está ligado. Abrindo o painel...'
-    Start-Process $url
+    if (-not $SemNavegador) { Start-Process $url }
     return
   }
 
-  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  $embutido = Test-Path $nodeLocal
+  if (-not $embutido -and -not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host ''
     Write-Host 'O Node.js não está instalado neste computador.' -ForegroundColor Red
     Write-Host 'Instale a versão LTS (gratuita) em https://nodejs.org e tente de novo.'
     exit 1
   }
 
-  if (-not (Test-Path (Join-Path $raiz 'node_modules'))) {
+  if (-not $embutido -and -not (Test-Path (Join-Path $raiz 'node_modules'))) {
     Write-Host 'Primeira vez: instalando o que o programa precisa (leva alguns minutos)...'
     Push-Location $raiz
     try { & npm.cmd install --no-fund --no-audit } finally { Pop-Location }
@@ -76,14 +88,15 @@ function Abrir {
   Write-Host 'Ligando o Copiloto...'
   New-Item -ItemType Directory -Force $dados | Out-Null
   # Janela minimizada com o programa. Se der erro, a janela fica aberta mostrando o motivo.
-  $cmd = "title $titulo - NAO FECHE (use o atalho Fechar Copiloto) && npm.cmd start || pause"
+  $inicio = if ($embutido) { 'node\node.exe node_modules\tsx\dist\cli.mjs --disable-warning=ExperimentalWarning src\main.ts' } else { 'npm.cmd start' }
+  $cmd = "title $titulo - NAO FECHE (use o atalho Fechar Copiloto) && $inicio || pause"
   $proc = Start-Process cmd.exe -ArgumentList '/c', $cmd -WorkingDirectory $raiz -WindowStyle Minimized -PassThru
   Set-Content -Path $pidFile -Value $proc.Id -Encoding ascii
 
   for ($i = 0; $i -lt 60; $i++) {
     if (Test-Painel $porta) {
       Write-Host 'Pronto! Abrindo o painel no navegador...' -ForegroundColor Green
-      Start-Process $url
+      if (-not $SemNavegador) { Start-Process $url }
       return
     }
     if ($proc.HasExited) { break }
@@ -148,8 +161,17 @@ function Atalhos {
   exit 1
 }
 
+function Reiniciar {
+  # espera o Copiloto antigo sair (ele mesmo pediu o reinício depois de atualizar)
+  $porta = Get-Porta
+  for ($i = 0; $i -lt 30 -and (Get-ProcessoCopiloto $porta); $i++) { Start-Sleep -Seconds 1 }
+  Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+  Abrir -SemNavegador
+}
+
 switch ($Acao) {
   'abrir' { Abrir }
+  'reiniciar' { Reiniciar }
   'fechar' { Fechar }
   'atalhos' { Atalhos }
 }
