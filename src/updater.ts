@@ -14,7 +14,10 @@ import { dirname, join, relative, sep } from 'node:path';
  *   o que saiu da versão nova, sem tocar em data/ (usuários, presets, senha da mesa), node/ e
  *   node_modules/. O commit instalado fica em versao.json.
  *
- * Se o package-lock.json mudar, as bibliotecas são reinstaladas (npm do próprio instalador).
+ * Se as bibliotecas do package-lock.json mudarem (o número da versão não conta), elas são
+ * reinstaladas com o npm que vem no node/ do instalador, rodado pelo próprio node.exe (sem cmd: a pasta
+ * "Copiloto Ui24R" tem espaço). Se essa etapa falhar, versao.json guarda `npmPending` e a
+ * atualização continua oferecida para tentar de novo.
  * Só confere sozinho; aplicar é sempre um clique do admin (nunca reinicia no meio do culto).
  */
 
@@ -49,13 +52,24 @@ interface VersionFile {
   message?: string;
   /** arquivos instalados (para apagar o que saiu na versão seguinte) */
   files?: string[];
+  /** arquivos já copiados, mas a reinstalação das bibliotecas falhou: falta terminar */
+  npmPending?: boolean;
 }
 
 type Run = (cmd: string, args: string[], cwd: string) => Promise<string>;
 
+/** Aspas para o cmd do Windows (caminho com espaço, ex.: "...\Copiloto Ui24R\node\npm.cmd"). */
+export function quoteForCmd(s: string): string {
+  return /[\s"&()^|<>]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 const defaultRun: Run = (cmd, args, cwd) =>
   new Promise((resolve, reject) => {
-    execFile(cmd, args, { cwd, windowsHide: true, timeout: 10 * 60_000, maxBuffer: 20 * 1024 * 1024, shell: cmd.endsWith('.cmd') }, (err, stdout, stderr) =>
+    // .cmd só roda pelo cmd (shell): aí o Node junta tudo sem aspas, então as aspas são nossas
+    const shell = cmd.endsWith('.cmd');
+    const file = shell ? quoteForCmd(cmd) : cmd;
+    const argv = shell ? args.map(quoteForCmd) : args;
+    execFile(file, argv, { cwd, windowsHide: true, timeout: 10 * 60_000, maxBuffer: 20 * 1024 * 1024, shell }, (err, stdout, stderr) =>
       err ? reject(new Error((stderr || stdout || err.message).toString().trim().split('\n').slice(-3).join(' '))) : resolve(stdout.toString().trim()),
     );
   });
@@ -116,6 +130,7 @@ export class Updater {
         available = !contains;
       }
       if (!current && this.st.mode === 'zip') available = true; // instalação sem versão conhecida
+      if (this.st.mode === 'zip' && readVersion(this.root)?.npmPending) available = true; // falta terminar a anterior
       this.st = { ...this.st, current, latest, available, checkedAt: Date.now(), state: 'parado', detail: undefined };
     } catch (err) {
       this.st = { ...this.st, checkedAt: Date.now(), state: 'parado', detail: `não consegui conferir agora (${msg(err)})` };
@@ -132,12 +147,16 @@ export class Updater {
       this.st.state = 'atualizando';
       if (!st.latest) throw new Error(st.detail ?? 'Não consegui falar com o GitHub.');
       if (!st.available) throw new Error('Já está na versão mais nova.');
-      const lockBefore = hashFile(join(this.root, 'package-lock.json'));
+      const lock = join(this.root, 'package-lock.json');
+      const depsBefore = depsHash(lock);
+      const pending = this.st.mode === 'zip' && Boolean(readVersion(this.root)?.npmPending);
       if (this.st.mode === 'git') await this.applyGit(st.latest, step);
       else await this.applyZip(st.latest, step);
-      if (hashFile(join(this.root, 'package-lock.json')) !== lockBefore) {
+      if (pending || depsHash(lock) !== depsBefore) {
         step('Atualizando as bibliotecas (pode levar alguns minutos)…');
+        this.setNpmPending(true);
         await this.npmInstall();
+        this.setNpmPending(false);
       }
       this.st = { ...this.st, current: st.latest.sha, available: false, state: 'parado', detail: undefined };
       return st.latest;
@@ -182,10 +201,26 @@ export class Updater {
     }
   }
 
+  private setNpmPending(on: boolean): void {
+    if (this.st.mode !== 'zip') return;
+    const v = readVersion(this.root);
+    if (!v) return;
+    if (on) v.npmPending = true;
+    else delete v.npmPending;
+    writeVersion(this.root, v);
+  }
+
   private async npmInstall(): Promise<void> {
-    const bundled = join(this.root, 'node', 'npm.cmd');
-    if (this.st.mode === 'zip' && existsSync(bundled)) await this.run(bundled, ['ci', '--omit=dev', '--no-audit', '--no-fund'], this.root);
-    else await this.run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--no-audit', '--no-fund'], this.root);
+    const args = ['ci', '--omit=dev', '--no-audit', '--no-fund'];
+    if (this.st.mode === 'zip') {
+      // npm do instalador rodado pelo node.exe embutido: sem cmd, sem problema com espaço no caminho
+      const cli = join(this.root, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+      const node = join(this.root, 'node', 'node.exe');
+      if (existsSync(cli) && existsSync(node)) return void (await this.run(node, [cli, ...args], this.root));
+      const bundled = join(this.root, 'node', 'npm.cmd');
+      if (existsSync(bundled)) return void (await this.run(bundled, args, this.root));
+    }
+    await this.run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--no-audit', '--no-fund'], this.root);
   }
 }
 
@@ -242,6 +277,19 @@ export function windowsTar(): string {
 
 function hashFile(p: string): string {
   return existsSync(p) ? createHash('sha256').update(readFileSync(p)).digest('hex') : '';
+}
+
+/** Hash só das bibliotecas do package-lock.json: mudar o número da versão não reinstala nada. */
+export function depsHash(p: string): string {
+  if (!existsSync(p)) return '';
+  try {
+    const j = JSON.parse(readFileSync(p, 'utf8')) as { version?: string; packages?: Record<string, { version?: string }> };
+    delete j.version;
+    if (j.packages?.['']) delete j.packages[''].version;
+    return createHash('sha256').update(JSON.stringify(j)).digest('hex');
+  } catch {
+    return hashFile(p);
+  }
 }
 
 function msg(err: unknown): string {

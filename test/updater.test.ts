@@ -98,6 +98,86 @@ describe('atualização pelo GitHub (instalado pelo Setup, sem git)', () => {
     expect(steps.some((s) => s.includes('Baixando'))).toBe(true);
   });
 
+  const lockWith = (version: string, ws: string) =>
+    JSON.stringify({ name: 'copiloto-ui24r', version, lockfileVersion: 3, packages: { '': { name: 'copiloto-ui24r', version }, 'node_modules/ws': { version: ws } } });
+
+  it('só o número da versão mudou no package-lock: não reinstala as bibliotecas', async () => {
+    const root = tmp('copiloto-inst-');
+    put(root, 'package-lock.json', lockWith('0.2.0', '8.0.0'));
+    writeVersion(root, { commit: OLD, files: ['package-lock.json'] });
+    const zip = githubZip({ 'package-lock.json': lockWith('0.2.1', '8.0.0') });
+    const ran: string[] = [];
+    const run = async (cmd: string, args: string[]) => {
+      ran.push([cmd, ...args].join(' '));
+      if (cmd.endsWith('tar.exe') || cmd === 'tar') return execFileSync(cmd, args).toString();
+      return '';
+    };
+    const up = new Updater(root, { mode: 'zip', fetchImpl: fakeFetch(zip), run });
+    await up.apply();
+    expect(ran.some((r) => r.includes(' ci '))).toBe(false);
+    expect(readVersion(root)?.commit).toBe(NEW);
+  });
+
+  it('bibliotecas mudaram: npm do instalador pelo node.exe embutido (sem cmd), mesmo com espaço no caminho', async () => {
+    const root = join(tmp('copiloto-inst-'), 'Copiloto Ui24R');
+    put(root, 'package-lock.json', lockWith('0.2.0', '8.0.0'));
+    put(root, 'node/node.exe', 'fake');
+    put(root, 'node/node_modules/npm/bin/npm-cli.js', 'fake');
+    writeVersion(root, { commit: OLD, files: ['package-lock.json'] });
+    const zip = githubZip({ 'package-lock.json': lockWith('0.2.1', '8.1.0') });
+    const calls: { cmd: string; args: string[] }[] = [];
+    const run = async (cmd: string, args: string[]) => {
+      calls.push({ cmd, args });
+      if (cmd.endsWith('tar.exe') || cmd === 'tar') return execFileSync(cmd, args).toString();
+      return '';
+    };
+    const up = new Updater(root, { mode: 'zip', fetchImpl: fakeFetch(zip), run });
+    await up.apply();
+    const npm = calls.find((c) => c.args.includes('ci'));
+    expect(npm?.cmd).toBe(join(root, 'node', 'node.exe'));
+    expect(npm?.args[0]).toBe(join(root, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js'));
+    expect(readVersion(root)?.npmPending).toBeUndefined();
+  });
+
+  it.runIf(process.platform === 'win32')('npm.cmd numa pasta com espaço roda de verdade pelo cmd (o erro da igreja)', async () => {
+    const root = join(tmp('copiloto-inst-'), 'Copiloto Ui24R');
+    put(root, 'package-lock.json', lockWith('0.2.0', '8.0.0'));
+    // sem node.exe embutido: cai no npm.cmd, que precisa de aspas no cmd
+    put(root, 'node/npm.cmd', '@echo off\r\necho %* > "%~dp0rodou.txt"\r\n');
+    writeVersion(root, { commit: OLD, files: ['package-lock.json'] });
+    const zip = githubZip({ 'package-lock.json': lockWith('0.2.1', '8.1.0') });
+    const up = new Updater(root, { mode: 'zip', fetchImpl: fakeFetch(zip) });
+    await up.apply();
+    expect(readFileSync(join(root, 'node', 'rodou.txt'), 'utf8')).toContain('ci --omit=dev');
+  });
+
+  it('se reinstalar as bibliotecas falhar, a atualização continua oferecida e tenta de novo', async () => {
+    const root = tmp('copiloto-inst-');
+    put(root, 'package-lock.json', lockWith('0.2.0', '8.0.0'));
+    put(root, 'node/node.exe', 'fake');
+    put(root, 'node/node_modules/npm/bin/npm-cli.js', 'fake');
+    writeVersion(root, { commit: OLD, files: ['package-lock.json'] });
+    const zip = githubZip({ 'package-lock.json': lockWith('0.2.1', '8.1.0') });
+    let npmOk = false;
+    let npmRuns = 0;
+    const run = async (cmd: string, args: string[]) => {
+      if (cmd.endsWith('tar.exe') || cmd === 'tar') return execFileSync(cmd, args).toString();
+      npmRuns++;
+      if (!npmOk) throw new Error('sem internet');
+      return '';
+    };
+    const up = new Updater(root, { mode: 'zip', fetchImpl: fakeFetch(zip), run });
+    await expect(up.apply()).rejects.toThrow(/sem internet/);
+    expect(readVersion(root)?.npmPending).toBe(true);
+    expect((await up.check()).available).toBe(true); // mesmo com o commit novo já gravado
+
+    npmOk = true;
+    await up.apply();
+    expect(npmRuns).toBe(2);
+    expect(readVersion(root)?.npmPending).toBeUndefined();
+    expect((await up.check()).available).toBe(false);
+  });
+
   it('git com mudanças locais: não mexe em nada', async () => {
     const root = tmp('copiloto-git-');
     const run = async (cmd: string, args: string[]) => {
