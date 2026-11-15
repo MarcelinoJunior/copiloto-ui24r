@@ -37,7 +37,14 @@ CloseApplications=no
 Name: "pt"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
 [Tasks]
-Name: "atalho"; Description: "Criar os ícones Abrir Copiloto e Fechar Copiloto na área de trabalho"; GroupDescription: "Atalhos:"
+Name: "atalho"; Description: "Criar o ícone Copiloto Ui24R na área de trabalho"; GroupDescription: "Atalhos:"
+
+[InstallDelete]
+; versões antigas criavam dois ícones (Abrir e Fechar): agora é um só (desligar = botão ⏻ na tela)
+Type: files; Name: "{autodesktop}\Abrir Copiloto.lnk"
+Type: files; Name: "{autodesktop}\Fechar Copiloto.lnk"
+Type: files; Name: "{autoprograms}\Copiloto Ui24R\Abrir Copiloto.lnk"
+Type: files; Name: "{autoprograms}\Copiloto Ui24R\Fechar Copiloto.lnk"
 
 [Files]
 Source: "{#AppSrc}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "\data\*"
@@ -46,10 +53,10 @@ Source: "{#AppSrc}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 Name: "{app}\data"
 
 [Icons]
-Name: "{autoprograms}\Copiloto Ui24R\Abrir Copiloto"; Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\abrir.ico"; Flags: runminimized
-Name: "{autoprograms}\Copiloto Ui24R\Fechar Copiloto"; Filename: "{app}\Fechar Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\fechar.ico"; Flags: runminimized
-Name: "{autodesktop}\Abrir Copiloto"; Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\abrir.ico"; Flags: runminimized; Tasks: atalho
-Name: "{autodesktop}\Fechar Copiloto"; Filename: "{app}\Fechar Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\fechar.ico"; Flags: runminimized; Tasks: atalho
+; um ícone só; para desligar, o botão ⏻ na tela do Copiloto (o "Fechar" fica só no Menu Iniciar, para emergência)
+Name: "{autoprograms}\Copiloto Ui24R\Copiloto Ui24R"; Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\abrir.ico"; Comment: "Liga o Copiloto e abre o painel"; Flags: runminimized
+Name: "{autoprograms}\Copiloto Ui24R\Fechar o Copiloto (emergência)"; Filename: "{app}\Fechar Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\fechar.ico"; Flags: runminimized
+Name: "{autodesktop}\Copiloto Ui24R"; Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; IconFilename: "{app}\scripts\icones\abrir.ico"; Comment: "Liga o Copiloto e abre o painel (para desligar: botão ⏻ na tela)"; Flags: runminimized; Tasks: atalho
 
 [Run]
 Filename: "{app}\Abrir Copiloto.bat"; WorkingDir: "{app}"; Description: "Abrir o Copiloto agora"; Flags: postinstall nowait skipifsilent runminimized shellexec

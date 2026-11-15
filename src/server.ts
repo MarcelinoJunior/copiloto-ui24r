@@ -100,6 +100,10 @@ export function startServer(deps: ServerDeps, host: string, port: number): Promi
     };
 
     // --- sessão ---
+    // usado pelo atalho do Windows (sem login): "é o Copiloto? mesa real ou simulador?"
+    if (path === '/api/ping' && method === 'GET') {
+      return json(res, 200, { app: 'copiloto-ui24r', source: app.sourceKind });
+    }
     if (path === '/api/me' && method === 'GET') {
       return json(res, 200, {
         user: user ? publicUser(user) : null,

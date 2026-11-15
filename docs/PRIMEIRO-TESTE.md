@@ -37,7 +37,7 @@ Por padrão o diagnóstico **só lê**: a mesa recebe apenas o "estou vivo" da c
 
 Para a primeira vez, deixe o **⛔ BYPASS ligado antes de conectar**: assim o Copiloto não manda nada, nem o teste de comando, e você só confere se ele enxerga a mesa certa.
 
-- Dê dois cliques em **Abrir Copiloto** (área de trabalho) ou rode `npm start`.
+- Dê dois cliques em **Copiloto Ui24R** (área de trabalho) ou rode `npm start`.
 - Entre com o seu usuário. Na primeira vez é `admin` / `admin`: troque a senha.
 - Vá em **Conexão**:
   - **IP da mesa** `192.168.0.122` e **Salvar e reconectar** se precisar;
@@ -70,6 +70,6 @@ Com o bypass ligado, na faixa vermelha escolha **mexer só em: AUX 9 · F. SAMUE
 ## Se algo der errado
 
 - **⛔ BYPASS** no topo da tela: na hora, o Copiloto para de mexer na mesa e só monitora (continua ligado até alguém desligar, mesmo se o programa reiniciar).
-- **Fechar Copiloto** (ou Ctrl+C no terminal). Os envios ficam como estão; nada continua mexendo.
+- Botão **⏻** no topo da tela (desliga o Copiloto) ou Ctrl+C no terminal. Os envios ficam como estão; nada continua mexendo.
 - Não conecta: confira se o PC está na mesma rede (a tela Conexão mostra os IPs do PC e avisa "outra rede").
 - **Teste de comando FALHOU**: a mesa recebeu mas não repassou a mudança. Pode ser bloqueio por senha num firmware diferente. Mande o resultado do diagnóstico.

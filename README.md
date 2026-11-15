@@ -10,7 +10,7 @@ Licença: **GPL-3.0** (software livre de cooperação: quem distribuir uma vers�
 
 **[Baixar o instalador mais recente: Copiloto-Setup.exe](https://github.com/MarcelinoJunior/copiloto-ui24r/releases/latest/download/Copiloto-Setup.exe)** · [todas as versões e novidades](https://github.com/MarcelinoJunior/copiloto-ui24r/releases)
 
-Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que precisa e cria os ícones **Abrir Copiloto** e **Fechar Copiloto**. Depois de instalado, ele avisa sozinho quando houver versão nova (**Atualizar agora**, no topo da tela). Detalhes em [Instalação](#instalação).
+Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que precisa e cria o ícone **Copiloto Ui24R** na área de trabalho. Para desligar, use o botão **⏻** na tela do Copiloto. Depois de instalado, ele avisa sozinho quando houver versão nova (**Atualizar agora**, no topo da tela). Detalhes em [Instalação](#instalação).
 
 ---
 
@@ -78,12 +78,9 @@ O `npm install` baixa **tudo**: o banco (SQLite já vem no Node) e o **ffmpeg** 
 
 ### Atalhos na área de trabalho (para quem não usa terminal)
 
-Dê dois cliques em **`Criar atalhos na area de trabalho.bat`** (na pasta do projeto). Aparecem dois ícones:
+Dê dois cliques em **`Criar atalhos na area de trabalho.bat`** (na pasta do projeto). Aparece um ícone, **Copiloto Ui24R**: na primeira vez instala o que falta (`npm install`), liga o programa numa janela minimizada "Copiloto Ui24R" e abre o painel no navegador. Se já estiver ligado, só abre o painel.
 
-- **Abrir Copiloto**: na primeira vez instala o que falta (`npm install`), liga o programa numa janela minimizada "Copiloto Ui24R" e abre o painel no navegador. Se já estiver ligado, só abre o painel.
-- **Fechar Copiloto**: desliga o programa.
-
-Não feche a janela minimizada "Copiloto Ui24R" na mão: use o atalho **Fechar Copiloto**. Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
+Para desligar: botão **⏻** no topo da tela do Copiloto (só o admin). Não feche a janela minimizada "Copiloto Ui24R" na mão. Em emergência (painel fechado), há o **Fechar Copiloto.bat** na pasta do programa (e no Menu Iniciar, quando instalado pelo Setup). Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
 
 A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**, que é um driver de hardware do Windows. Só é necessário para o modo Áudio USB, e só se o Windows não reconhecer a mesa sozinho.
 

@@ -431,6 +431,11 @@ export class App {
     void this.connectLoop(this.generation);
   }
 
+  /** Mesa real ou simulador (o atalho do Windows pergunta pelo /api/ping). */
+  get sourceKind(): SourceKind {
+    return this.kind;
+  }
+
   setUpdater(updater: Updater): void {
     this.updater = updater;
   }

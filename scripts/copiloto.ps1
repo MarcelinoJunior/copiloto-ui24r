@@ -49,16 +49,33 @@ function Get-ProcessoCopiloto([int]$porta) {
   return $null
 }
 
+# Pede para o próprio Copiloto desligar (chave local em data\copiloto.token). Não depende de
+# listar processos do Windows (WMI), que às vezes trava. Devolve $true se ele desligou.
+function Fechar-PorChave([int]$porta) {
+  $tokenFile = Join-Path $dados 'copiloto.token'
+  if (-not (Test-Path $tokenFile) -or -not (Test-Painel $porta)) { return $false }
+  try {
+    $token = (Get-Content $tokenFile -Raw).Trim()
+    Invoke-WebRequest "http://127.0.0.1:$porta/api/shutdown-local" -Method Post -Headers @{ 'x-copiloto-token' = $token } -UseBasicParsing -TimeoutSec 5 | Out-Null
+    for ($i = 0; $i -lt 10 -and (Test-Painel $porta); $i++) { Start-Sleep -Milliseconds 700 }
+  } catch {}
+  return -not (Test-Painel $porta)
+}
+
 function Abrir([switch]$SemNavegador) {
   $porta = Get-Porta
   $url = "http://localhost:$porta"
 
-  # O atalho é para a MESA REAL: se um simulador (npm run sim) estiver ocupando a porta, fecha ele antes.
-  $sim = Get-ProcessoCopiloto $porta
-  if ($sim -and $sim.CommandLine -like '*--sim*') {
-    Write-Host 'Um SIMULADOR do Copiloto estava aberto. Fechando para abrir a mesa real...'
-    & taskkill.exe /PID $sim.ProcessId /T /F | Out-Null
-    Start-Sleep -Seconds 1
+  # O atalho é para a MESA REAL: se um simulador estiver ocupando a porta, fecha ele antes.
+  # (pergunta ao próprio Copiloto, sem listar processos do Windows)
+  if (Test-Painel $porta) {
+    try {
+      $info = Invoke-RestMethod "http://127.0.0.1:$porta/api/ping" -TimeoutSec 3
+      if ($info.source -eq 'simulador') {
+        Write-Host 'Um SIMULADOR do Copiloto estava aberto. Fechando para abrir a mesa real...'
+        [void](Fechar-PorChave $porta)
+      }
+    } catch {}
   }
 
   if (Test-Painel $porta) {
@@ -112,20 +129,11 @@ function Fechar {
   $fechou = $false
   $porta = Get-Porta
 
-  # 0) jeito limpo: pede para o próprio Copiloto desligar (chave local em data\copiloto.token).
-  #    Não depende de listar processos do Windows (WMI), que às vezes trava.
-  $tokenFile = Join-Path $dados 'copiloto.token'
-  if ((Test-Path $tokenFile) -and (Test-Painel $porta)) {
-    try {
-      $token = (Get-Content $tokenFile -Raw).Trim()
-      Invoke-WebRequest "http://127.0.0.1:$porta/api/shutdown-local" -Method Post -Headers @{ 'x-copiloto-token' = $token } -UseBasicParsing -TimeoutSec 5 | Out-Null
-      for ($i = 0; $i -lt 10 -and (Test-Painel $porta); $i++) { Start-Sleep -Milliseconds 700 }
-      if (-not (Test-Painel $porta)) {
-        Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-        Write-Host 'Copiloto fechado.' -ForegroundColor Green
-        return
-      }
-    } catch {}
+  # 0) jeito limpo: pede para o próprio Copiloto desligar (sem WMI)
+  if (Fechar-PorChave $porta) {
+    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+    Write-Host 'Copiloto fechado.' -ForegroundColor Green
+    return
   }
 
   # 1) a janela que o atalho "Abrir" ligou (confere que é mesmo ela antes de fechar)
@@ -170,8 +178,8 @@ function Atalhos {
   $destinos = @([Environment]::GetFolderPath('Desktop'), $raiz) | Where-Object { $_ -and (Test-Path $_) }
   foreach ($pasta in $destinos) {
     try {
-      Novo-Atalho $pasta 'Abrir Copiloto' 'Abrir Copiloto.bat' 'abrir.ico' 'Liga o Copiloto Ui24R e abre o painel'
-      Novo-Atalho $pasta 'Fechar Copiloto' 'Fechar Copiloto.bat' 'fechar.ico' 'Desliga o Copiloto Ui24R'
+      # um ícone só: para desligar, use o botão ⏻ na tela do Copiloto
+      Novo-Atalho $pasta 'Copiloto Ui24R' 'Abrir Copiloto.bat' 'abrir.ico' 'Liga o Copiloto Ui24R e abre o painel (para desligar: botão ⏻ na tela)'
       Write-Host "Atalhos criados em: $pasta" -ForegroundColor Green
       return
     } catch {
@@ -185,7 +193,7 @@ function Atalhos {
 function Reiniciar {
   # espera o Copiloto antigo sair (ele mesmo pediu o reinício depois de atualizar)
   $porta = Get-Porta
-  for ($i = 0; $i -lt 30 -and (Get-ProcessoCopiloto $porta); $i++) { Start-Sleep -Seconds 1 }
+  for ($i = 0; $i -lt 30 -and (Test-Painel $porta); $i++) { Start-Sleep -Seconds 1 }
   Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
   Abrir -SemNavegador
 }
