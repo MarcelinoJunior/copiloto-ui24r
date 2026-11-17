@@ -44,6 +44,21 @@ export interface ChannelSnapshot {
   /** correção total que o software aplicaria agora, dentro dos limites */
   suggestedDeltaDB: number;
   manualForSec: number;
+  /** voz que estava sumida e ganhou um volume ideal novo (pode subir até rescueMaxBoostDB) */
+  rescued?: boolean;
+}
+
+/** Uma voz sumida ganhou volume ideal novo (para o registro e a lista de eventos). */
+export interface RescueNotice {
+  key: string;
+  name: string;
+  /** voz de referência (a mais alta tocando) */
+  refKey: string;
+  refName: string;
+  /** quanto estava abaixo da referência (dB) */
+  belowDB: number;
+  fromTargetDB?: number;
+  toTargetDB: number;
 }
 
 export interface PersistedChannel {
@@ -86,7 +101,16 @@ interface ChannelState {
   rawDB?: number;
   status: ChannelStatus;
   suggestedDeltaDB: number;
+  /** voz sumida que ganhou alvo novo: o limite de subida é rescueMaxBoostDB */
+  rescued: boolean;
+  /** desde quando a voz está muito abaixo da voz mais alta */
+  lowSince?: number;
+  /** o operador mexeu nesta voz: não mexe no alvo dela por um tempo */
+  rescueBlockedUntil: number;
 }
+
+/** Depois que o operador mexe numa voz na saída, ela fica fora da regra de voz sumida por este tempo. */
+const RESCUE_OPERATOR_HOLD_MS = 10 * 60 * 1000;
 
 /** Diferença tolerada entre o valor que mandamos e o que a mesa devolve (arredondamento do fader). */
 const ECHO_TOLERANCE_DB = 0.3;
@@ -107,6 +131,9 @@ export class AuxLeveler {
   private readonly channels = new Map<string, ChannelState>();
   private mode: Mode = 'observar';
   private lastTickT?: number;
+  /** canais que são voz (regra da voz sumida); vazio = regra desligada nesta saída */
+  private voices = new Set<string>();
+  private notices: RescueNotice[] = [];
   outDB?: number;
 
   constructor(
@@ -136,7 +163,24 @@ export class AuxLeveler {
       level: new GatedLevel(this.cfg.averagingSec, this.cfg.gateDB, this.cfg.releaseSec),
       status: 'sem-alvo',
       suggestedDeltaDB: 0,
+      rescued: false,
+      rescueBlockedUntil: 0,
     });
+  }
+
+  /**
+   * Canais que são voz nesta saída. Uma voz que fica muito abaixo da voz mais alta (ex.: o
+   * envio dela para a live esquecido lá embaixo) ganha um volume ideal novo e sobe aos poucos.
+   */
+  setVoices(keys: Iterable<string>): void {
+    this.voices = new Set(keys);
+  }
+
+  /** Vozes sumidas que ganharam volume ideal desde a última chamada. */
+  takeRescueNotices(): RescueNotice[] {
+    const out = this.notices;
+    this.notices = [];
+    return out;
   }
 
   /** Tempo de análise (média do nível de cada canal) desta saída, em segundos. */
@@ -196,6 +240,10 @@ export class AuxLeveler {
     ch.baseSendDB = info.db;
     ch.correcting = false;
     ch.transitionUntil = 0;
+    // a voz é do operador agora: a regra da voz sumida não briga com ele
+    ch.rescued = false;
+    ch.lowSince = undefined;
+    ch.rescueBlockedUntil = now + RESCUE_OPERATOR_HOLD_MS;
     if (this.mode !== 'desligado') ch.manualUntil = now + this.cfg.manualHoldSec * 1000;
     // Aprende em qualquer modo: assim o alvo sempre reflete a mixagem que o operador quer
     // (importante para presets montados com o automático desligado).
@@ -231,6 +279,7 @@ export class AuxLeveler {
     const dt = this.lastTickT === undefined ? 0 : clamp((now - this.lastTickT) / 1000, 0, 2);
     this.lastTickT = now;
     const actions: SendAction[] = [];
+    this.rescueVoices(now);
 
     for (const ch of this.channels.values()) {
       ch.suggestedDeltaDB = 0;
@@ -260,10 +309,67 @@ export class AuxLeveler {
     return this.mode === 'automatico' ? actions : [];
   }
 
+  /**
+   * Voz sumida: compara cada voz tocando com a voz mais alta tocando (peso = nível + envio).
+   * Se ficar mais que `rescueBelowDB` abaixo por `rescueAfterSec`, o volume ideal dela passa a
+   * ser `rescueToDB` abaixo da voz mais alta (só sobe, nunca desce o ideal). Vale em qualquer
+   * modo: em "Só sugerir" aparece a sugestão; em "Ajustando" o envio sobe devagar.
+   */
+  private rescueVoices(now: number): void {
+    if (this.voices.size < 2 || this.mode === 'desligado') return;
+    const playing: { ch: ChannelState; contrib: number }[] = [];
+    for (const key of this.voices) {
+      const ch = this.channels.get(key);
+      if (!ch) continue;
+      const send = ch.send;
+      const level = ch.level.levelDB;
+      const ok =
+        ch.enabled && send && !send.muted && Number.isFinite(send.db) && level !== undefined &&
+        ch.level.isActive(now) && ch.level.activeForSec(now) >= this.cfg.minActiveSec;
+      if (ok) playing.push({ ch, contrib: level + send.db });
+      else ch.lowSince = undefined;
+    }
+    for (const { ch, contrib } of playing) {
+      const others = playing.filter((p) => p.ch !== ch);
+      if (!others.length) {
+        ch.lowSince = undefined;
+        continue;
+      }
+      const ref = others.reduce((a, b) => (b.contrib > a.contrib ? b : a));
+      const below = ref.contrib - contrib;
+      if (below <= this.cfg.rescueBelowDB || now < ch.manualUntil || now < ch.transitionUntil || now < ch.rescueBlockedUntil) {
+        ch.lowSince = undefined;
+        continue;
+      }
+      ch.lowSince ??= now;
+      if (now - ch.lowSince < this.cfg.rescueAfterSec * 1000) continue;
+      const target = round1(ref.contrib - this.cfg.rescueToDB);
+      // só sobe o ideal (e só quando a mudança é de verdade)
+      if (ch.targetDB !== undefined && ch.targetDB >= target - 1) {
+        ch.rescued = true;
+        continue;
+      }
+      this.notices.push({
+        key: ch.key,
+        name: ch.name,
+        refKey: ref.ch.key,
+        refName: ref.ch.name,
+        belowDB: round1(below),
+        fromTargetDB: ch.targetDB,
+        toTargetDB: target,
+      });
+      ch.targetDB = target;
+      ch.rescued = true;
+      ch.correcting = true;
+      ch.lowSince = undefined;
+    }
+  }
+
   private decide(ch: ChannelState, send: SendInfo, level: number, target: number, dt: number): SendAction | undefined {
     const base = Number.isFinite(ch.baseSendDB) ? (ch.baseSendDB as number) : send.db;
     const lo = base - this.cfg.maxCutDB;
-    const hi = Math.min(base + this.cfg.maxBoostDB, this.cfg.maxSendDB);
+    const boost = ch.rescued ? Math.max(this.cfg.maxBoostDB, this.cfg.rescueMaxBoostDB) : this.cfg.maxBoostDB;
+    const hi = Math.min(base + boost, this.cfg.maxSendDB);
 
     const error = level + send.db - target;
     const desired = clamp(send.db - error, lo, hi);
@@ -305,6 +411,7 @@ export class AuxLeveler {
       ch.targetDB = round1(level + ch.send.db);
       ch.baseSendDB = ch.send.db;
       ch.correcting = false;
+      ch.rescued = false;
       captured++;
     }
     this.resetReferences();
@@ -346,6 +453,7 @@ export class AuxLeveler {
       ch.refSendDB = send;
       if (p.targetDB !== undefined) ch.targetDB = p.targetDB;
       ch.correcting = false;
+      ch.rescued = false;
     }
   }
 
@@ -392,6 +500,7 @@ export class AuxLeveler {
         contributionDB: contribution,
         suggestedDeltaDB: ch.suggestedDeltaDB,
         manualForSec: Math.max(0, Math.ceil((ch.manualUntil - now) / 1000)),
+        rescued: ch.rescued,
       };
     });
   }

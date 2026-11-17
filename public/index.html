@@ -124,6 +124,12 @@
     <a href="admin.html">Troque a senha agora →</a>
   </p>
 
+  <div id="frozen" class="frozen" role="alert" hidden>
+    <strong>⚠ TELA PARADA</strong>
+    <span>O painel perdeu a ligação com o Copiloto: os medidores e faders abaixo NÃO estão atualizando.</span>
+    <span class="frozen-hint">Tentando reconectar… Se não voltar em alguns segundos, feche esta janela e abra de novo pelo ícone <b>Copiloto Ui24R</b>.</span>
+  </div>
+
   <main id="mixer" class="mixer"></main>
   <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>
 
@@ -145,7 +151,8 @@
         <h2 id="d-name"></h2>
         <span class="muted small" id="d-sub"></span>
       </div>
-      <span id="d-ident" class="cm-ident" title="Que som é este canal: pelo áudio (modo Áudio USB) ou pelo nome do canal"></span>
+      <span id="d-ident" class="cm-ident" title="Que som é este canal: marcado por você, pelo áudio (modo Áudio USB) ou pelo nome do canal"></span>
+      <button type="button" id="d-voice" class="cm-voice" hidden>🎤 É voz?</button>
       <span class="spacer"></span>
       <button id="d-mute" class="cm-mute" title="Mute deste canal na saída que você está vendo">MUTE</button>
       <button id="d-close" class="cm-close" title="Fechar e voltar para a mixagem (Esc)">✕ Voltar</button>

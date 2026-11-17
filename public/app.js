@@ -38,6 +38,9 @@ const STATUS_HELP = {
   'no-limite': 'Precisaria de mais correção do que o limite permite',
 };
 
+const RESCUED_HELP =
+  'Voz sumida: estava muito abaixo da voz mais alta na live e ganhou um volume ideal novo. Mexa no fader se quiser ela baixa (o Copiloto respeita por 10 min).';
+
 const MODE_HELP = {
   desligado: 'Ajuste automático DESLIGADO nesta saída: só mostra os níveis. Os faders daqui funcionam como na mesa.',
   observar: 'Ajuste automático em SÓ SUGERIR: embaixo de cada fader aparece quanto ele mexeria, sem mexer na mesa.',
@@ -139,10 +142,21 @@ function savePrefs(patch) {
 
 // ---------- conexão com o programa ----------
 
+// Tela parada: sem mensagem do Copiloto há alguns segundos (desconectou ou travou), os medidores
+// ficam congelados e parecem normais. Escurece a mixagem e avisa bem visível.
+let lastMsgAt = Date.now();
+const FROZEN_AFTER_MS = 4000;
+setInterval(() => {
+  const frozen = Date.now() - lastMsgAt > FROZEN_AFTER_MS;
+  $('#frozen').hidden = !frozen;
+  document.body.classList.toggle('is-frozen', frozen);
+}, 1000);
+
 function connect() {
   socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   let first = true;
   socket.onmessage = (ev) => {
+    lastMsgAt = Date.now();
     const msg = JSON.parse(ev.data);
     if (msg.type === 'erro') return toast(msg.text);
     checkBuild(msg);
@@ -193,14 +207,13 @@ function renderFxLink(s) {
   const choices = [null, ...fl.offsets, 'manter'];
   $('#fxlink-rows').innerHTML = fl.fx
     .map((f) => {
-      const badge = f.inRoom ? '<span class="fx-badge room" title="Este efeito toca no salão: mudar o envio muda o salão também">salão</span>' : '<span class="fx-badge live">só live</span>';
       const btns = choices
         .map((o) => {
           const active = o === f.offset;
           return `<button type="button" data-fx="${f.key}" data-off="${o === null ? '' : o}" class="${active ? 'active' : ''}" ${fl.allowed ? '' : 'disabled'} title="${escapeHtml(o === null ? 'Este efeito não acompanha a live' : o === 'manter' ? 'Cada canal mantém a diferença que tem agora e só acompanha as mudanças' : `Envio para o efeito = envio para a live ${o === 0 ? '(mesmo volume)' : `${o} dB`}`)}">${FXL_LABEL(o)}</button>`;
         })
         .join('');
-      return `<div class="fxlink-row"><span class="fxl-name">FX${f.key.slice(1)} · ${escapeHtml(f.name)} ${badge}</span><div class="seg small">${btns}</div></div>`;
+      return `<div class="fxlink-row"><span class="fxl-name">FX${f.key.slice(1)} · ${escapeHtml(f.name)}</span><div class="seg small">${btns}</div></div>`;
     })
     .join('');
 }
@@ -683,8 +696,9 @@ function updateChannelStrip(strip, ch, s) {
   let label = STATUS_LABEL[ch.status] ?? ch.status;
   if (ch.status === 'manual') label = `oper. ${ch.manualForSec}s`;
   if (ch.status === 'corrigindo' && (s.bus.mode !== 'automatico' || busBypassed(s))) label = 'corrigiria';
+  if (ch.rescued && ch.status === 'corrigindo') label = s.bus.mode === 'automatico' && !busBypassed(s) ? 'voz ↑' : 'voz baixa';
   strip.status.textContent = label;
-  strip.status.title = STATUS_HELP[ch.status] ?? '';
+  strip.status.title = ch.rescued ? RESCUED_HELP : STATUS_HELP[ch.status] ?? '';
   strip.status.className = `status ${ch.status}`;
 
   const silent = ch.status === 'silencio' || ch.rawDB === undefined || ch.rawDB <= -79;
@@ -720,9 +734,7 @@ function createFxStrip(bus, fx) {
 
 function updateFxStrip(strip, fx, s) {
   setStripName(strip, fx.name);
-  strip.badge.className = `fx-badge ${fx.inRoom ? 'room' : 'live'}`;
-  strip.badge.textContent = fx.inRoom ? 'salão' : 'só live';
-  strip.badge.title = fx.inRoom ? 'Este efeito toca no salão e nas saídas' : 'Este efeito não toca no salão (só nas saídas)';
+  strip.badge.hidden = true;
   strip.toggle.classList.toggle('on', fx.follow);
   setMuted(strip, fx.muted);
   let label = FX_STATUS_LABEL[fx.status] ?? fx.status;
@@ -831,9 +843,21 @@ function renderDetail(s) {
   renderPreamp(d);
   renderRta(d, s);
   renderEq(d, s);
+  const by = { audio: `pelo áudio, ${Math.round((d.identified?.confidence ?? 0) * 100)}%`, nome: 'pelo nome', marcado: 'marcado por você' };
   $('#d-ident').textContent = d.identified
-    ? `som: ${d.identified.label} (${d.identified.by === 'audio' ? `pelo áudio, ${Math.round(d.identified.confidence * 100)}%` : 'pelo nome'})`
-    : 'som: ainda não identificado';
+    ? `som: ${d.identified.label} (${by[d.identified.by] ?? d.identified.by})`
+    : d.voiceMark === false
+      ? 'som: não é voz (marcado por você)'
+      : 'som: ainda não identificado';
+  const isVoice = d.identified?.type === 'voz';
+  const dVoice = $('#d-voice');
+  dVoice.hidden = !d.voiceAllowed || !/^[ilp]/.test(d.key);
+  dVoice.classList.toggle('on', isVoice);
+  dVoice.textContent = isVoice ? '🎤 É VOZ' : '🎤 É voz?';
+  dVoice.title = isVoice
+    ? 'Este canal é voz: na live o Copiloto não deixa ele sumir perto das outras vozes. Clique para marcar que NÃO é voz.'
+    : 'Marque se este canal é voz (cantor, back vocal, pastor): na live o Copiloto não deixa ele sumir perto das outras vozes.';
+  dVoice.dataset.next = isVoice ? 'false' : 'true';
   const dMute = $('#d-mute');
   dMute.classList.toggle('on', Boolean(d.muted));
   dMute.textContent = d.muted ? 'MUTADO' : 'MUTE';
@@ -893,10 +917,8 @@ function renderDetail(s) {
         kind: 'fx',
         title: fx.key.toUpperCase(),
         sub: fx.name,
-        badge: fx.inRoom ? 'salão+live' : 'só live',
-        badgeCls: fx.inRoom ? 'room' : 'live',
         locked: !fx.allowed,
-        lockText: 'toca no salão: só admin/master',
+        lockText: 'vale para todas as saídas: só admin/master',
         onValue: (db) => send({ type: 'setFxSend', fx: fx.key, key: d.key, db }),
       },
       fx.db,
@@ -924,6 +946,10 @@ function renderDetail(s) {
 $('#d-mute').addEventListener('click', () => {
   const d = state?.detail;
   if (d && state.bus) send({ type: 'setMute', bus: state.bus.bus, key: d.key, muted: !d.muted });
+});
+$('#d-voice').addEventListener('click', (e) => {
+  const d = state?.detail;
+  if (d) send({ type: 'channel.voice', key: d.key, voice: e.currentTarget.dataset.next === 'true' });
 });
 $('#d-close').addEventListener('click', closeDetail);
 $('#detail-backdrop').addEventListener('click', closeDetail);

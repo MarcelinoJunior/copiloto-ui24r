@@ -21,6 +21,8 @@ export interface PersistedState {
   averaging?: Record<string, number>;
   /** recursos avançados do modo Áudio USB (microfonia, loudness, OBS…) */
   advanced?: AdvancedSettings;
+  /** canais marcados na tela: true = é voz, false = não é voz (sem a marca: pelo nome/áudio) */
+  voices?: Record<string, boolean>;
 }
 
 export class StateStore {

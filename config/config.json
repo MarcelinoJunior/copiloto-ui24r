@@ -26,6 +26,10 @@
     "fxRateDBps": 3,
     "fxMaxCutDB": 20,
     "fxMaxBoostDB": 6,
-    "presetFadeSec": 3
+    "presetFadeSec": 3,
+    "rescueBelowDB": 12,
+    "rescueToDB": 8,
+    "rescueAfterSec": 10,
+    "rescueMaxBoostDB": 15
   }
 }

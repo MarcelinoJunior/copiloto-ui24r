@@ -661,6 +661,9 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 /* ================= mute, tipo de som e equalizador (janela do canal) ================= */
 
 .cm-ident { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.cm-voice { height: 32px; padding: 0 12px; font-size: 13px; font-weight: 700; border-radius: 999px; }
+.cm-voice.on { background: var(--accent); border-color: var(--accent); color: #031a2e; }
+.cm-voice[hidden] { display: none; }
 .cm-mute { height: 40px; padding: 0 16px; font-size: 14px; font-weight: 800; letter-spacing: 0.05em; }
 .cm-mute.on { background: var(--bad); border-color: var(--bad); color: #fff; }
 .cm-volumes { overflow-y: auto; }
@@ -777,4 +780,11 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 /* sem conexão com a mesa */
 .conn-banner { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 6px 12px; border-radius: 8px; border: 2px solid var(--warn); background: rgba(245, 182, 66, 0.14); color: var(--text); font-size: 13px; }
 .conn-banner[hidden] { display: none; }
+
+/* tela parada: o painel não recebe nada do Copiloto (medidores congelados) */
+.frozen { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 8px; border: 3px solid var(--bad); background: rgba(255, 93, 93, 0.2); color: var(--text); font-size: 15px; text-align: center; }
+.frozen[hidden] { display: none; }
+.frozen strong { color: var(--bad); font-size: 18px; letter-spacing: 0.05em; }
+.frozen-hint { font-size: 13px; color: var(--muted); }
+.is-frozen .mixer { opacity: 0.25; filter: grayscale(1); pointer-events: none; }
 .conn-banner .small-btn { border-color: var(--warn); color: var(--warn); font-weight: 700; text-decoration: none; }

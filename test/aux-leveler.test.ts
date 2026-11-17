@@ -162,3 +162,88 @@ describe('AuxLeveler', () => {
     expect(actions[0].toDB).toBe(-6);
   });
 });
+
+/**
+ * Culto de 15/11: JAQUE com o envio da live esquecido em -34 dB, 16 dB abaixo do MINISTRO
+ * (peso = nível + envio). A voz soou "debaixo d'água" na transmissão.
+ */
+describe('voz sumida na live', () => {
+  const levels: Record<string, number> = { i3: -22, i20: -16, i15: -16 };
+  const sends: Record<string, number> = { i3: -12, i20: -34, i15: -45 };
+
+  function church(mode: 'automatico' | 'observar' = 'automatico') {
+    const l = new AuxLeveler(5, { ...DEFAULT_LEVELER, averagingSec: 4 });
+    l.setMode(mode);
+    l.ensureChannel('i3', 'MINISTRO');
+    l.ensureChannel('i20', 'JAQUE');
+    l.ensureChannel('i15', 'CAIXA');
+    for (const [k, db] of Object.entries(sends)) l.onSend(k, { ...SEND, db }, 0);
+    l.setVoices(['i3', 'i20']);
+    return l;
+  }
+
+  /** Todos os canais tocando; aplica as ações como a mesa faria. */
+  function play(l: AuxLeveler, fromMs: number, seconds: number) {
+    let t = fromMs;
+    const end = fromMs + seconds * 1000;
+    while (t < end) {
+      for (let i = 0; i < 10; i++) {
+        t += 50;
+        for (const [k, db] of Object.entries(levels)) l.onVu(k, vu(db), t);
+      }
+      for (const a of l.tick(t)) {
+        l.markCommanded(a.key, a.toDB, t);
+        l.onSend(a.key, { ...SEND, db: a.toDB }, t);
+      }
+    }
+    return t;
+  }
+
+  const send = (l: AuxLeveler, key: string, t: number) => l.snapshot(t).find((c) => c.key === key)!.sendDB!;
+
+  it('voz 16 dB abaixo da voz mais alta: ganha volume ideal e sobe além do limite normal', () => {
+    const l = church();
+    let t = play(l, 0, 8);
+    expect(l.takeRescueNotices()).toHaveLength(0); // ainda não: precisa ficar baixa por 10 s
+    t = play(l, t, 10);
+    const notices = l.takeRescueNotices();
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ key: 'i20', refKey: 'i3', toTargetDB: -42 }); // MINISTRO -34 menos 8
+    expect(notices[0].belowDB).toBeCloseTo(16, 0);
+    t = play(l, t, 40);
+    // -34 → ~-26 (+8 dB; para a <1 dB do alvo): passa dos +4 dB que o ajuste normal permitiria
+    expect(send(l, 'i20', t)).toBeGreaterThan(-27.1);
+    expect(send(l, 'i20', t)).toBeLessThanOrEqual(-26);
+    expect(l.snapshot(t).find((c) => c.key === 'i20')!.rescued).toBe(true);
+    // a caixa também está baixa, mas não é voz: não mexe
+    expect(send(l, 'i15', t)).toBe(-45);
+    expect(l.takeRescueNotices()).toHaveLength(0); // avisa uma vez só
+  });
+
+  it('em "Só sugerir": não mexe na mesa, só mostra quanto subiria', () => {
+    const l = church('observar');
+    const t = play(l, 0, 20);
+    expect(l.takeRescueNotices()).toHaveLength(1);
+    const j = l.snapshot(t).find((c) => c.key === 'i20')!;
+    expect(j.sendDB).toBe(-34);
+    expect(j.suggestedDeltaDB).toBeCloseTo(8, 0);
+  });
+
+  it('o operador mexeu na voz na live: a regra respeita por 10 minutos', () => {
+    const l = church();
+    let t = play(l, 0, 2);
+    l.onSend('i20', { ...SEND, db: -33 }, t); // operador (sem markCommanded)
+    t = play(l, t, 60);
+    expect(l.takeRescueNotices()).toHaveLength(0);
+    t = play(l, t, 600);
+    expect(l.takeRescueNotices()).toHaveLength(1);
+  });
+
+  it('sem outra voz tocando (ou fora da live): nada muda', () => {
+    const l = church();
+    l.setVoices(['i20']);
+    const t = play(l, 0, 30);
+    expect(l.takeRescueNotices()).toHaveLength(0);
+    expect(send(l, 'i20', t)).toBe(-34);
+  });
+});

@@ -36,6 +36,15 @@ export interface LevelerConfig {
   fxMaxBoostDB: number;
   /** Duração do fade ao carregar um preset (s). */
   presetFadeSec: number;
+  /**
+   * Voz sumida: uma voz que fica mais que isto abaixo da voz mais alta (na live) por
+   * `rescueAfterSec` ganha um volume ideal novo, `rescueToDB` abaixo dessa voz (dB).
+   */
+  rescueBelowDB: number;
+  rescueToDB: number;
+  rescueAfterSec: number;
+  /** Quanto a voz sumida pode subir em relação à mixagem do operador (dB). */
+  rescueMaxBoostDB: number;
 }
 
 export interface AppConfig {
@@ -71,6 +80,10 @@ export const DEFAULT_LEVELER: LevelerConfig = {
   fxMaxCutDB: 20,
   fxMaxBoostDB: 6,
   presetFadeSec: 3,
+  rescueBelowDB: 12,
+  rescueToDB: 8,
+  rescueAfterSec: 10,
+  rescueMaxBoostDB: 15,
 };
 
 const MODES: Mode[] = ['desligado', 'observar', 'automatico'];

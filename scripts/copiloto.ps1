@@ -26,6 +26,24 @@ $titulo = 'Copiloto Ui24R'
 
 $nodeLocal = Join-Path $raiz 'node\node.exe'
 
+# Um clique dentro da janela preta liga o "modo de seleção" do Windows (título "Selecionar ...")
+# e PAUSA o script até alguém apertar Esc: parecia que o Copiloto não abria. Desliga isso aqui.
+function Desligar-Selecao {
+  try {
+    Add-Type -Namespace Copiloto -Name Console -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr GetStdHandle(int nStdHandle);
+[DllImport("kernel32.dll", SetLastError = true)] public static extern bool GetConsoleMode(IntPtr h, out uint mode);
+[DllImport("kernel32.dll", SetLastError = true)] public static extern bool SetConsoleMode(IntPtr h, uint mode);
+'@ -ErrorAction Stop
+    $h = [Copiloto.Console]::GetStdHandle(-10) # entrada do console
+    $modo = 0
+    if ([Copiloto.Console]::GetConsoleMode($h, [ref]$modo)) {
+      # tira QUICK_EDIT (0x40) e INSERT (0x20); EXTENDED_FLAGS (0x80) é obrigatório para valer
+      [void][Copiloto.Console]::SetConsoleMode($h, (($modo -band (-bnot 0x60)) -bor 0x80))
+    }
+  } catch {}
+}
+
 function Get-PortaConfig {
   # data\config.json (deste computador) tem prioridade sobre o config\config.json do programa
   foreach ($c in @((Join-Path $dados 'config.json'), (Join-Path $raiz 'config\config.json'))) {
@@ -284,6 +302,8 @@ function Reiniciar {
   Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
   Abrir -SemNavegador
 }
+
+if ($Acao -ne 'janela') { Desligar-Selecao }
 
 switch ($Acao) {
   'abrir' { Abrir }

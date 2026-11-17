@@ -31,7 +31,9 @@ Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que prec
 
 **Sempre (pela rede, sem cabo extra):**
 - **Equilíbrio automático de auxiliares** (ex.: o aux da live). Lê o nível de cada canal e corrige devagar o envio quando alguém fica alto ou baixo demais, dentro de limites em torno da sua mixagem. Canal em silêncio nunca é mexido, para não virar ruído.
-- **Efeito acompanha a live:** o envio de cada canal para o efeito (FX1, FX2…) segue o fader dele na live, com a diferença escolhida na tela (**mesma, −2, −4, −8, −10, −15, −20 dB** ou **manter como está**). Mexeu o canal na live, na mesa ou pelo ajuste automático, o efeito daquele canal vai junto. Um botão **FX** em cima de cada canal deixa ignorar canais (ex.: bumbo, baixo). Se o efeito toca no salão, o reverb do salão também muda (a tela avisa).
+- **Efeito acompanha a live:** o envio de cada canal para o efeito (FX1, FX2…) segue o fader dele na live, com a diferença escolhida na tela (**mesma, −2, −4, −8, −10, −15, −20 dB** ou **manter como está**). Mexeu o canal na live, na mesa ou pelo ajuste automático, o efeito daquele canal vai junto. Um botão **FX** em cima de cada canal deixa ignorar canais (ex.: bumbo, baixo). O envio para o efeito é um só por canal: se o retorno do efeito também está no salão, o reverb do salão muda junto (normalmente imperceptível lá).
+- **Voz sumida na live:** uma voz que fica muito abaixo da voz mais alta na live (mais de 12 dB, por 10 s; ex.: o envio de uma cantora esquecido lá embaixo) ganha um volume ideal novo, 8 dB abaixo da voz mais alta, e sobe devagar (até 15 dB acima da sua mixagem). Em *Só sugerir* aparece a sugestão e um aviso. Se você mexer no fader dessa voz na live, o Copiloto respeita por 10 min. Vale para os canais que são voz: pelo nome (pastor, ministro, vocal, back…) ou marcados no botão **🎤 É voz?** da janela do canal (ex.: canais com o nome da cantora).
+- **Tela parada:** se o painel perder a ligação com o Copiloto, a mixagem escurece e aparece "⚠ TELA PARADA", para ninguém confiar em medidores congelados.
 - **Tempo de análise** do ajuste automático na tela: 5, 10, 20, 30 ou 60 s por saída (mais tempo = ignora picos).
 - **Tela de mixagem em tela cheia**, como na mesa:
   - todos os canais lado a lado, com o número embaixo;
@@ -201,13 +203,14 @@ Arquivo [config/config.json](config/config.json):
 | `safeBuses` | `[5, 6, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados com aviso de risco** até alguém clicar em *Liberar (risco)* (vale 10 min, só para quem liberou). Sem esta linha, tudo fica liberado |
 | `initialMode` | `observar` | Modo inicial dessa saída (`desligado`, `observar` = *Só sugerir*, `automatico` = *Ajustando*); as outras começam desligadas |
 | `leveler.*` | | Limites do automático: tolerância, quanto pode subir/descer, velocidade, pausa depois que o operador mexe, fade dos presets, "efeito acompanha" |
+| `leveler.rescueBelowDB` / `rescueToDB` / `rescueAfterSec` / `rescueMaxBoostDB` | `12` / `8` / `10` / `15` | Voz sumida na live: quantos dB abaixo da voz mais alta disparam, onde fica o novo volume ideal (abaixo da voz mais alta), por quanto tempo precisa ficar baixa e quanto pode subir acima da sua mixagem |
 
 Os dados ficam em `data/`, que não vai para o git:
 - `copiloto.db` (SQLite): usuários, permissões, sessões e modos de visualização;
 - `estado*.json`: volumes ideais, modos por saída e configuração dos recursos avançados;
 - `presets*.json`: presets;
 - `conexao.json`: IP escolhido na tela;
-- `sessoes/`: log de cada culto;
+- `sessoes/`: log de cada culto (níveis da live a cada 2 s, mexidas do operador e do Copiloto, envios para os efeitos, vozes sumidas);
 - `gravacoes/`: gravações multipista.
 
 ## Segurança
@@ -243,7 +246,7 @@ Sim. Na Ui24R a senha é conferida pela **página da mesa** (navegador/tablet); 
 A mesa guarda cada parâmetro do EQ como um número de 0 a 1 e a fórmula exata não é publicada. O Copiloto usa a conversão mais comum (frequência e Q em escala logarítmica, ganho linear de ±20 dB) e mostra "≈". Para conferir, rode `npm run diagnostico`: ele imprime o EQ do canal 1 (bruto e convertido). Compare com a interface web da mesa; se não bater, as constantes ficam todas em `src/mixer/eq.ts`. Contribuições com a calibração são bem-vindas.
 
 **Como ele sabe se o canal é voz, bumbo, baixo…?**
-No modo VU, pelo nome do canal (BUMBO, Kick, Cx, OH, Baixo, Violão, Voz Pastor…). No modo Áudio USB ele ouve o canal: energia por faixa de frequência, ataques por segundo e a queda logo depois (percussão), pausas e variação de volume (voz). É uma estimativa; a confiança aparece na janela do canal e na tela Análise.
+Você pode marcar na janela do canal (botão **🎤 É voz?**), o que vale mais que tudo. Sem marca: no modo VU, pelo nome do canal (BUMBO, Kick, Cx, OH, Baixo, Violão, Voz Pastor…); nomes de pessoas (ex.: JAQUE) não dizem que é voz, então marque. No modo Áudio USB ele ouve o canal: energia por faixa de frequência, ataques por segundo e a queda logo depois (percussão), pausas e variação de volume (voz). É uma estimativa; a confiança aparece na janela do canal e na tela Análise.
 
 **O PC não está na rede da mesa.**
 A tela Conexão mostra os IPs do PC e avisa "outra rede". Conecte o PC no mesmo Wi-Fi ou cabo da mesa.

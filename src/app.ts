@@ -2,7 +2,7 @@ import { canUseBus, type User } from './auth.js';
 import type { AppConfig } from './config.js';
 import type { BypassState, ConnectionStore, MixerAccess } from './connection-store.js';
 import { ConnectionHealth, type HealthSnapshot, isValidHost } from './health.js';
-import { AuxLeveler, type ChannelSnapshot, type Mode, type SendAction } from './leveler/aux-leveler.js';
+import { AuxLeveler, type ChannelSnapshot, type Mode, type RescueNotice, type SendAction } from './leveler/aux-leveler.js';
 import { FxFollower, type FxSnapshot } from './leveler/fx-follower.js';
 import { FX_OFFSETS, type FxOffset, FxLink, type FxSendAction, type LiveSend } from './leveler/fx-link.js';
 import { resolve } from 'node:path';
@@ -119,6 +119,10 @@ export interface ChannelDetail {
   muted: boolean;
   /** que som é o canal: pelo áudio (modo USB) ou pelo nome */
   identified?: ChannelIdentity;
+  /** marcado na tela: true = é voz, false = não é voz, undefined = automático (nome/áudio) */
+  voiceMark?: boolean;
+  /** pode marcar se é voz (quem tem a live, o master ou admin) */
+  voiceAllowed: boolean;
   /** equalizador do canal (só entradas). Valores convertidos da escala 0..1 da mesa (aproximados). */
   eq?: EqState & { allowed: boolean };
   /** sugestões de EQ pelo espectro médio (modo Áudio USB) */
@@ -129,7 +133,7 @@ export interface ChannelIdentity {
   type: SourceType;
   label: string;
   confidence: number;
-  by: 'audio' | 'nome';
+  by: 'audio' | 'nome' | 'marcado';
 }
 
 export interface FxLinkInfo {
@@ -251,6 +255,7 @@ export type Command =
   | { type: 'risk.ack'; scope: string }
   | { type: 'fxlink.set'; fx: string; offset: FxOffset | null; align?: boolean }
   | { type: 'fxlink.ignore'; key: string; ignored: boolean }
+  | { type: 'channel.voice'; key: string; voice: boolean | null }
   | { type: 'setAveraging'; bus: number; sec: number }
   | { type: 'update.check' }
   | { type: 'update.apply' }
@@ -322,6 +327,8 @@ export class App {
   private wired = false;
   private dirty = false;
   private lastLevelLog = 0;
+  /** últimos envios para os efeitos gravados no registro (só grava de novo quando mudam) */
+  private lastFxSendsLog = '';
   private timers: NodeJS.Timeout[] = [];
   private stopped = false;
   private adapter: MixerAdapter;
@@ -676,6 +683,7 @@ export class App {
   private applyFx(actions: FxSendAction[]): void {
     for (const a of actions) {
       this.adapter.setFxSendDB(Number(a.fx.slice(1)), a.key, a.db);
+      this.log.write('efeito-acompanha', { fx: a.fx, key: a.key, db: Number.isFinite(a.db) ? a.db : null, live: this.liveSends.get(a.key)?.db ?? null });
       const fxName = this.adapter.listFxReturns().find((f) => f.key === a.fx)?.name ?? a.fx.toUpperCase();
       this.event(`FX acompanha a live: ${this.channelName(a.key)} → FX${a.fx.slice(1)} (${fxName}) ${fmt(a.db)} dB`, `fxlink:${a.fx}:${a.key}`);
     }
@@ -819,9 +827,14 @@ export class App {
   private tick(): void {
     if (!this.wired) return;
     const now = Date.now();
+    // voz sumida: só na live (nos fones dos músicos a pessoa pode querer uma voz baixa)
+    const live = this.liveBus();
+    const voices = live === undefined ? [] : this.voiceKeys(now);
     for (const c of this.controllers.values()) {
       if (c.bus !== MASTER_BUS) this.balance.update(c.bus, c.leveler.snapshot(now), now);
+      c.leveler.setVoices(c.bus === live ? voices : []);
       this.apply(c.leveler.tick(now));
+      for (const n of c.leveler.takeRescueNotices()) this.voiceRescued(c, n);
       this.apply(c.follower.tick(now, c.leveler.offsets(now)));
     }
 
@@ -836,7 +849,34 @@ export class App {
         const fx = c.follower.snapshot().map((f) => [f.key, f.sendDB, f.followDeltaDB, f.status]);
         this.log.write('niveis', { bus: c.bus, mode: c.mode, out: c.leveler.outDB, ch: active, fx });
       }
+      // envio de cada canal para cada efeito (vale para salão e live): para o relatório do culto
+      const fxSends: Record<string, Record<string, number | null>> = {};
+      for (const [id, db] of this.fxSends) {
+        const [fxKey, key] = id.split(':');
+        (fxSends[fxKey] ??= {})[key] = Number.isFinite(db) ? round1(db) : null;
+      }
+      const sig = JSON.stringify(fxSends);
+      if (sig !== this.lastFxSendsLog && Object.keys(fxSends).length) {
+        this.lastFxSendsLog = sig;
+        this.log.write('envios-fx', { fx: fxSends });
+      }
     }
+  }
+
+  /** Canais que são voz (marcados, pelo áudio ou pelo nome); recalculado junto com as dicas (1×/s). */
+  private voiceKeys(now: number): string[] {
+    const types = this.soundInfo(now).types ?? {};
+    return Object.keys(types).filter((k) => types[k] === 'voz');
+  }
+
+  private voiceRescued(c: BusController, n: RescueNotice): void {
+    this.dirty = true;
+    const action = c.mode === 'automatico' ? 'subindo aos poucos' : 'ligue "Ajustando" ou suba o envio';
+    this.event(
+      `⚠ ${n.name} estava ${Math.round(n.belowDB)} dB abaixo de ${n.refName} em ${this.labelOf(c.bus)}: volume ideal ${n.fromTargetDB === undefined ? '' : `${fmt(n.fromTargetDB)} → `}${fmt(n.toTargetDB)} (${action})`,
+      `resgate:${c.bus}:${n.key}`,
+    );
+    this.log.write('voz-sumida', { bus: c.bus, mode: c.mode, ...n });
   }
 
   /** Manda envios para a mesa marcando-os como nossos (para o eco não parecer o operador). */
@@ -916,8 +956,23 @@ export class App {
     return raw ? eqFromRaw(raw) : undefined;
   }
 
-  /** Que som é o canal: pelo áudio USB (quando já deu para ouvir) ou pelo nome. */
+  /** Marcar se um canal é voz: quem tem a live, o master ou admin. */
+  private canMarkVoice(user: User): boolean {
+    const live = this.liveBus();
+    return user.role === 'admin' || canUseBus(user, MASTER_BUS) || (live !== undefined && canUseBus(user, live));
+  }
+
+  /** Que som é o canal: marcado na tela, pelo áudio USB (quando já deu para ouvir) ou pelo nome. */
   identityOf(key: string): ChannelIdentity | undefined {
+    const mark = this.persisted.voices?.[key];
+    if (mark === true) return { type: 'voz', label: SOURCE_LABEL.voz, confidence: 1, by: 'marcado' };
+    const id = this.identityAuto(key);
+    // marcado "não é voz": o nome/áudio não transforma em voz
+    if (mark === false && id?.type === 'voz') return undefined;
+    return id;
+  }
+
+  private identityAuto(key: string): ChannelIdentity | undefined {
     const byAudio = key.startsWith('i') ? this.engine?.identification(key) : undefined;
     if (byAudio) return { type: byAudio.type, label: SOURCE_LABEL[byAudio.type], confidence: Math.round(byAudio.confidence * 100) / 100, by: 'audio' };
     const type = typeFromName(this.channelName(key));
@@ -1076,8 +1131,7 @@ export class App {
         }
         const db = fromWire(cmd.db);
         this.adapter.setFxSendDB(fx.number, ch.key, db);
-        const where = this.fxInRoom.get(fx.key) ? 'salão + live' : 'só live';
-        this.event(`${who}: ${ch.name} → ${fx.name} ${fmt(db)} dB (${where})`, `fx:${fx.key}:${ch.key}`);
+        this.event(`${who}: ${ch.name} → ${fx.name} ${fmt(db)} dB`, `fx:${fx.key}:${ch.key}`);
         this.log.write('efeito', { fx: fx.key, key: ch.key, db: Number.isFinite(db) ? db : null, quem: who });
         return;
       }
@@ -1219,6 +1273,19 @@ export class App {
         this.persisted.fxLink = this.fxLink.export();
         this.dirty = true;
         this.event(`${who}: ${this.channelName(cmd.key)} ${cmd.ignored ? 'NÃO acompanha' : 'volta a acompanhar'} os efeitos da live`, `fxign:${cmd.key}`);
+        return;
+      }
+      case 'channel.voice': {
+        if (!this.canMarkVoice(ctx.user)) throw new CommandError('Só quem tem a live, o master ou o admin pode marcar as vozes.');
+        if (!this.adapter.listChannels().some((ch) => ch.key === cmd.key)) throw new CommandError('Canal inválido.');
+        const marks = (this.persisted.voices ??= {});
+        if (cmd.voice === null) delete marks[cmd.key];
+        else marks[cmd.key] = Boolean(cmd.voice);
+        this.soundCache = undefined;
+        this.dirty = true;
+        const what = cmd.voice === null ? 'volta ao automático (pelo nome)' : cmd.voice ? 'marcado como VOZ (não deixa sumir na live)' : 'marcado como NÃO é voz';
+        this.event(`${who}: ${this.channelName(cmd.key)} ${what}`, `voz:${cmd.key}`);
+        this.log.write('voz-marcada', { key: cmd.key, voz: cmd.voice, quem: who });
         return;
       }
       case 'setAveraging': {
@@ -1802,6 +1869,8 @@ export class App {
       rta: this.analysisSnapshot(now)?.rta[key],
       muted: ch.muted,
       identified: this.identityOf(key),
+      voiceMark: this.persisted.voices?.[key],
+      voiceAllowed: this.canMarkVoice(ctx.user),
       eq: this.eqRaw.has(key) ? { ...this.eqState(key)!, allowed: this.canEditEq(ctx.user) } : undefined,
       eqAdvice: this.engine?.eqAdviceFor(key, this.eqState(key)),
     };
