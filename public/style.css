@@ -974,3 +974,20 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
 .tb-dot.obs { background: var(--warn); }
 /* a área dos faders "encaixa" na aba ativa */
 .mixer { border-top: 2px solid var(--mode); border-top-left-radius: 0; border-top-right-radius: 0; }
+
+
+/* ================= embaixo dos faders: duas metades (controles | efeito acompanha) ================= */
+/* Em cima ficam só 2 linhas (menu e entradas da mesa), para as abas e os faders aparecerem bem. */
+
+.bottom { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.bottom:not(:has(#fxlink-bar:not([hidden]))) { grid-template-columns: minmax(0, 1fr); }
+.bottom .toolbar { padding-top: 8px; gap: 12px 8px; align-content: flex-start; flex-wrap: wrap; }
+.bottom .g-auto, .bottom .g-alvo { order: 1; }
+.bottom .help-btn { order: 2; margin-left: auto; }
+.bottom .g-preset { order: 3; flex: 1 1 100%; }
+.bottom .fxlink-bar { padding: 6px 10px; }
+.bottom .fxlink-rows { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+.bottom .fxlink-row { gap: 6px; }
+.bottom .fxl-name { flex: 0 1 120px; }
+.bottom .fxl-ref select { width: 132px; }
+.bottom .fxlink-row .seg.small button { padding: 2px 5px; }
