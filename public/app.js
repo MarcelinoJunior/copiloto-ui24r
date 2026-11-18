@@ -233,13 +233,20 @@ function renderFxLink(s) {
 
 $('#fxlink-rows').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-fx]');
-  if (!b || b.classList.contains('active') || !state?.fxLink) return;
+  if (!b || !state?.fxLink) return;
   const fx = b.dataset.fx;
   const raw = b.dataset.off;
   const offset = raw === '' ? null : raw === 'manter' ? 'manter' : Number(raw);
   const f = state.fxLink.fx.find((x) => x.key === fx);
   const ref = f?.refLabel ?? 'a live';
   const where = f?.inRoom ? '\n\nAtenção: este efeito toca no SALÃO; o reverb do salão também muda.' : '';
+  if (b.classList.contains('active')) {
+    // clicar de novo na diferença já escolhida: oferece alinhar todos os canais agora
+    if (typeof offset === 'number' && confirm(`Alinhar TODOS os canais do FX${fx.slice(1)} (${f?.name ?? ''}) agora: fader ${deRef(ref)} com ${FXL_TEXT(offset)}?${where}`)) {
+      send({ type: 'fxlink.set', fx, offset, align: true });
+    }
+    return;
+  }
   let align = false;
   if (typeof offset === 'number') {
     align = confirm(
@@ -354,6 +361,16 @@ function renderTabs(s) {
   for (const l of layers.filter((x) => x.id === 'gain')) html.push(tab(`l:${l.id}`, 'gain', 'ENTRADA', 'ganho', 'Faders = ganho de cada entrada (salão, live e fones)'));
   for (const b of s.buses.filter((x) => x.id === MASTER_BUS)) html.push(tab(`b:${b.id}`, 'master', 'MASTER', 'salão', 'Faders = canais no master (som do salão)', modeDot[b.mode]));
   for (const b of s.buses.filter((x) => x.id !== MASTER_BUS)) {
+    // par estéreo (ex.: AUX 5+6): duas abas juntas, como na mesa; clicar em qualquer uma seleciona as duas
+    const pair = b.stereo ? /^AUX (\d+)\+(\d+)$/.exec(b.label) : null;
+    if (pair) {
+      const title = `Faders = envios para ${b.label} · ${b.name} (estéreo: AUX ${pair[1]} e AUX ${pair[2]} juntos)`;
+      html.push(
+        tab(`b:${b.id}`, 'aux pair-l', `AUX ${pair[1]}`, `${b.name} · L`, title, modeDot[b.mode]) +
+          tab(`b:${b.id}`, 'aux pair-r', `AUX ${pair[2]}`, `${b.name} · R`, title, `<i class="tb-link" title="AUX ${pair[1]} e ${pair[2]} combinados (estéreo)">🔗</i>`),
+      );
+      continue;
+    }
     html.push(tab(`b:${b.id}`, 'aux', b.label, b.name, `Faders = envios para ${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`, modeDot[b.mode]));
   }
   for (const l of layers.filter((x) => x.id !== 'gain')) {
@@ -1754,7 +1771,7 @@ $('#out-tabs').addEventListener('click', (e) => {
   const [kind, raw] = t.dataset.v.split(':');
   if (kind === 'b' && Number(raw) === MASTER_BUS && !confirm('Mostrar e controlar o MASTER mexe no som do SALÃO (faders dos canais). Continuar?')) return;
   // marca já (o servidor confirma no próximo envio)
-  document.querySelectorAll('.out-tab').forEach((x) => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.out-tab').forEach((x) => x.classList.toggle('active', x.dataset.v === t.dataset.v)); // par estéreo: as duas
   $('#detail').hidden = true;
   $('#detail-backdrop').hidden = true;
   if (kind === 'l') {

@@ -972,6 +972,10 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
 .tb-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: 1px; }
 .tb-dot.auto { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .tb-dot.obs { background: var(--warn); }
+/* par estéreo (ex.: AUX 5 + AUX 6): duas abas coladas, acendem juntas */
+.out-tab.pair-l { border-top-right-radius: 0; border-right-style: dashed; }
+.out-tab.pair-r { border-top-left-radius: 0; border-left: 0; margin-left: -3px; }
+.tb-link { font-style: normal; font-size: 10px; margin-right: 3px; opacity: 0.8; }
 /* a área dos faders "encaixa" na aba ativa */
 .mixer { border-top: 2px solid var(--mode); border-top-left-radius: 0; border-top-right-radius: 0; }
 
