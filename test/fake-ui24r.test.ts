@@ -210,14 +210,14 @@ describe('programa inteiro com a mesa real pela rede (Ui24R falsa)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('conecta, monta a saída AUX 7+8 e começa em "Só sugerir" (não mexe sozinho)', async () => {
+  it('conecta, monta a saída AUX 7+8 e começa Desligado (não mexe sozinho)', async () => {
     const snap = await until(() => {
       const s = app.snapshotFor(admin);
       return s.connection === 'conectado' && s.bus ? s : undefined;
     }, 8000);
     expect(snap.source.kind).toBe('mesa');
     expect(snap.bus!.label).toBe('AUX 7+8');
-    expect(snap.bus!.mode).toBe('observar');
+    expect(snap.bus!.mode).toBe('desligado');
     expect(snap.buses.some((b) => b.id === 8)).toBe(false); // o par aparece uma vez só
   });
 

@@ -97,7 +97,7 @@ export function loadConfig(path = resolve('config/config.json')): AppConfig {
     server: { host: raw.server?.host ?? '127.0.0.1', port: raw.server?.port ?? 8124 },
     streamAuxes: raw.streamAuxes ?? [7],
     safeBuses: raw.safeBuses,
-    initialMode: raw.initialMode ?? 'observar',
+    initialMode: raw.initialMode ?? 'desligado',
     leveler: { ...DEFAULT_LEVELER, ...raw.leveler },
   };
 

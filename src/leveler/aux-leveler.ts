@@ -2,6 +2,7 @@ import type { LevelerConfig } from '../config.js';
 import { type ChannelVu, type SendInfo, tapForSend } from '../mixer/types.js';
 import { clamp, round1 } from '../util/db.js';
 import { GatedLevel } from './gated-level.js';
+import { type Intensity, intensityConfig } from './intensity.js';
 
 export type Mode = 'desligado' | 'observar' | 'automatico';
 
@@ -136,13 +137,34 @@ export class AuxLeveler {
   private notices: RescueNotice[] = [];
   outDB?: number;
 
+  /** configuração do config.json (= intensidade "suave"); a intensidade é aplicada sobre ela */
+  private readonly baseCfg: LevelerConfig;
+  private intensityLevel: Intensity = 'suave';
+
   constructor(
     readonly bus: number,
     private cfg: LevelerConfig,
-  ) {}
+  ) {
+    this.baseCfg = { ...cfg };
+  }
 
   setMode(mode: Mode): void {
     this.mode = mode;
+  }
+
+  /** Suave, moderado ou agressivo: o quanto o ajuste automático se permite corrigir (ver intensity.ts). */
+  setIntensity(level: Intensity): void {
+    this.intensityLevel = level;
+    this.cfg = { ...intensityConfig(this.baseCfg, level), averagingSec: this.cfg.averagingSec };
+  }
+
+  get intensity(): Intensity {
+    return this.intensityLevel;
+  }
+
+  /** Configuração em uso (base + intensidade). */
+  get config(): Readonly<LevelerConfig> {
+    return this.cfg;
   }
 
   ensureChannel(key: string, name: string, persisted?: PersistedChannel): void {

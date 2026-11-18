@@ -7,7 +7,7 @@
     "port": 8124
   },
   "streamAuxes": [5, 6],
-  "initialMode": "observar",
+  "initialMode": "desligado",
   "leveler": {
     "tickMs": 500,
     "gateDB": -50,

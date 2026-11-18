@@ -65,12 +65,13 @@
       <span id="bank-label" class="bank-label"></span>
       <button class="icon-btn" id="bank-next" title="Próximos canais">▶</button>
     </span>
-    <div class="tgroup g-auto" title="AJUSTE AUTOMÁTICO DE VOLUME: o software mantém o volume de cada canal perto do volume ideal NESTA saída. Desligado = não faz nada. Só sugerir = mostra quanto mexeria, sem mexer. Ajustando = corrige os envios devagar, dentro dos limites.">
+    <div class="tgroup g-auto" title="AJUSTE AUTOMÁTICO DE VOLUME: o Copiloto mantém o volume de cada canal perto do volume ideal NESTA saída. Desligado = não mexe em nada. Suave, Moderado e Agressivo = o quanto ele se permite corrigir (tolerância, velocidade e até onde vai).">
       <span class="tlabel">Ajuste automático <span class="ti">ⓘ</span></span>
       <div class="seg modes" role="radiogroup" aria-label="Ajuste automático de volume nesta saída">
-        <button data-mode="desligado" title="O software não mexe em nada: só mostra os níveis">Desligado</button>
-        <button data-mode="observar" title="Mostra embaixo de cada fader quanto mexeria, mas NÃO mexe na mesa">Só sugerir</button>
-        <button data-mode="automatico" title="Corrige os envios devagar para cada canal ficar no volume ideal">Ajustando</button>
+        <button data-mode="desligado" title="O Copiloto não mexe em nada nesta saída: só mostra os níveis">Desligado</button>
+        <button data-mode="automatico" data-intensity="suave" title="SUAVE: corrige devagar e pouco; tolera diferenças maiores">Suave</button>
+        <button data-mode="automatico" data-intensity="moderado" title="MODERADO: tolera menos diferença, corrige mais rápido e vai um pouco mais longe">Moderado</button>
+        <button data-mode="automatico" data-intensity="agressivo" title="AGRESSIVO: segura o equilíbrio bem de perto (vozes × banda × bateria) e corrige rápido">Agressivo</button>
       </div>
       <select id="avg-select" aria-label="Tempo de análise do ajuste automático" title="Quanto tempo de som o ajuste automático usa para decidir. Mais tempo = reage mais devagar e ignora picos. Menos tempo = reage rápido.">
         <option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="30">30 s</option><option value="60">60 s</option>
@@ -116,7 +117,7 @@
 
   <div id="toolbar-help" class="toolbar-help" hidden>
     <div class="h g-saida"><strong>Abas (em cima dos faders)</strong> O que os faders controlam: clique na aba. <em>Entrada</em> (vermelho): ganho de cada canal, com +48V. <em>Master</em> (escuro): salão. <em>AUX</em> (laranja): envios para a live ou um fone. <em>FX</em> (azul): envios de cada canal para o efeito. Cada pessoa vê o seu.</div>
-    <div class="h g-auto"><strong>Ajuste automático de volume</strong> O software mantém cada canal perto do volume ideal nesta saída (ex.: o pastor empolgou → o envio dele desce um pouco). <em>Desligado</em>: não faz nada. <em>Só sugerir</em>: mostra embaixo do fader quanto mexeria. <em>Ajustando</em>: corrige devagar.</div>
+    <div class="h g-auto"><strong>Ajuste automático de volume</strong> O Copiloto mantém cada canal perto do volume ideal nesta saída (ex.: o pastor empolgou → o envio dele desce um pouco; uma voz sumiu → sobe). <em>Desligado</em>: não mexe. <em>Suave</em>: corrige devagar e pouco. <em>Moderado</em>: mais perto e mais rápido. <em>Agressivo</em>: segura o equilíbrio vozes × banda × bateria bem de perto.</div>
     <div class="h g-alvo"><strong>Volume ideal</strong> É a referência do ajuste automático. <em>Gravar atuais</em>: com a mixagem soando bem, o volume de cada canal vira o ideal. <em>Pelo tipo</em>: a voz principal vira referência e cada tipo (backs, bumbo, baixo, violão…) fica alguns dB abaixo dela. <em>Desfazer</em>: volta os envios para antes das correções (botão de pânico).</div>
     <div class="h g-preset"><strong>Presets</strong> Mixagens salvas desta saída (ex.: "Música – mais batera", "Fala"). Clicar carrega com fade suave. <em>+ novo</em> salva a mixagem atual, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
     <div class="h g-fx"><strong>Efeito acompanha</strong> O envio de cada canal para o efeito copia o fader do mesmo canal na saída escolhida (a live, o master ou um aux), com a diferença escolhida. <em>não copiar</em>: o efeito fica como está. <em>manter</em>: cada canal guarda a diferença que tem agora.</div>

@@ -35,8 +35,14 @@ const RESCUED_HELP =
 const MODE_HELP = {
   desligado: 'Ajuste automático DESLIGADO nesta saída: só mostra os níveis. Os faders daqui funcionam como na mesa.',
   observar: 'Ajuste automático em SÓ SUGERIR: embaixo de cada fader aparece quanto ele mexeria, sem mexer na mesa.',
-  automatico: 'Ajuste automático LIGADO: os envios estão sendo corrigidos devagar para cada canal ficar no volume ideal.',
+  automatico: 'Ajuste automático LIGADO: os envios estão sendo corrigidos para cada canal ficar no volume ideal.',
 };
+const INTENSITY_HELP = {
+  suave: 'Ajuste automático SUAVE: corrige devagar e pouco, para cada canal ficar perto do volume ideal.',
+  moderado: 'Ajuste automático MODERADO: tolera menos diferença e corrige mais rápido.',
+  agressivo: 'Ajuste automático AGRESSIVO: segura o equilíbrio vozes × banda × bateria bem de perto e corrige rápido.',
+};
+const modeHelp = (bus) => (bus.mode === 'automatico' ? INTENSITY_HELP[bus.intensity] ?? MODE_HELP.automatico : MODE_HELP[bus.mode]);
 
 const MASTER_BUS = 0;
 const METER_MIN = -60;
@@ -307,7 +313,10 @@ function render() {
   document.body.classList.toggle('layer-mode', Boolean(layer));
   renderFxLink(s);
   if (s.bus && document.activeElement !== $('#avg-select')) $('#avg-select').value = String(s.bus.averagingSec);
-  document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  // Desligado | Suave | Moderado | Agressivo (os três últimos = "automatico" com a intensidade da saída)
+  document.querySelectorAll('[data-mode]').forEach((b) =>
+    b.classList.toggle('active', b.dataset.mode === mode && (mode !== 'automatico' || b.dataset.intensity === s.bus?.intensity)),
+  );
   $('#mode-help').textContent = layer
     ? layer.kind === 'gain'
       ? 'ENTRADA: os faders são o GANHO de cada canal (muda salão, live, fones e gravação). Ajuste automático, volume ideal e presets são das saídas.'
@@ -317,8 +326,8 @@ function render() {
     : busBypassed(s)
       ? 'BYPASS ligado: nada é mexido nesta saída; as correções aparecem só como sugestão.'
       : s.bypass?.on
-        ? `Saída liberada no bypass: ${MODE_HELP[mode]}`
-        : MODE_HELP[mode];
+        ? `Saída liberada no bypass: ${modeHelp(s.bus)}`
+        : modeHelp(s.bus);
 
   $('#sim').hidden = !isSim;
   if (s.sim) document.querySelectorAll('[data-scene]').forEach((b) => b.classList.toggle('active', b.dataset.scene === s.sim.scene));
@@ -353,7 +362,7 @@ function renderTabs(s) {
   const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.mode]), layers, current]);
   if (nav.dataset.sig === sig) return;
   nav.dataset.sig = sig;
-  const modeDot = { automatico: '<i class="tb-dot auto" title="Ajustando"></i>', observar: '<i class="tb-dot obs" title="Só sugerir"></i>', desligado: '' };
+  const modeDot = { automatico: '<i class="tb-dot auto" title="Ajuste automático ligado"></i>', observar: '<i class="tb-dot obs" title="Só sugerir"></i>', desligado: '' };
   const tab = (value, kind, main, sub, title, dot = '') =>
     `<button type="button" role="tab" class="out-tab k-${kind}${value === current ? ' active' : ''}" data-v="${value}" aria-selected="${value === current}" title="${escapeHtml(title)}">
       <span class="tb-main">${dot}${escapeHtml(main)}</span><span class="tb-sub">${escapeHtml(sub)}</span></button>`;
@@ -1778,10 +1787,11 @@ document.querySelectorAll('[data-mode]').forEach((b) =>
   b.addEventListener('click', () => {
     const bus = state?.bus;
     if (!bus) return;
+    const intensity = b.dataset.intensity;
     if (b.dataset.mode === 'automatico' && bus.mode !== 'automatico' && state.source.kind === 'mesa') {
-      if (!confirm(`Ligar o AJUSTE AUTOMÁTICO DE VOLUME em ${bus.label}? O software vai mexer nos envios dessa saída na mesa real.`)) return;
+      if (!confirm(`Ligar o AJUSTE AUTOMÁTICO DE VOLUME (${b.textContent.trim().toUpperCase()}) em ${bus.label}? O Copiloto vai mexer nos envios dessa saída na mesa real.`)) return;
     }
-    send({ type: 'setMode', bus: bus.bus, mode: b.dataset.mode });
+    send({ type: 'setMode', bus: bus.bus, mode: b.dataset.mode, ...(intensity ? { intensity } : {}) });
   }),
 );
 

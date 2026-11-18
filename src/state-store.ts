@@ -19,6 +19,8 @@ export interface PersistedState {
   fxLink?: FxLinkState;
   /** tempo de análise do ajuste automático por saída (s) */
   averaging?: Record<string, number>;
+  /** força do ajuste automático por saída (suave, moderado, agressivo) */
+  intensity?: Record<string, 'suave' | 'moderado' | 'agressivo'>;
   /** recursos avançados do modo Áudio USB (microfonia, loudness, OBS…) */
   advanced?: AdvancedSettings;
   /** canais marcados na tela: true = é voz, false = não é voz (sem a marca: pelo nome/áudio) */

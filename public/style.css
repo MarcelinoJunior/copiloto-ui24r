@@ -65,6 +65,8 @@ button.small { padding: 2px 7px; font-size: 12px; }
 .modes button.active[data-mode="desligado"] { background: #3a414b; }
 .modes button.active[data-mode="observar"] { background: var(--warn); color: #241800; font-weight: 600; }
 .modes button.active[data-mode="automatico"] { background: var(--ok); color: #03200f; font-weight: 600; }
+.modes button.active[data-intensity="moderado"] { background: var(--warn); color: #241800; }
+.modes button.active[data-intensity="agressivo"] { background: #ff7a45; color: #2a0c00; }
 
 .nav { display: inline-flex; gap: 2px; }
 .nav a { color: var(--muted); text-decoration: none; padding: 3px 9px; border-radius: 6px; border: 1px solid transparent; font-size: 13px; }

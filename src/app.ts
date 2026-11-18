@@ -35,6 +35,7 @@ import type { SessionLog } from './session-log.js';
 import type { PersistedState, StateStore } from './state-store.js';
 import { FLOOR_DB, round1 } from './util/db.js';
 import { TrafficMeter, healthKeysIn, type TrafficSnapshot } from './traffic.js';
+import { INTENSITY_LABEL, type Intensity, isIntensity } from './leveler/intensity.js';
 
 export type SourceKind = 'mesa' | 'simulador';
 
@@ -117,6 +118,8 @@ export interface BusChoice {
   name: string;
   stereo: boolean;
   mode: Mode;
+  /** força do ajuste automático (quando o modo é "automatico") */
+  intensity: Intensity;
 }
 
 export interface ViewedBus {
@@ -128,6 +131,8 @@ export interface ViewedBus {
   outDB?: number;
   /** tempo de análise do ajuste automático desta saída (s) */
   averagingSec: number;
+  /** força do ajuste automático: suave, moderado ou agressivo */
+  intensity: Intensity;
   masterDB?: number;
   channels: ChannelSnapshot[];
   fx: FxSnapshot[];
@@ -271,7 +276,7 @@ type WireDB = number | null;
 
 export type Command =
   | { type: 'view'; bus?: number; layer?: string | null; detail?: string | null }
-  | { type: 'setMode'; bus: number; mode: Mode }
+  | { type: 'setMode'; bus: number; mode: Mode; intensity?: Intensity }
   | { type: 'capture'; bus: number }
   | { type: 'restore'; bus: number }
   | { type: 'setEnabled'; bus: number; key: string; enabled: boolean }
@@ -710,13 +715,18 @@ export class App {
   private addController(bus: number): void {
     let mode =
       this.persisted.modes?.[String(bus)] ?? (this.inList(this.cfg.streamAuxes, bus) ? this.cfg.initialMode : 'desligado');
+    // a tela não tem mais "Só sugerir" (o usuário pediu Desligado / Suave / Moderado / Agressivo):
+    // quem estava nele volta como Desligado
+    if (mode === 'observar') mode = 'desligado';
     // saída ainda não testada nunca começa corrigindo sozinha (precisa liberar com aviso de risco)
     if (mode === 'automatico' && !this.isSafeBus(bus)) {
-      mode = 'observar';
-      this.event(`⚠ ${this.labelOf(bus)} estava em "Ajustando" mas não está entre as saídas testadas: voltou para "Só sugerir"`);
+      mode = 'desligado';
+      this.event(`⚠ ${this.labelOf(bus)} estava corrigindo sozinha mas não está entre as saídas testadas: voltou para "Desligado"`);
     }
     const leveler = new AuxLeveler(bus, this.cfg.leveler);
     const follower = new FxFollower(bus, this.cfg.leveler);
+    const intensity = this.persisted.intensity?.[String(bus)];
+    if (isIntensity(intensity)) leveler.setIntensity(intensity);
     leveler.setMode(mode);
     follower.setMode(mode);
     const c: BusController = { bus, leveler, follower, unsubs: [], mode };
@@ -1167,13 +1177,19 @@ export class App {
       case 'setMode': {
         const c = this.requireBus(ctx, cmd.bus);
         if (!MODES.includes(cmd.mode)) throw new CommandError('Modo inválido.');
+        if (cmd.intensity !== undefined && !isIntensity(cmd.intensity)) throw new CommandError('Intensidade inválida.');
         c.mode = cmd.mode;
         c.leveler.setMode(cmd.mode);
         c.follower.setMode(cmd.mode);
+        if (cmd.intensity) {
+          c.leveler.setIntensity(cmd.intensity);
+          (this.persisted.intensity ??= {})[String(cmd.bus)] = cmd.intensity;
+        }
         (this.persisted.modes ??= {})[String(cmd.bus)] = cmd.mode;
         this.dirty = true;
-        this.event(`${who}: ${this.labelOf(cmd.bus)} em modo ${cmd.mode}`);
-        this.log.write('modo', { bus: cmd.bus, mode: cmd.mode, quem: who });
+        const what = cmd.mode === 'automatico' ? `ajuste automático ${INTENSITY_LABEL[c.leveler.intensity].toUpperCase()}` : `modo ${cmd.mode}`;
+        this.event(`${who}: ${this.labelOf(cmd.bus)} em ${what}`);
+        this.log.write('modo', { bus: cmd.bus, mode: cmd.mode, intensidade: c.leveler.intensity, quem: who });
         return;
       }
       case 'capture': {
@@ -1823,6 +1839,7 @@ export class App {
         name: b.name,
         stereo: b.linkedWith !== undefined,
         mode: this.controllers.get(b.id)?.mode ?? 'desligado',
+        intensity: this.controllers.get(b.id)?.leveler.intensity ?? 'suave',
       }));
   }
 
@@ -1900,6 +1917,7 @@ export class App {
         stereo: info?.linkedWith !== undefined,
         mode: c.mode,
         averagingSec: c.leveler.averagingSec,
+        intensity: c.leveler.intensity,
         outDB: out === undefined ? undefined : round1(out),
         masterDB: c.masterDB === undefined || !Number.isFinite(c.masterDB) ? undefined : round1(c.masterDB),
         channels: c.leveler.snapshot(now),
