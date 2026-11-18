@@ -115,7 +115,7 @@ npm run diagnostico
 
 ### Mixagem
 
-A tela vai de cima para baixo: barra de cima, linha **entradas da mesa**, **abas** (o que os faders mexem) e os **faders**. Em cima ficam só essas duas linhas, para os faders aparecerem grandes. Embaixo dos faders, a tela se divide em duas metades: à esquerda os **controles** (ajuste automático, volume ideal, presets) e à direita o **efeito acompanha** (um efeito por linha).
+A tela vai de cima para baixo: barra de cima, linha **entradas da mesa**, **abas** (o que os faders mexem) e os **faders**. Em cima ficam só essas duas linhas, para os faders aparecerem grandes. Embaixo dos faders ficam mais 2 linhas: os **controles** (ajuste automático, volume ideal, presets) e o **efeito acompanha** (os 4 efeitos lado a lado).
 
 **A cor da tela mostra o que os faders estão mexendo** (como na Ui24R): **avermelhado = entrada (ganho)**, **escuro = master (salão)**, **alaranjado = auxiliares** (live, fones), **azulado = efeitos (envios)**. Assim fica claro quando você trocou de controle.
 
@@ -143,7 +143,7 @@ A tela vai de cima para baixo: barra de cima, linha **entradas da mesa**, **abas
 
 As faixas rosa são os **retornos dos efeitos** nesta saída (o Copiloto não mexe neles sozinho). No canto direito fica o **master** da saída.
 
-**Controles** (embaixo dos faders, metade esquerda), cada um numa caixa com cor própria; o botão **?** explica cada uma:
+**Controles** (embaixo dos faders), cada um numa caixa com cor própria; o botão **?** explica cada uma:
 
 | Seção | O que faz |
 |---|---|
@@ -152,7 +152,7 @@ As faixas rosa são os **retornos dos efeitos** nesta saída (o Copiloto não me
 | **Volume ideal** | A referência do ajuste automático. *Gravar atuais*: o volume de agora de cada canal vira o ideal. *Pelo tipo*: calcula a partir da voz principal (backs ~5 dB abaixo, bumbo/baixo ~6, violão/teclado ~8, pratos ~12). *Desfazer*: volta os envios para antes das correções (pânico). |
 | **Presets** | Um botão para cada mixagem salva desta saída (ex.: Música, Fala, Avisos): clique para carregar com fade suave; o ativo fica verde. *+ novo* salva a mixagem atual, ↻ atualiza o ativo, × apaga o ativo. |
 
-**Efeito acompanha** (embaixo dos faders, metade direita; sempre visível para quem pode mexer nos efeitos; funciona sozinho, não importa o que está na tela): uma linha por efeito, com duas perguntas: **de qual saída copiar o fader** de cada canal (a live, o master ou outro aux) e **com quanto** (*não copiar, igual, −2, −4, −8, −10, −15, −20 dB* ou *manter*). Veja "Efeito acompanha" acima.
+**Efeito acompanha** (última linha, os 4 efeitos lado a lado; sempre visível para quem pode mexer nos efeitos; funciona sozinho, não importa o que está na tela): cada efeito tem duas caixinhas: **de qual saída copiar o fader** de cada canal (a live, o master ou outro aux) e **com quanto** (*não copiar, igual, −2, −4, −8, −10, −15, −20 dB* ou *manter*). Quando o efeito está acompanhando, a caixinha "com quanto" fica azul. Veja "Efeito acompanha" acima.
 
 **Janela do canal** (clique na engrenagem **⚙** em cima do canal; ✕, Esc ou clique fora fecham):
 - **Todos os volumes do canal em faders grandes:** master (salão), esta saída, efeitos F1–F4 e os outros auxiliares liberados. Os efeitos que tocam no salão ficam bloqueados para quem não tem o master.

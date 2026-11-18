@@ -976,18 +976,26 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
 .mixer { border-top: 2px solid var(--mode); border-top-left-radius: 0; border-top-right-radius: 0; }
 
 
-/* ================= embaixo dos faders: duas metades (controles | efeito acompanha) ================= */
-/* Em cima ficam só 2 linhas (menu e entradas da mesa), para as abas e os faders aparecerem bem. */
+/* ================= embaixo dos faders: no máximo 2 linhas ================= */
+/* Em cima ficam só 2 linhas (menu e entradas da mesa) e embaixo outras 2, para os faders ficarem grandes:
+   linha 1 = ajuste automático, volume ideal, presets · linha 2 = efeito acompanha (os 4 efeitos lado a lado). */
 
-.bottom { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: stretch; }
-.bottom:not(:has(#fxlink-bar:not([hidden]))) { grid-template-columns: minmax(0, 1fr); }
-.bottom .toolbar { padding-top: 8px; gap: 12px 8px; align-content: flex-start; flex-wrap: wrap; }
-.bottom .g-auto, .bottom .g-alvo { order: 1; }
-.bottom .help-btn { order: 2; margin-left: auto; }
-.bottom .g-preset { order: 3; flex: 1 1 100%; }
-.bottom .fxlink-bar { padding: 6px 10px; }
-.bottom .fxlink-rows { grid-template-columns: minmax(0, 1fr); gap: 3px; }
-.bottom .fxlink-row { gap: 6px; }
-.bottom .fxl-name { flex: 0 1 120px; }
-.bottom .fxl-ref select { width: 132px; }
-.bottom .fxlink-row .seg.small button { padding: 2px 5px; }
+.bottom { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+.bottom .toolbar { padding-top: 0; flex-wrap: nowrap; gap: 8px; }
+.bottom .g-preset { flex: 1 1 auto; min-width: 0; }
+.bottom .help-btn { margin-left: 0; flex: 0 0 auto; }
+
+/* efeito acompanha: caixa com o título na borda (igual às outras) e os 4 efeitos numa linha */
+.bottom .fxlink-bar { position: relative; padding: 9px 10px 6px; border-radius: 8px; }
+.bottom .fxlink-title {
+  position: absolute; top: -7px; left: 8px; padding: 0 5px; border-radius: 4px; background: var(--bg);
+  font-size: 9.5px; line-height: 12px; letter-spacing: 0.06em; white-space: nowrap; max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis;
+}
+.bottom .fxlink-rows { display: flex; flex-wrap: nowrap; gap: 14px; }
+.bottom .fxlink-row { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 5px; }
+.bottom .fxl-name { flex: 1 1 auto; min-width: 36px; width: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.bottom .fxl-name b { color: var(--fx); }
+.bottom select.fxl-ref { flex: 0 1 150px; min-width: 64px; width: auto; font-size: 12px; padding: 3px 4px; border-color: color-mix(in srgb, var(--fx) 40%, var(--line)); }
+.bottom select.fxl-off { flex: 0 0 auto; width: 92px; font-size: 12px; padding: 3px 4px; color: var(--muted); }
+.bottom select.fxl-off.on { color: #fff; background: color-mix(in srgb, var(--fx) 35%, var(--panel-2)); border-color: var(--fx); font-weight: 700; }
+.bottom .fxlink-row.is-off select.fxl-ref { opacity: 0.6; }
