@@ -1020,3 +1020,60 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
 
 /* rodapé: legenda dos medidores e das cores dos canais */
 .statusline .type-legend { display: inline-flex; gap: 8px; font-size: 11px; }
+
+
+/* ================= janela do canal SEM barra de rolagem ================= */
+/* Ocupa quase a tela toda; os faders dividem a largura (nenhuma rolagem para o lado), o equalizador
+   fica numa faixa compacta embaixo e a coluna da direita encolhe para caber na altura. */
+
+@media (min-width: 901px) {
+  .channel-modal { width: 96vw; max-width: 1800px; height: 94vh; }
+  .cm-head { padding: 8px 14px; }
+  .cm-num { min-width: 40px; height: 40px; font-size: 18px; }
+  .cm-title h2 { font-size: 20px; }
+  .cm-body { grid-template-columns: minmax(0, 1fr) 300px; overflow: hidden; }
+
+  /* esquerda: faders (crescem) + equalizador (fixo) */
+  .cm-volumes { overflow: hidden; padding: 10px 12px; gap: 8px; }
+  .cm-volumes h3 { margin: 0 0 4px; font-size: 12px; }
+  .cm-volumes .detail-faders { flex: 1 1 auto; height: auto; min-height: 0; overflow: hidden; padding-bottom: 0; gap: 6px; }
+  .cm-volumes .dfader { flex: 1 1 0; min-width: 0; padding: 5px 2px; overflow: hidden; }
+  .cm-volumes .dfader-title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .cm-volumes .dfader-sub { font-size: 10px; min-height: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .cm-volumes .dfader-body { min-height: 0; }
+
+  .cm-eq { flex: 0 0 auto; margin-top: 0; padding-top: 6px; gap: 6px; }
+  .cm-eq h3 { margin: 0; }
+  .eq-wrap { grid-template-columns: minmax(0, 1fr) minmax(0, 2.6fr); gap: 8px; }
+  .eq-graph canvas { height: 104px; }
+  .eq-graph .toggle-btn { align-self: flex-start; padding: 2px 8px; font-size: 12px; }
+  .eq-bands { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .eq-band { padding: 4px 6px; gap: 0; min-width: 0; }
+  .eq-band strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eq-ctl { grid-template-columns: 32px minmax(0, 1fr); }
+  .eq-advice-box { padding: 4px 8px; max-height: 56px; overflow: hidden; }
+  .eq-advice { gap: 2px; }
+  .eq-advice li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* direita: cartões encolhem; os alertas ocupam o que sobrar */
+  .cm-side { overflow: hidden; padding: 10px; gap: 8px; }
+  .cm-side > * { flex: 0 1 auto; min-height: 0; overflow: hidden; }
+  .cm-card { padding: 8px 10px; gap: 6px; }
+  .cm-card h3 { margin: 0 0 2px; font-size: 12px; }
+  .cm-side > .cm-card:has(#d-tips) { flex: 1 1 0; }
+  #d-tips { gap: 4px; overflow: hidden; }
+  #d-tips li { padding: 4px 8px; }
+  #d-tips li strong { font-size: 12px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #d-tips li.more { font-size: 11px; color: var(--muted); border-left-color: var(--line); }
+  #d-status-help { margin: 0; font-size: 11px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .cm-card canvas, .detail-rta canvas { height: 72px; }
+}
+/* tela baixa: a coluna da direita fica mais enxuta (a explicação do estado aparece no título do cartão) */
+@media (min-width: 901px) and (max-height: 720px) {
+  #d-status-help, #d-preamp-note { display: none; }
+  .cm-card { padding: 6px 8px; gap: 4px; }
+  .cm-stats strong { font-size: 12px; }
+  .cm-stats div { padding: 2px; }
+  .cm-side { gap: 6px; padding: 8px; }
+  .cm-card .detail-row .icon-btn, .cm-card .small-btn { padding: 1px 7px; }
+}

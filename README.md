@@ -154,7 +154,7 @@ As faixas rosa são os **retornos dos efeitos** nesta saída (o Copiloto não me
 
 **Efeito acompanha** (embaixo dos faders, 2 efeitos por linha; sempre visível para quem pode mexer nos efeitos; funciona sozinho, não importa o que está na tela): cada efeito pergunta **de qual saída copiar o fader** de cada canal (a live, o master ou outro aux) e **com quanto**, nos botões *não copiar, igual, −2, −4, −8, −10, −15, −20* ou *manter*. Ele só mexe no efeito de um canal quando o fader daquele canal muda; para **alinhar todos os canais agora**, clique de novo na diferença já escolhida (ou responda OK ao escolher). Veja "Efeito acompanha" acima.
 
-**Janela do canal** (clique na engrenagem **⚙** em cima do canal; ✕, Esc ou clique fora fecham):
+**Janela do canal** (clique na engrenagem **⚙** em cima do canal; ✕, Esc ou clique fora fecham). Ocupa quase a tela toda e **não tem barra de rolagem**: os faders dividem a largura, o equalizador fica numa faixa embaixo e os alertas mostram só o título (o detalhe aparece ao passar o mouse; os demais ficam em Dicas):
 - **Todos os volumes do canal em faders grandes:** master (salão), esta saída, efeitos F1–F4 e os outros auxiliares liberados. Os efeitos que tocam no salão ficam bloqueados para quem não tem o master.
 - **Ganho (pré)**, de -6 a +57 dB. Muda o **salão e todas as saídas**, por isso só o admin ou quem tem o master pode mexer, e mudanças grandes pedem confirmação.
 - **Phantom 48V**: só o admin, com confirmação (ligar ou desligar com som aberto dá estalo).

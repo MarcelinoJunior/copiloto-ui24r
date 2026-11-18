@@ -1133,8 +1133,11 @@ function renderDetail(s) {
   const tipBox = $('#d-tips');
   if (tipBox.dataset.sig !== tipSig) {
     tipBox.dataset.sig = tipSig;
+    // sem barra de rolagem: só o título de cada alerta (o detalhe aparece ao passar o mouse), no máximo 3
+    const shown = tips.slice(0, 3);
     tipBox.innerHTML = tips.length
-      ? tips.map((t) => `<li class="${t.severity}"><strong>${escapeHtml(t.title)}</strong><p>${escapeHtml(t.detail)}</p></li>`).join('')
+      ? shown.map((t) => `<li class="${t.severity}" title="${escapeHtml(t.detail)}"><strong>${escapeHtml(t.title)}</strong></li>`).join('') +
+        (tips.length > shown.length ? `<li class="more">+ ${tips.length - shown.length} em Dicas</li>` : '')
       : '<li class="empty"><strong>Nada de errado com este canal.</strong></li>';
   }
 
