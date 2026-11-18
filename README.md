@@ -141,13 +141,13 @@ A tela vai de cima para baixo: barra de cima, **controles** (o que os faders mex
 - **fader**, que é o envio para a saída e fica laranja quando o software mexe;
 - valor e correção.
 
-As faixas rosa são os **retornos dos efeitos** (o botão **ACOMP.** liga o ajuste do retorno do efeito nesta saída). No canto direito fica o **master** da saída.
+As faixas rosa são os **retornos dos efeitos** nesta saída (o Copiloto não mexe neles sozinho). No canto direito fica o **master** da saída.
 
 **Controles** (em cima dos faders), cada um numa caixa com cor própria; o botão **?** explica cada uma:
 
 | Seção | O que faz |
 |---|---|
-| **Mexendo em** | O que os faders controlam. **Entrada · ganho**: o ganho do pré de cada canal (−6 a +57 dB), com o botão **+48V** no lugar do MUTE (só o admin, com confirmação). **Master**: os faders dos canais no salão. **Auxiliares**: os envios para a live ou um fone (par estéreo aparece junto, ex.: AUX 5+6). **FX1 a FX4**: o envio de cada canal para o efeito, com o retorno do efeito no salão no canto direito. Ganho e FX só aparecem para o admin e quem tem o master (mudam o canal inteiro: salão, live e fones); neles, ajuste automático, volume ideal e presets ficam apagados (são das saídas). Cada pessoa vê o seu. |
+| **Abas** (logo acima dos faders, como as de uma planilha) | O que os faders controlam: clique na aba. Ficam sempre numa linha só; nome comprido aparece com "…" (o nome inteiro aparece ao passar o mouse). Uma bolinha verde = "Ajustando", amarela = "Só sugerir". **Entrada · ganho**: o ganho do pré de cada canal (−6 a +57 dB), com o botão **+48V** no lugar do MUTE (só o admin, com confirmação). **Master**: os faders dos canais no salão. **Auxiliares**: os envios para a live ou um fone (par estéreo aparece junto, ex.: AUX 5+6). **FX1 a FX4**: o envio de cada canal para o efeito, com o retorno do efeito no salão no canto direito. Ganho e FX só aparecem para o admin e quem tem o master (mudam o canal inteiro: salão, live e fones); neles, ajuste automático, volume ideal e presets ficam apagados (são das saídas). Cada pessoa vê o seu. |
 | **Ajuste automático de volume** | O software mantém cada canal perto do volume ideal. *Desligado* (só mostra), *Só sugerir* (mostra quanto mexeria, sem mexer), *Ajustando* (corrige devagar). Ao lado, quantos segundos de som ele analisa. Vale só para esta saída. |
 | **Volume ideal** | A referência do ajuste automático. *Gravar atuais*: o volume de agora de cada canal vira o ideal. *Pelo tipo*: calcula a partir da voz principal (backs ~5 dB abaixo, bumbo/baixo ~6, violão/teclado ~8, pratos ~12). *Desfazer*: volta os envios para antes das correções (pânico). |
 | **Presets** | Um botão para cada mixagem salva desta saída (ex.: Música, Fala, Avisos): clique para carregar com fade suave; o ativo fica verde. *+ novo* salva a mixagem atual, ↻ atualiza o ativo, × apaga o ativo. |
@@ -209,7 +209,7 @@ Arquivo [config/config.json](config/config.json):
 | `server.port` | `8124` | Porta do painel (ou `PORT=8081 npm start`). Se outro programa já usa essa porta (ex.: o AmpSim usa a 8080), o Copiloto usa a próxima livre e o atalho acha sozinho |
 | (variável) `COPILOTO_DATA` | `./data` | Outra pasta de dados, ex.: para rodar uma cópia de teste isolada |
 | `streamAuxes` | `[5, 6]` | Saída da live: já começa em `initialMode` e aparece primeiro (confira com `npm run diagnostico`). Par estéreo: pode escrever os dois números ou só um; o Copiloto mexe nos dois lados juntos |
-| `safeBuses` | `[5, 6, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados** até alguém liberar em **Configurações › Travas de segurança** (10 min, 1 h ou 3 h, só para quem liberou). Sem esta linha, tudo fica liberado |
+| `safeBuses` | (sem) | Opcional. Saídas **já testadas** com o Copiloto (ex.: `[5, 6, 9]`). Com esta linha, as outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados** até alguém liberar em **Configurações › Travas de segurança** (10 min, 1 h ou 3 h, só para quem liberou). Sem esta linha (padrão), nada fica travado |
 | `initialMode` | `observar` | Modo inicial dessa saída (`desligado`, `observar` = *Só sugerir*, `automatico` = *Ajustando*); as outras começam desligadas |
 | `leveler.*` | | Limites do automático: tolerância, quanto pode subir/descer, velocidade, pausa depois que o operador mexe, fade dos presets, "efeito acompanha" |
 | `leveler.rescueBelowDB` / `rescueToDB` / `rescueAfterSec` / `rescueMaxBoostDB` | `12` / `8` / `10` / `15` | Voz sumida na live: quantos dB abaixo da voz mais alta disparam, onde fica o novo volume ideal (abaixo da voz mais alta), por quanto tempo precisa ficar baixa e quanto pode subir acima da sua mixagem |

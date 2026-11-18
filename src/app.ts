@@ -659,7 +659,6 @@ export class App {
     this.controllers.set(bus, c);
 
     const saved = this.persisted.auxes[String(bus)] ?? {};
-    const savedFollow = this.persisted.fxFollow?.[String(bus)] ?? {};
 
     for (const ch of this.adapter.listChannels()) {
       leveler.ensureChannel(ch.key, ch.name, saved[ch.key]);
@@ -672,7 +671,9 @@ export class App {
       );
     }
     for (const fx of this.adapter.listFxReturns()) {
-      follower.ensureReturn(fx.key, fx.name, savedFollow[fx.key] ?? true);
+      // o retorno do efeito em cada saída não se mexe sozinho (o usuário pediu: o "efeito acompanha"
+      // é só o envio canal → efeito); o antigo "ACOMP." fica sempre desligado
+      follower.ensureReturn(fx.key, fx.name, false);
       for (const ch of this.adapter.listChannels()) {
         const db = this.fxSends.get(`${fx.key}:${ch.key}`);
         if (db !== undefined) follower.onFxSend(fx.key, ch.key, db);

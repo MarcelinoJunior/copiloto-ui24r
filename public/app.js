@@ -16,15 +16,6 @@ const STATUS_LABEL = {
   'no-limite': 'limite',
 };
 
-const FX_STATUS_LABEL = {
-  desligado: 'fixo',
-  'sem-envio': 'sem envio',
-  'sem-entrada': 'parado',
-  transicao: 'preset',
-  ok: 'ok',
-  acompanhando: 'acomp.',
-};
-
 const STATUS_HELP = {
   desabilitado: 'Automático desligado neste canal (AUTO)',
   'sem-envio': 'O envio deste canal para a saída está fechado ou mutado',
@@ -325,7 +316,7 @@ function render() {
   $('#sim').hidden = !isSim;
   if (s.sim) document.querySelectorAll('[data-scene]').forEach((b) => b.classList.toggle('active', b.dataset.scene === s.sim.scene));
 
-  renderBusSelect(s);
+  renderTabs(s);
   renderPresets(s);
 
   const viewId = layer ? `L:${layer.id}` : s.bus ? `B:${s.bus.bus}` : '';
@@ -347,22 +338,29 @@ function render() {
     .join('');
 }
 
-function renderBusSelect(s) {
-  const sel = $('#bus-select');
+/** Abas (como as de uma planilha): entrada (ganho), master, cada aux e cada efeito. Cabem sempre numa linha. */
+function renderTabs(s) {
+  const nav = $('#out-tabs');
   const current = s.layer ? `l:${s.layer.id}` : s.bus ? `b:${s.bus.bus}` : '';
   const layers = s.layers ?? [];
-  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.stereo, b.mode]), layers, current]);
-  if (sel.dataset.sig === sig) return;
-  sel.dataset.sig = sig;
-  const icon = { automatico: ' ●auto', observar: ' ◐obs', desligado: '' };
-  const opt = (value, text) => `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(text)}</option>`;
-  const group = (label, items) => (items.length ? `<optgroup label="${label}">${items.join('')}</optgroup>` : '');
-  const busText = (b) => (b.id === MASTER_BUS ? 'MASTER · salão' : `${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`) + icon[b.mode];
-  sel.innerHTML =
-    group('Entrada', layers.filter((l) => l.id === 'gain').map((l) => opt(`l:${l.id}`, l.label))) +
-    group('Master', s.buses.filter((b) => b.id === MASTER_BUS).map((b) => opt(`b:${b.id}`, busText(b)))) +
-    group('Auxiliares', s.buses.filter((b) => b.id !== MASTER_BUS).map((b) => opt(`b:${b.id}`, busText(b)))) +
-    group('Efeitos (envios)', layers.filter((l) => l.id !== 'gain').map((l) => opt(`l:${l.id}`, l.label)));
+  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.mode]), layers, current]);
+  if (nav.dataset.sig === sig) return;
+  nav.dataset.sig = sig;
+  const modeDot = { automatico: '<i class="tb-dot auto" title="Ajustando"></i>', observar: '<i class="tb-dot obs" title="Só sugerir"></i>', desligado: '' };
+  const tab = (value, kind, main, sub, title, dot = '') =>
+    `<button type="button" role="tab" class="out-tab k-${kind}${value === current ? ' active' : ''}" data-v="${value}" aria-selected="${value === current}" title="${escapeHtml(title)}">
+      <span class="tb-main">${dot}${escapeHtml(main)}</span><span class="tb-sub">${escapeHtml(sub)}</span></button>`;
+  const html = [];
+  for (const l of layers.filter((x) => x.id === 'gain')) html.push(tab(`l:${l.id}`, 'gain', 'ENTRADA', 'ganho', 'Faders = ganho de cada entrada (salão, live e fones)'));
+  for (const b of s.buses.filter((x) => x.id === MASTER_BUS)) html.push(tab(`b:${b.id}`, 'master', 'MASTER', 'salão', 'Faders = canais no master (som do salão)', modeDot[b.mode]));
+  for (const b of s.buses.filter((x) => x.id !== MASTER_BUS)) {
+    html.push(tab(`b:${b.id}`, 'aux', b.label, b.name, `Faders = envios para ${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`, modeDot[b.mode]));
+  }
+  for (const l of layers.filter((x) => x.id !== 'gain')) {
+    const [num, ...rest] = l.label.split(' · ');
+    html.push(tab(`l:${l.id}`, 'fx', num, rest.join(' · '), `Faders = envio de cada canal para ${l.label}`));
+  }
+  nav.innerHTML = html.join('');
 }
 
 function renderPresets(s) {
@@ -967,15 +965,12 @@ function createFxStrip(bus, fx) {
     name: fx.name,
     key: fx.key.toUpperCase(),
     num: stripNumber(fx.key),
-    toggleLabel: 'ACOMP.',
-    toggleTitle: 'Efeito acompanha os canais: quando um canal desce nesta saída, o efeito dele desce junto',
     dest: isMaster ? 'retorno do efeito no master' : `retorno do efeito em ${bus.label}`,
   });
   strip.name.disabled = true;
   strip.badge = strip.tag;
-  strip.toggle.addEventListener('click', () =>
-    send({ type: 'setFxFollow', bus: bus.bus, key: fx.key, follow: !strip.toggle.classList.contains('on') }),
-  );
+  // o retorno do efeito não se mexe sozinho: sem botão (a linha fica para os faders alinharem)
+  strip.toggle.style.visibility = 'hidden';
   bindMute(strip, bus, fx.key);
   strip.fxl.style.visibility = 'hidden'; // o botão FX é só dos canais
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: fx.key, db }));
@@ -988,21 +983,13 @@ function createFxStrip(bus, fx) {
 function updateFxStrip(strip, fx, s) {
   setStripName(strip, fx.name);
   strip.badge.hidden = true;
-  strip.toggle.classList.toggle('on', fx.follow);
   setMuted(strip, fx.muted);
-  let label = FX_STATUS_LABEL[fx.status] ?? fx.status;
-  const link = s.fxLink && s.bus.bus === s.fxLink.liveBus ? s.fxLink.fx.find((f) => f.key === fx.key) : undefined;
-  if (link && link.offset !== null) {
-    const ref = link.ref === s.fxLink.liveBus ? 'live' : link.ref === MASTER_BUS ? 'mst' : (s.fxLink.refs.find((r) => r.bus === link.ref)?.label.split(' · ')[0] ?? '').replace('AUX ', 'A');
-    label = link.offset === 'manter' ? `segue ${ref}` : link.offset === 0 ? `${ref} =` : `${ref} ${link.offset}`;
-  }
-  if (fx.status === 'acompanhando' && s.bus.mode !== 'automatico') label = 'acomp.?';
-  strip.status.textContent = label;
-  strip.status.className = `status ${fx.status}`;
+  strip.status.textContent = fx.sendDB === undefined ? 'sem envio' : 'retorno';
+  strip.status.className = 'status';
   const instant = fx.rawDB !== undefined && fx.sendDB !== undefined ? fx.rawDB + fx.sendDB : METER_MIN;
   setMeter(strip, instant);
   setFader(strip, fx.sendDB);
-  setDelta(strip.delta, fx.follow ? fx.followDeltaDB : undefined);
+  setDelta(strip.delta, undefined);
 }
 
 function createMasterStrip(bus) {
@@ -1761,12 +1748,13 @@ document.querySelectorAll('[data-mode]').forEach((b) =>
   }),
 );
 
-$('#bus-select').addEventListener('change', (e) => {
-  const [kind, raw] = e.target.value.split(':');
-  if (kind === 'b' && Number(raw) === MASTER_BUS && !confirm('Mostrar e controlar o MASTER mexe no som do SALÃO (faders dos canais). Continuar?')) {
-    e.target.dataset.sig = ''; // volta a seleção anterior no próximo render
-    return;
-  }
+$('#out-tabs').addEventListener('click', (e) => {
+  const t = e.target.closest('.out-tab');
+  if (!t || t.classList.contains('active')) return;
+  const [kind, raw] = t.dataset.v.split(':');
+  if (kind === 'b' && Number(raw) === MASTER_BUS && !confirm('Mostrar e controlar o MASTER mexe no som do SALÃO (faders dos canais). Continuar?')) return;
+  // marca já (o servidor confirma no próximo envio)
+  document.querySelectorAll('.out-tab').forEach((x) => x.classList.toggle('active', x === t));
   $('#detail').hidden = true;
   $('#detail-backdrop').hidden = true;
   if (kind === 'l') {

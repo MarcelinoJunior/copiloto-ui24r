@@ -7,7 +7,6 @@
     "port": 8124
   },
   "streamAuxes": [5, 6],
-  "safeBuses": [5, 6, 9],
   "initialMode": "observar",
   "leveler": {
     "tickMs": 500,

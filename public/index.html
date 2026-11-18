@@ -57,11 +57,6 @@
 
   <!-- controles: o que os faders mexem, ajuste automático, volume ideal, presets -->
   <div class="toolbar" role="toolbar" aria-label="Controles da saída">
-    <div class="tgroup g-saida" title="MEXENDO EM: o que os faders controlam. Entrada = ganho de cada canal; Master = salão; AUX = envios para aquela saída (live, fones); FX = envios de cada canal para o efeito. Cada pessoa vê o seu.">
-      <label class="tlabel" for="bus-select">Mexendo em <span class="ti">ⓘ</span></label>
-      <select id="bus-select"></select>
-    </div>
-
     <div class="tgroup g-auto" title="AJUSTE AUTOMÁTICO DE VOLUME: o software mantém o volume de cada canal perto do volume ideal NESTA saída. Desligado = não faz nada. Só sugerir = mostra quanto mexeria, sem mexer. Ajustando = corrige os envios devagar, dentro dos limites.">
       <span class="tlabel">Ajuste automático de volume <span class="ti">ⓘ</span></span>
       <div class="seg modes" role="radiogroup" aria-label="Ajuste automático de volume nesta saída">
@@ -94,7 +89,7 @@
   </div>
 
   <div id="toolbar-help" class="toolbar-help" hidden>
-    <div class="h g-saida"><strong>Mexendo em</strong> O que os faders controlam. <em>Entrada</em> (vermelho): ganho de cada canal, com +48V. <em>Master</em> (escuro): salão. <em>AUX</em> (laranja): envios para a live ou um fone. <em>FX</em> (azul): envios de cada canal para o efeito. Cada pessoa vê o seu.</div>
+    <div class="h g-saida"><strong>Abas (em cima dos faders)</strong> O que os faders controlam: clique na aba. <em>Entrada</em> (vermelho): ganho de cada canal, com +48V. <em>Master</em> (escuro): salão. <em>AUX</em> (laranja): envios para a live ou um fone. <em>FX</em> (azul): envios de cada canal para o efeito. Cada pessoa vê o seu.</div>
     <div class="h g-auto"><strong>Ajuste automático de volume</strong> O software mantém cada canal perto do volume ideal nesta saída (ex.: o pastor empolgou → o envio dele desce um pouco). <em>Desligado</em>: não faz nada. <em>Só sugerir</em>: mostra embaixo do fader quanto mexeria. <em>Ajustando</em>: corrige devagar.</div>
     <div class="h g-alvo"><strong>Volume ideal</strong> É a referência do ajuste automático. <em>Gravar atuais</em>: com a mixagem soando bem, o volume de cada canal vira o ideal. <em>Pelo tipo</em>: a voz principal vira referência e cada tipo (backs, bumbo, baixo, violão…) fica alguns dB abaixo dela. <em>Desfazer</em>: volta os envios para antes das correções (botão de pânico).</div>
     <div class="h g-preset"><strong>Presets</strong> Mixagens salvas desta saída (ex.: "Música – mais batera", "Fala"). Clicar carrega com fade suave. <em>+ novo</em> salva a mixagem atual, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
@@ -120,6 +115,8 @@
     </span>
   </div>
 
+  <!-- abas (como as de uma planilha): o que os faders mexem -->
+  <nav id="out-tabs" class="out-tabs" role="tablist" aria-label="O que os faders mexem"></nav>
   <main id="mixer" class="mixer"></main>
   <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>
 
