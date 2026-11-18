@@ -1040,7 +1040,13 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
   .cm-volumes .dfader { flex: 1 1 0; min-width: 0; padding: 5px 2px; overflow: hidden; }
   .cm-volumes .dfader-title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .cm-volumes .dfader-sub { font-size: 10px; min-height: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-  .cm-volumes .dfader-body { min-height: 0; }
+  /* textos e selos não encolhem (senão ficam cortados ao meio); só a área do fader se ajusta à altura */
+  .cm-volumes .dfader > * { flex-shrink: 0; }
+  .cm-volumes .dfader > .dfader-body { flex: 1 1 auto; min-height: 0; }
+  .cm-volumes .dfader-title, .cm-volumes .dfader-sub { line-height: 1.25; }
+  /* subtítulo (ex.: F. INSTRUMENTISTA) em até 2 linhas, inteiro, com a mesma altura em todos os faders */
+  .cm-volumes .dfader-sub { white-space: normal; overflow-wrap: normal; word-break: normal; text-overflow: clip; height: 25px; display: block; }
+  .cm-volumes .dfader .send-db { line-height: 1.3; }
 
   .cm-eq { flex: 0 0 auto; margin-top: 0; padding-top: 6px; gap: 6px; }
   .cm-eq h3 { margin: 0; }
@@ -1063,7 +1069,7 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
   .cm-side > .cm-card:has(#d-tips) { flex: 1 1 0; }
   #d-tips { gap: 4px; overflow: hidden; }
   #d-tips li { padding: 4px 8px; }
-  #d-tips li strong { font-size: 12px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #d-tips li strong { font-size: 12px; margin: 0; line-height: 1.3; }
   #d-tips li.more { font-size: 11px; color: var(--muted); border-left-color: var(--line); }
   #d-status-help { margin: 0; font-size: 11px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .cm-card canvas, .detail-rta canvas { height: 72px; }

@@ -1207,6 +1207,23 @@ function renderDetail(s) {
   }
   const box = $('#d-faders');
   if (box.children.length !== used.length || used.some((el, i) => box.children[i] !== el)) box.replaceChildren(...used);
+  fitDetailSubs(used);
+}
+
+/** Subtítulo de cada fader da janela (ex.: "F. INSTRUMENTISTA") inteiro em até 2 linhas: diminui a letra se precisar. */
+function fitDetailSubs(els) {
+  for (const el of els) {
+    const sub = $('.dfader-sub', el);
+    const sig = `${sub.textContent}|${sub.clientWidth}`;
+    if (!sub.clientWidth || sub.dataset.fit === sig) continue;
+    sub.dataset.fit = sig;
+    let size = 10;
+    sub.style.fontSize = `${size}px`;
+    while (size > 7.5 && (sub.scrollHeight > sub.clientHeight + 1 || sub.scrollWidth > sub.clientWidth + 1)) {
+      size -= 0.5;
+      sub.style.fontSize = `${size}px`;
+    }
+  }
 }
 
 $('#d-mute').addEventListener('click', () => {
