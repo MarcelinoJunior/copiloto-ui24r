@@ -131,6 +131,7 @@
   }
 
   window.renderBypass = function (s, send) {
+    window.renderSaude?.(s); // janela "Saúde da mesa" (saude.js)
     if (!s.bypass) return;
     last = { s, send };
     renderUpdate(s);

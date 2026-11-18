@@ -34,6 +34,7 @@ import type { PresetStore } from './preset-store.js';
 import type { SessionLog } from './session-log.js';
 import type { PersistedState, StateStore } from './state-store.js';
 import { FLOOR_DB, round1 } from './util/db.js';
+import { TrafficMeter, healthKeysIn, type TrafficSnapshot } from './traffic.js';
 
 export type SourceKind = 'mesa' | 'simulador';
 
@@ -61,6 +62,28 @@ export interface ClientView {
   /** canal aberto no painel do canal */
   detail?: string;
 }
+
+/** Janela "Saúde da mesa". */
+export interface MixerHealthInfo {
+  /** comandos que o Copiloto mandou para a mesa (cada mexida = 1), com o total por tipo */
+  writes: TrafficSnapshot & { byKind: { kind: string; label: string; count: number }[] };
+  /** mensagens de alteração (SETD) que saíram de fato pela rede para a mesa real (um par estéreo conta 2) */
+  sent?: TrafficSnapshot;
+  /** dados de saúde que a mesa mandar (temperatura, CPU…); a Ui24R hoje não manda nenhum */
+  keys: { key: string; value: string; t: number }[];
+}
+
+/** Nome de cada tipo de comando na janela "Saúde da mesa". */
+const WRITE_KIND_LABEL: Record<string, string> = {
+  setSendDB: 'faders e envios',
+  setSendMute: 'mute',
+  setFxSendDB: 'envios para efeitos',
+  setBusMasterDB: 'master das saídas',
+  setGainDB: 'ganho',
+  setPhantom: 'phantom 48V',
+  setEqRaw: 'equalizador',
+  testWrite: 'teste de comando',
+};
 
 /** Faders que não são de uma saída: ganho das entradas ou envios para um efeito. */
 export interface LayerView {
@@ -233,6 +256,8 @@ export interface AppSnapshot {
   fxLink: FxLinkInfo;
   /** versão nova no GitHub (aviso no topo; atualizar é só do admin) */
   update?: UpdateStatus & { allowed: boolean };
+  /** janela "Saúde da mesa": quanto o Copiloto manda para a mesa e o que a mesa informa */
+  mixerHealth: MixerHealthInfo;
   /** botão de pânico: ligado = o Copiloto não manda nada para a mesa, só monitora */
   bypass: BypassState & { blocked: number; allowLabels: string[] };
   tips: Tip[];
@@ -377,6 +402,11 @@ export class App {
   private readonly busSends = new Map<number, Map<string, LiveSend>>();
   /** liberações de risco por pessoa (nome de usuário): escopo ("bus:N" ou "canal") → até quando (ms) */
   private readonly riskAcks = new Map<string, Record<string, number>>();
+  /** saúde da mesa: comandos do Copiloto (chamadas), mensagens SETD enviadas (mesa real) e dados de saúde que a mesa mandar */
+  private readonly writeMeter = new TrafficMeter();
+  private readonly writeKinds = new Map<string, number>();
+  private readonly sentMeter = new TrafficMeter();
+  private readonly healthKeys = new Map<string, { value: string; t: number }>();
   /** EQ de cada entrada, como a mesa guarda (0..1) */
   private readonly eqRaw = new Map<string, Record<string, number>>();
   /** senha da mesa (só para conferência) e último teste de comando */
@@ -426,7 +456,10 @@ export class App {
           return (...args: unknown[]) => {
             // exceção do bypass: só envios/mute/master de um aux liberado (nunca EQ, ganho, phantom, FX ou o salão)
             const busScoped = prop === 'setSendDB' || prop === 'setSendMute' || prop === 'setBusMasterDB';
-            if (!this.bypass.on || (busScoped && this.bypassAllows(args[0] as number))) return fn.apply(target, args);
+            if (!this.bypass.on || (busScoped && this.bypassAllows(args[0] as number))) {
+              this.countWrite(prop);
+              return fn.apply(target, args);
+            }
             this.blockedWrites++;
             return prop === 'testWrite' ? Promise.resolve({ detail: 'bypass ligado: nada é enviado para a mesa' }) : undefined;
           };
@@ -454,7 +487,38 @@ export class App {
     raw.onRawMessage(() => {
       if (adapter === this.adapter) this.health.onMessage();
     });
+    this.healthKeys.clear();
+    raw.onTraffic?.((dir, msg) => {
+      if (adapter !== this.adapter) return;
+      const now = Date.now();
+      if (dir === 'out') {
+        const sets = msg.match(/SET[DS]\^/g)?.length ?? 0;
+        if (sets) this.sentMeter.add(now, sets);
+      } else {
+        for (const [key, value] of healthKeysIn(msg)) this.healthKeys.set(key, { value, t: now });
+      }
+    });
     return adapter;
+  }
+
+  /** Comando do Copiloto que chegou à mesa (não conta o que o bypass barrou). */
+  private countWrite(kind: string): void {
+    this.writeMeter.add(Date.now());
+    this.writeKinds.set(kind, (this.writeKinds.get(kind) ?? 0) + 1);
+  }
+
+  private mixerHealthInfo(now: number): MixerHealthInfo {
+    const total = (k: string) => this.writeKinds.get(k) ?? 0;
+    return {
+      writes: {
+        ...this.writeMeter.snapshot(now),
+        byKind: Object.entries(WRITE_KIND_LABEL)
+          .map(([kind, label]) => ({ kind, label, count: total(kind) }))
+          .filter((k) => k.count > 0),
+      },
+      sent: this.kind === 'mesa' ? this.sentMeter.snapshot(now) : undefined,
+      keys: [...this.healthKeys].map(([key, v]) => ({ key, value: v.value, t: v.t })),
+    };
   }
 
   async start(): Promise<void> {
@@ -1879,6 +1943,7 @@ export class App {
       web: { lan: this.cfg.server.host === '0.0.0.0' || this.cfg.server.host === '::', port: this.cfg.server.port },
       fxLink: this.fxLinkInfo(user),
       update: this.updater ? { ...this.updater.status(), allowed: user.role === 'admin' } : undefined,
+      mixerHealth: this.mixerHealthInfo(now),
       safety: {
         safeBuses: this.safeOutputs(),
         safeLabels: (this.safeOutputs() ?? []).map((b) => this.labelOf(b)),

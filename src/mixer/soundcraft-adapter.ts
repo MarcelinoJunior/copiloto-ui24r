@@ -145,6 +145,11 @@ export class SoundcraftAdapter implements MixerAdapter {
     this.ui.conn.inbound$.subscribe(() => cb());
   }
 
+  onTraffic(cb: (dir: 'in' | 'out', msg: string) => void): void {
+    this.ui.conn.inbound$.subscribe((msg) => cb('in', msg));
+    this.ui.conn.outbound$.subscribe((msg) => cb('out', msg));
+  }
+
   accessState(): AccessState {
     const keys = Object.keys(this.state).filter((k) => ACCESS_KEY.test(k));
     const passwords = keys

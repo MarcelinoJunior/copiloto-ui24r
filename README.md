@@ -120,7 +120,7 @@ A tela vai de cima para baixo, com o máximo de espaço para os faders: barra de
 **A cor da tela mostra o que os faders estão mexendo** (como na Ui24R): **avermelhado = entrada (ganho)**, **escuro = master (salão)**, **alaranjado = auxiliares** (live, fones), **azulado = efeitos (envios)**. Assim fica claro quando você trocou de controle.
 
 **Barra de cima:**
-- abas Mixagem, Análise, Configurações e Pessoas;
+- abas Mixagem, Análise, Configurações, Pessoas e **♥ Saúde da mesa** (abre uma janela: quantos comandos o Copiloto manda para a Ui24R por segundo, com pico, total, gráfico do último minuto e o tipo de cada comando; tempo de resposta e dados chegando da mesa; e temperatura/CPU, se a mesa informar: a Ui24R hoje não informa pela conexão de controle);
 - controles do simulador (só aparecem no simulador);
 - aviso **⚠ senha padrão** (enquanto o admin usar a senha `admin`; clique para trocar);
 - selo da mesa (verde = mesa real com o tempo de resposta; roxo = simulador);

@@ -110,6 +110,11 @@ export interface MixerAdapter {
   onVu(cb: (frame: VuFrame) => void): void;
   /** Qualquer mensagem recebida da mesa (para medir a saúde da conexão). Não inclui o que o Copiloto envia. */
   onRawMessage(cb: () => void): void;
+  /**
+   * Texto cru de cada mensagem trocada com a mesa ("in" = chegou, "out" = o Copiloto mandou).
+   * Opcional (só a mesa real tem rede): usado na janela "Saúde da mesa".
+   */
+  onTraffic?(cb: (dir: 'in' | 'out', msg: string) => void): void;
   /** Controle de acesso informado pela mesa (a conexão de controle não pede senha). */
   accessState(): AccessState;
   /** Confere se a mesa aceita comandos, sem mudar o som (ver WriteTest). */
