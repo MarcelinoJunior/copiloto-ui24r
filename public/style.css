@@ -1122,3 +1122,33 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
 .hd-kinds, .hd-keys { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; font-size: 13px; }
 .hd-kinds li, .hd-keys li { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 2px 0; }
 @media (max-width: 760px) { .hd-body { grid-template-columns: 1fr; } .hd-cmds { grid-row: auto; } }
+
+
+/* ================= cabeçalho das faixas compacto (mais curso para o fader) ================= */
+/* engrenagem menor; etiqueta mais baixa; 48V por cima da etiqueta; AUTO | MUTE (| FX) numa linha só */
+
+.strip { position: relative; }
+.strip-top { height: 18px; }
+.gear-btn { height: 15px; font-size: 11px; }
+.strip .strip-name { height: 45px; min-height: 45px; padding: 2px 2px 1px; gap: 1px; border-top-width: 3px; }
+.sn-num { font-size: 15px; line-height: 1.15; }
+.sn-name { height: 22px; line-height: 1.05; }
+.strip-sub { height: 11px; }
+.strip .status { font-size: 8.5px; }
+/* selo 48V sobre o canto da etiqueta, sem linha própria */
+.strip-tag { position: absolute; top: 20px; right: 2px; width: auto; height: auto; z-index: 1; pointer-events: none; }
+.strip-tag .tag-text:empty { display: none; }
+.strip-tag .tag-text.p48 { background: var(--bad); color: #fff; border-color: var(--bad); font-size: 7.5px; padding: 0 2px; }
+/* AUTO | MUTE (| FX) lado a lado */
+.strip-btns { flex: 0 0 auto; width: 100%; display: flex; gap: 2px; }
+.strip-btns > button { flex: 1 1 0; min-width: 0; width: auto; height: 15px; padding: 0; font-size: 7.5px; letter-spacing: -0.3px; border-radius: 3px; overflow: hidden; white-space: nowrap; }
+.strip-btns > .fxl-btn { flex: 0 0 auto; padding: 0 2px; }
+.strip-btns > [hidden] { display: none; }
+
+/* faixa estreita: "A" e "M" no lugar de AUTO e MUTE (nunca cortado) */
+.strip { container-type: inline-size; container-name: strip; }
+.lbl-short { display: none; }
+@container strip (max-width: 54px) {
+  .strip-btns .lbl-full { display: none; }
+  .strip-btns .lbl-short { display: inline; font-size: 9px; }
+}

@@ -592,8 +592,8 @@ function createLayerStrip(layer, ch) {
     map: isGain ? GAIN_MAP : undefined,
   });
   strip.kind = 'ch';
-  strip.toggle.style.visibility = 'hidden'; // sem ajuste automático aqui; mantém os faders alinhados
-  strip.fxl.style.visibility = 'hidden';
+  strip.toggle.hidden = true; // sem ajuste automático aqui (o +48V/MUTE usa a linha toda)
+  strip.fxl.hidden = true;
   strip.gear.hidden = false;
   strip.gear.title = `Abrir ${ch.name}: ganho, volumes (salão, saídas, FX1 a FX4) e equalizador`;
   strip.gear.addEventListener('click', () => openDetail(ch.key));
@@ -648,7 +648,7 @@ function createReturnStrip(layer) {
   strip.kind = 'fx';
   setStripGroup(strip, 'fx');
   strip.toggle.style.visibility = 'hidden';
-  strip.fxl.style.visibility = 'hidden';
+  strip.fxl.hidden = true;
   strip.mute.title = 'Muta/desmuta o retorno do efeito no salão';
   strip.mute.addEventListener('click', () => send({ type: 'setMute', bus: MASTER_BUS, key: ret.key, muted: !strip.mute.classList.contains('on') }));
   bindFader(strip, (db) => send({ type: 'setSend', bus: MASTER_BUS, key: ret.key, db }));
@@ -787,9 +787,11 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     <button class="strip-name" type="button" tabindex="-1"><span class="sn-num"></span><span class="sn-name"></span></button>
     <div class="strip-sub"><span class="status"></span></div>
     <div class="strip-tag"><span class="tag-text"></span></div>
-    <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
-    <button class="mute-btn" type="button">MUTE</button>
-    <button class="fxl-btn" type="button" title="Este canal acompanha os efeitos da live (clique para ignorar)">FX</button>
+    <div class="strip-btns">
+      <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel === 'AUTO' ? '<span class="lbl-full">AUTO</span><span class="lbl-short">A</span>' : toggleLabel}</button>
+      <button class="mute-btn" type="button"><span class="lbl-full">MUTE</span><span class="lbl-short">M</span></button>
+      <button class="fxl-btn" type="button" title="Este canal acompanha os efeitos da live (clique para ignorar)" hidden>FX</button>
+    </div>
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
       ${scaleHtml(map)}
@@ -955,7 +957,7 @@ function updateChannelStrip(strip, ch, s) {
   // botão FX: só na live e com algum efeito acompanhando
   const fl = s.fxLink;
   const linkHere = Boolean(fl && s.bus.bus === fl.liveBus && fl.fx.some((f) => f.offset !== null));
-  strip.fxl.style.visibility = linkHere ? 'visible' : 'hidden';
+  strip.fxl.hidden = !linkHere;
   const ignored = Boolean(fl?.ignore.includes(ch.key));
   strip.fxl.classList.toggle('on', !ignored);
   strip.fxl.textContent = ignored ? 'FX ✕' : 'FX';
@@ -998,7 +1000,7 @@ function createFxStrip(bus, fx) {
   // o retorno do efeito não se mexe sozinho: sem botão (a linha fica para os faders alinharem)
   strip.toggle.style.visibility = 'hidden';
   bindMute(strip, bus, fx.key);
-  strip.fxl.style.visibility = 'hidden'; // o botão FX é só dos canais
+  strip.fxl.hidden = true; // o botão FX é só dos canais
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: fx.key, db }));
   strip.kind = 'fx';
   setStripGroup(strip, 'fx');
@@ -1032,7 +1034,7 @@ function createMasterStrip(bus) {
   strip.toggle.disabled = true;
   strip.toggle.title = 'Volume geral desta saída: não muda o equilíbrio entre os canais';
   strip.mute.style.visibility = 'hidden'; // mantém o fader alinhado com os canais
-  strip.fxl.style.visibility = 'hidden';
+  strip.fxl.hidden = true;
   bindFader(strip, (db) => send({ type: 'setBusMaster', bus: bus.bus, db }));
   strip.kind = 'master';
   setStripGroup(strip, isMaster ? 'mst' : 'bus');

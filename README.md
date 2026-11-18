@@ -135,8 +135,8 @@ A tela vai de cima para baixo, com o máximo de espaço para os faders: barra de
 - a **engrenagem ⚙** em cima: abre a janela do canal (ganho, volumes do salão, das saídas e dos efeitos FX1 a FX4, e o equalizador);
 - uma **etiqueta no topo com o número grande e o nome**, colorida pelo tipo de som: **azul = voz, verde = instrumento, laranja = bateria, cinza = outros**. O tipo vem do nome do canal, do áudio (modo USB) ou do botão **🎤 É voz?** na janela do canal. Nomes longos que não cabem são separados por sílaba (GUI-TARRA);
 - **estado** (ok, corrige, silêncio, operador…; passe o mouse para a explicação);
-- etiqueta **48V** quando o phantom está ligado;
-- **AUTO** (ajuste automático só deste canal) e **MUTE** (vermelho = mutado nesta saída);
+- selo **48V** no canto da etiqueta quando o phantom está ligado;
+- numa linha só: **AUTO** (ajuste automático só deste canal), **MUTE** (vermelho = mutado nesta saída) e, na live, **FX** (o canal acompanha os efeitos). Em faixas estreitas aparecem como **A** e **M**;
 - **medidor**: verde = agora, azul = média, branco = volume ideal;
 - **fader**, que é o envio para a saída e fica laranja quando o software mexe;
 - valor e correção.
