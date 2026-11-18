@@ -1,6 +1,6 @@
 {
   "name": "copiloto-ui24r",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "Copiloto de som para a Soundcraft Ui24R: ajuste automático dos auxiliares da transmissão ao vivo",

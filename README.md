@@ -127,9 +127,10 @@ A tela vai de cima para baixo: barra de cima, **entradas da mesa** (os canais), 
 - **⏻ Desligar o Copiloto** (só o admin; também nas telas Análise e Conexão): fecha o programa para todo mundo depois de confirmar. Os envios da mesa ficam como estão. Para ligar de novo, use o ícone *Abrir Copiloto*;
 - **⚙** com o seu usuário (trocar senha, sair).
 
-**Entradas da mesa:** a linha logo acima dos faders diz qual saída você está mixando (ex.: *ENTRADAS DA MESA • AUX 5+6 · LIVE*). Ao **passar o mouse ou arrastar um fader**, a faixa acende e o quadro ao lado mostra em destaque **qual entrada é** (número, nome, valor e destino, ex.: *20 JAQUE −34,1 dB · voz · envio para AUX 5+6*). Na mesma linha ficam **Tela** (modo de visualização; ✎ cria: quantos faders, quais canais) e **Expandir canal** (clique no nome abre a janela do canal).
+**Entradas da mesa:** a linha logo acima dos faders diz qual saída você está mixando (ex.: *ENTRADAS DA MESA • AUX 5+6 · LIVE*). Ao **passar o mouse ou arrastar um fader**, a faixa acende e o quadro ao lado mostra em destaque **qual entrada é** (número, nome, valor e destino, ex.: *20 JAQUE −34,1 dB · voz · envio para AUX 5+6*). Na mesma linha fica **Tela** (modo de visualização; ✎ cria: quantos faders, quais canais).
 
 **Cada faixa de canal mostra:**
+- a **engrenagem ⚙** em cima: abre a janela do canal (ganho, volumes do salão, das saídas e dos efeitos FX1 a FX4, e o equalizador);
 - uma **etiqueta no topo com o número grande e o nome**, colorida pelo tipo de som: **azul = voz, verde = instrumento, laranja = bateria, cinza = outros**. O tipo vem do nome do canal, do áudio (modo USB) ou do botão **🎤 É voz?** na janela do canal. Nomes longos que não cabem são separados por sílaba (GUI-TARRA);
 - **estado** (ok, corrige, silêncio, operador…; passe o mouse para a explicação);
 - etiqueta **48V** quando o phantom está ligado;
@@ -151,7 +152,7 @@ As faixas rosa são os **retornos dos efeitos** (o botão **ACOMP.** liga o ajus
 
 **Efeito acompanha** (na live e no master): uma linha por efeito, com duas perguntas: **de qual saída copiar o fader** de cada canal (a live, o master ou outro aux) e **com quanto** (*não copiar, igual, −2, −4, −8, −10, −15, −20 dB* ou *manter*). Veja "Efeito acompanha" acima.
 
-**Janela do canal** (com *Expandir canal* ligado, clique no nome; ✕, Esc ou clique fora fecham):
+**Janela do canal** (clique na engrenagem **⚙** em cima do canal; ✕, Esc ou clique fora fecham):
 - **Todos os volumes do canal em faders grandes:** master (salão), esta saída, efeitos F1–F4 e os outros auxiliares liberados. Os efeitos que tocam no salão ficam bloqueados para quem não tem o master.
 - **Ganho (pré)**, de -6 a +57 dB. Muda o **salão e todas as saídas**, por isso só o admin ou quem tem o master pode mexer, e mudanças grandes pedem confirmação.
 - **Phantom 48V**: só o admin, com confirmação (ligar ou desligar com som aberto dá estalo).

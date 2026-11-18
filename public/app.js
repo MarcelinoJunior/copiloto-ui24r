@@ -1,7 +1,7 @@
 // Tela de mixagem do Copiloto Ui24R.
 // Cada pessoa vê UMA saída (ex.: AUX 7+8 da live, ou o master): os canais escolhidos no modo de
 // visualização, os efeitos e o master daquela saída no canto. Clicar no nome do canal (com
-// "Expandir canal" ligado) abre todos os volumes daquele canal.
+// A engrenagem ⚙ em cima de cada canal abre a janela do canal (ganho, volumes e equalizador).
 
 const STATUS_LABEL = {
   desabilitado: 'manual',
@@ -430,7 +430,7 @@ const TYPE_TEXT = { voz: 'voz', bat: 'bateria', ins: 'instrumento', out: 'outros
 let touched; // faixa sob o mouse ou sendo arrastada
 
 function showTouch(strip) {
-  if (touched && touched !== strip) touched.el.classList.remove('touch');
+  if (touched && touched !== strip) touched.el.classList.remove('is-touch');
   touched = strip;
   const box = $('#touch');
   if (!strip) {
@@ -438,7 +438,7 @@ function showTouch(strip) {
     box.textContent = 'Passe o mouse ou arraste um fader para ver qual entrada é';
     return;
   }
-  strip.el.classList.add('touch');
+  strip.el.classList.add('is-touch');
   box.className = `touch t-${strip.group ?? 'out'}`;
   const dest = state?.bus ? (state.bus.bus === MASTER_BUS ? 'fader no master (salão)' : `envio para ${state.bus.label}`) : '';
   const what = strip.kind === 'ch' ? `${TYPE_TEXT[strip.group ?? 'out']} · ${dest}` : strip.kind === 'fx' ? `retorno do efeito em ${state?.bus?.label ?? ''}` : 'volume geral da saída';
@@ -640,7 +640,8 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
   el.className = `strip ${cls}`;
   // linhas de altura fixa: assim os faders de canais, efeitos e master ficam alinhados
   el.innerHTML = `
-    <button class="strip-name" type="button"><span class="sn-num"></span><span class="sn-name"></span></button>
+    <div class="strip-top"><button class="gear-btn" type="button" hidden>⚙</button></div>
+    <button class="strip-name" type="button" tabindex="-1"><span class="sn-num"></span><span class="sn-name"></span></button>
     <div class="strip-sub"><span class="status"></span></div>
     <div class="strip-tag"><span class="tag-text"></span></div>
     <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
@@ -663,6 +664,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
   return {
     el,
     name: $('.strip-name', el),
+    gear: $('.gear-btn', el),
     nameText: $('.sn-name', el),
     numText: num,
     fullName: name,
@@ -733,10 +735,11 @@ function createChannelStrip(bus, ch) {
   strip.toggle.addEventListener('click', () =>
     send({ type: 'setEnabled', bus: bus.bus, key: ch.key, enabled: !strip.toggle.classList.contains('on') }),
   );
-  strip.name.addEventListener('click', () => {
-    if (!$('#expand').checked) return toast('Ligue "Expandir canal" (barra de cima) para abrir os controles do canal.');
-    openDetail(ch.key);
-  });
+  // ⚙ em cima do canal: abre a janela do canal (ganho, volumes do salão/saídas/FX1–FX4 e equalizador)
+  strip.gear.hidden = false;
+  strip.gear.title = `Abrir ${ch.name}: ganho, volumes (salão, saídas, FX1 a FX4) e equalizador`;
+  strip.gear.setAttribute('aria-label', `Abrir os controles de ${ch.name}`);
+  strip.gear.addEventListener('click', () => openDetail(ch.key));
   bindMute(strip, bus, ch.key);
   strip.fxl.addEventListener('click', () => send({ type: 'fxlink.ignore', key: ch.key, ignored: strip.fxl.classList.contains('on') }));
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: ch.key, db }));
@@ -1141,7 +1144,6 @@ $('#tips-list').addEventListener('click', (e) => {
   const key = e.target.dataset?.open;
   if (!key) return;
   $('#tips').hidden = true;
-  $('#expand').checked = true;
   openDetail(key);
 });
 document.addEventListener('keydown', (e) => {
@@ -1693,10 +1695,6 @@ $('#preset-delete').addEventListener('click', () => {
 });
 $('#sim-reset').addEventListener('click', () => send({ type: 'sim.reset' }));
 
-$('#expand').addEventListener('change', (e) => {
-  savePrefs({ expand: e.target.checked });
-  if (!e.target.checked) closeDetail();
-});
 $('#logout').addEventListener('click', async () => {
   await api('POST', '/api/logout').catch(() => undefined);
   location.href = '/login.html';
@@ -1758,7 +1756,6 @@ document.addEventListener('click', (e) => {
   $('#user-name').title = `Conta: ${me.username}${me.role === 'admin' ? ' (admin)' : ''}`;
   $('#default-pass').hidden = !data.defaultPassword;
   $('#nav-admin').textContent = me.role === 'admin' ? 'Pessoas' : 'Conta';
-  $('#expand').checked = me.prefs.expand !== false;
   await loadViews(me.prefs.viewId);
   connect();
 })().catch((err) => toast(err.message));
