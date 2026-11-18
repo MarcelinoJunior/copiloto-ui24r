@@ -138,7 +138,7 @@ A tela vai de cima para baixo, com o máximo de espaço para os faders: barra de
 - selo **48V** no canto da etiqueta quando o phantom está ligado;
 - numa linha só: **AUTO** (ajuste automático só deste canal), **MUTE** (vermelho = mutado nesta saída) e, na live, **FX** (o canal acompanha os efeitos). Em faixas estreitas aparecem como **A** e **M**;
 - **medidor**: verde = agora, azul = média, branco = volume ideal;
-- **fader**, que é o envio para a saída e fica laranja quando o software mexe;
+- **fader**, que é o envio para a saída e fica laranja quando o software mexe. Com o ajuste automático ligado (Suave, Moderado ou Agressivo), **duas barrinhas azuis** no trilho mostram até onde o ajuste pode descer e subir aquele canal (mais afastadas quanto mais forte o ajuste);
 - valor e correção.
 
 As faixas rosa são os **retornos dos efeitos** nesta saída (o Copiloto não mexe neles sozinho). No canto direito fica o **master** da saída.

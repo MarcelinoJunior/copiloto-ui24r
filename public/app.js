@@ -795,7 +795,10 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
       ${scaleHtml(map)}
-      <input type="range" class="fader" min="0" max="1000" step="1">
+      <div class="fader-wrap">
+        <input type="range" class="fader" min="0" max="1000" step="1">
+        <i class="lim lim-hi" hidden></i><i class="lim lim-lo" hidden></i>
+      </div>
     </div>
     <div class="send-db"></div>
     <div class="delta"></div>
@@ -823,6 +826,8 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     target: $('.target', el),
     band: $('.band', el),
     fader: $('.fader', el),
+    limHi: $('.lim-hi', el),
+    limLo: $('.lim-lo', el),
     readout: $('.send-db', el),
     delta: $('.delta', el),
     tag: $('.tag-text', el),
@@ -862,6 +867,20 @@ function setMeter(strip, instantDB, avgDB, targetDB, deadbandDB) {
       strip.band.style.height = `${meterPct(targetDB + deadbandDB) - lo}%`;
     }
   }
+}
+
+/** Duas barrinhas no trilho do fader: até onde o ajuste automático pode descer e subir este envio. */
+function setLimits(strip, ch) {
+  const show = Boolean(ch && ch.limitLowDB !== undefined && ch.limitHighDB !== undefined);
+  strip.limLo.hidden = !show;
+  strip.limHi.hidden = !show;
+  if (!show) return;
+  const place = (el, db, what) => {
+    el.style.bottom = `calc(7px + (100% - 14px) * ${dbToPos(db) / 1000})`;
+    el.title = `Ajuste automático: ${what} ${fmt(db)} dB`;
+  };
+  place(strip.limHi, ch.limitHighDB, 'sobe no máximo até');
+  place(strip.limLo, ch.limitLowDB, 'desce no máximo até');
 }
 
 function setDelta(el, value) {
@@ -981,6 +1000,7 @@ function updateChannelStrip(strip, ch, s) {
   const instant = !silent && ch.sendDB !== undefined ? ch.rawDB + ch.sendDB : METER_MIN;
   setMeter(strip, instant, ch.contributionDB, ch.targetDB, s.deadbandDB);
   setFader(strip, ch.sendDB);
+  setLimits(strip, s.bus.mode === 'automatico' && ch.enabled ? ch : undefined);
 
   const applied = ch.sendDB !== undefined && ch.baseSendDB !== undefined ? ch.sendDB - ch.baseSendDB : 0;
   setDelta(strip.delta, s.bus.mode === 'automatico' && !busBypassed(s) ? applied : ch.suggestedDeltaDB);

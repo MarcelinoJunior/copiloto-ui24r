@@ -47,6 +47,13 @@ export interface ChannelSnapshot {
   manualForSec: number;
   /** voz que estava sumida e ganhou um volume ideal novo (pode subir até rescueMaxBoostDB) */
   rescued?: boolean;
+  /** limites do ajuste automático para este envio (dB): o fader mostra as duas barrinhas */
+  limitLowDB?: number;
+  limitHighDB?: number;
+}
+
+function limitsOut(l: { lo: number; hi: number } | undefined): { limitLowDB?: number; limitHighDB?: number } {
+  return l ? { limitLowDB: round1(l.lo), limitHighDB: round1(l.hi) } : {};
 }
 
 /** Uma voz sumida ganhou volume ideal novo (para o registro e a lista de eventos). */
@@ -387,11 +394,19 @@ export class AuxLeveler {
     }
   }
 
-  private decide(ch: ChannelState, send: SendInfo, level: number, target: number, dt: number): SendAction | undefined {
-    const base = Number.isFinite(ch.baseSendDB) ? (ch.baseSendDB as number) : send.db;
-    const lo = base - this.cfg.maxCutDB;
+  /**
+   * Até onde o ajuste automático pode levar o envio deste canal: abaixo/acima da mixagem do
+   * operador (base), conforme a intensidade, nunca acima do teto. Mostrado no fader.
+   */
+  private limits(ch: ChannelState, sendDB: number | undefined): { lo: number; hi: number } | undefined {
+    const base = Number.isFinite(ch.baseSendDB) ? (ch.baseSendDB as number) : sendDB;
+    if (base === undefined || !Number.isFinite(base)) return undefined;
     const boost = ch.rescued ? Math.max(this.cfg.maxBoostDB, this.cfg.rescueMaxBoostDB) : this.cfg.maxBoostDB;
-    const hi = Math.min(base + boost, this.cfg.maxSendDB);
+    return { lo: base - this.cfg.maxCutDB, hi: Math.min(base + boost, this.cfg.maxSendDB) };
+  }
+
+  private decide(ch: ChannelState, send: SendInfo, level: number, target: number, dt: number): SendAction | undefined {
+    const { lo, hi } = this.limits(ch, send.db)!;
 
     const error = level + send.db - target;
     const desired = clamp(send.db - error, lo, hi);
@@ -523,6 +538,7 @@ export class AuxLeveler {
         suggestedDeltaDB: ch.suggestedDeltaDB,
         manualForSec: Math.max(0, Math.ceil((ch.manualUntil - now) / 1000)),
         rescued: ch.rescued,
+        ...limitsOut(this.limits(ch, sendDB)),
       };
     });
   }

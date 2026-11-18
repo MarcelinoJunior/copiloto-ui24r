@@ -39,6 +39,20 @@ describe('intensidade do ajuste automático (suave, moderado, agressivo)', () =>
     expect(l.config.deadbandDB).toBe(base.deadbandDB);
   });
 
+  it('limites mostrados no fader: até onde o ajuste pode descer/subir, conforme a intensidade', () => {
+    const l = new AuxLeveler(5, base);
+    l.ensureChannel('i3', 'MINISTRO');
+    l.onSend('i3', { db: -20, muted: false }, 0);
+    const lim = () => l.snapshot(0).find((c) => c.key === 'i3')!;
+    expect([lim().limitLowDB, lim().limitHighDB]).toEqual([-20 - base.maxCutDB, -20 + base.maxBoostDB]);
+    l.setIntensity('agressivo');
+    const a = intensityConfig(base, 'agressivo');
+    expect([lim().limitLowDB, lim().limitHighDB]).toEqual([-20 - a.maxCutDB, -20 + a.maxBoostDB]);
+    // nunca acima do teto de envio
+    l.onSend('i3', { db: 4, muted: false }, 60_000);
+    expect(lim().limitHighDB).toBeLessThanOrEqual(base.maxSendDB);
+  });
+
   it('só aceita os três nomes', () => {
     expect(isIntensity('moderado')).toBe(true);
     expect(isIntensity('observar')).toBe(false);

@@ -1152,3 +1152,11 @@ body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #
   .strip-btns .lbl-full { display: none; }
   .strip-btns .lbl-short { display: inline; font-size: 9px; }
 }
+
+/* limites do ajuste automático no trilho do fader (Suave / Moderado / Agressivo) */
+.fader-wrap { position: relative; flex: 0 0 auto; display: flex; }
+.lim { position: absolute; left: -4px; right: -4px; height: 0; border-top: 2px solid #4fd1ff; transform: translateY(1px); pointer-events: none; box-shadow: 0 0 4px rgba(79, 209, 255, 0.7); }
+.lim::after { content: ""; position: absolute; right: -2px; top: -4px; border: 3px solid transparent; }
+.lim-hi::after { border-bottom-color: #4fd1ff; top: -8px; }
+.lim-lo::after { border-top-color: #4fd1ff; top: 0; }
+.lim[hidden] { display: none; }
