@@ -10,7 +10,7 @@ Licença: **GPL-3.0** (software livre de cooperação: quem distribuir uma vers�
 
 **[Baixar o instalador mais recente: Copiloto-Setup.exe](https://github.com/MarcelinoJunior/copiloto-ui24r/releases/latest/download/Copiloto-Setup.exe)** · [todas as versões e novidades](https://github.com/MarcelinoJunior/copiloto-ui24r/releases)
 
-Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que precisa e cria o ícone **Copiloto Ui24R** na área de trabalho. O Copiloto abre na **própria janela** (como um programa normal); **fechar a janela desliga o Copiloto**. Enquanto ele estiver aberto, a **mesma tela** fica disponível pela rede para celulares e tablets (cada pessoa com o próprio login): o endereço aparece em **Conexão › Este computador**. Depois de instalado, ele avisa sozinho quando houver versão nova (**Atualizar agora**, no topo da tela). Detalhes em [Instalação](#instalação).
+Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que precisa e cria o ícone **Copiloto Ui24R** na área de trabalho. O Copiloto abre na **própria janela** (como um programa normal); **fechar a janela desliga o Copiloto**. Enquanto ele estiver aberto, a **mesma tela** fica disponível pela rede para celulares e tablets (cada pessoa com o próprio login): o endereço aparece em **Configurações › Este computador**. Depois de instalado, ele avisa sozinho quando houver versão nova (**Atualizar agora**, no topo da tela). Detalhes em [Instalação](#instalação).
 
 ---
 
@@ -46,7 +46,7 @@ Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que prec
 - **Presets por saída** ("Música – mais batera", "Fala"…) com fade suave.
 - **Modos de visualização** salvos no servidor (SQLite): quantos faders cabem na tela e quais canais aparecem.
 - **Pessoas e permissões:** o admin escolhe quais saídas cada pessoa pode usar, para ninguém mexer no auxiliar do outro.
-- **Conexão:** IP da mesa, saúde da conexão (tempo de resposta, perda, dados chegando), troca entre mesa real e **simulador**.
+- **Configurações:** travas de segurança (liberar saídas ainda não testadas), IP da mesa, saúde da conexão (tempo de resposta, perda, dados chegando), troca entre mesa real e **simulador**.
 
 **No modo Áudio USB (conexão física), tela Análise:**
 - **Alerta de microfonia:** acha o tom puro que está crescendo e diz a frequência ("Pastor: microfonia em ~2,5 kHz").
@@ -64,7 +64,7 @@ Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que prec
 
 Baixe o **[Copiloto-Setup.exe](https://github.com/MarcelinoJunior/copiloto-ui24r/releases/latest/download/Copiloto-Setup.exe)** (sempre a versão mais recente) e dê dois cliques. Ele instala sem pedir administrador, já traz o Node.js e as bibliotecas (nada para instalar à parte) e cria os ícones **Abrir Copiloto** e **Fechar Copiloto** na área de trabalho. O Windows pode mostrar "O Windows protegeu o computador" (o instalador não é assinado): clique em **Mais informações › Executar assim mesmo**.
 
-**Atualizações:** o Copiloto confere o GitHub ao ligar e a cada 30 minutos. Quando houver versão nova, aparece uma faixa azul no topo: **Atualizar agora** (só o admin). Ele nunca atualiza sozinho (para não reiniciar no meio do culto). Ao atualizar, baixa a versão nova, mantém os dados (usuários, presets, senha da mesa, `data/`) e reinicia em ~30 s; a página volta sozinha. A tela **Conexão › Versão do Copiloto** mostra a versão instalada e tem *Conferir atualização agora*. Configuração própria deste computador vai em `data/config.json` (a atualização nunca apaga; tem prioridade sobre `config/config.json`).
+**Atualizações:** o Copiloto confere o GitHub ao ligar e a cada 30 minutos. Quando houver versão nova, aparece uma faixa azul no topo: **Atualizar agora** (só o admin). Ele nunca atualiza sozinho (para não reiniciar no meio do culto). Ao atualizar, baixa a versão nova, mantém os dados (usuários, presets, senha da mesa, `data/`) e reinicia em ~30 s; a página volta sozinha. A tela **Configurações › Versão do Copiloto** mostra a versão instalada e tem *Conferir atualização agora*. Configuração própria deste computador vai em `data/config.json` (a atualização nunca apaga; tem prioridade sobre `config/config.json`).
 
 Para montar o instalador (quem desenvolve): `powershell -ExecutionPolicy Bypass -File scripts\montar-instalador.ps1` (precisa do Inno Setup 6; `-Testar` instala, liga e desinstala numa pasta de teste).
 
@@ -84,7 +84,7 @@ Dê dois cliques em **`Criar atalhos na area de trabalho.bat`** (na pasta do pro
 
 **Para desligar: feche a janela** (ou o botão **⏻** no topo, só o admin). Um "vigia" escondido percebe a janela fechada e desliga o programa com calma. Sem Edge nem Chrome, o painel abre no navegador padrão.
 
-**Celulares e tablets:** com `server.host` = `0.0.0.0` (padrão), a mesma tela abre em qualquer aparelho da rede, no endereço mostrado em **Conexão › Este computador** (ex.: `http://192.168.0.117:8124`), cada pessoa com o próprio login. Na primeira vez o Windows pode perguntar se permite o acesso pela rede: escolha **Redes privadas** e **Permitir**. Para deixar só neste computador, use `127.0.0.1`. Em emergência (painel fechado), há o **Fechar Copiloto.bat** na pasta do programa (e no Menu Iniciar, quando instalado pelo Setup). Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Conexão.
+**Celulares e tablets:** com `server.host` = `0.0.0.0` (padrão), a mesma tela abre em qualquer aparelho da rede, no endereço mostrado em **Configurações › Este computador** (ex.: `http://192.168.0.117:8124`), cada pessoa com o próprio login. Na primeira vez o Windows pode perguntar se permite o acesso pela rede: escolha **Redes privadas** e **Permitir**. Para deixar só neste computador, use `127.0.0.1`. Em emergência (painel fechado), há o **Fechar Copiloto.bat** na pasta do programa (e no Menu Iniciar, quando instalado pelo Setup). Se a área de trabalho não aceitar os atalhos, eles são criados na própria pasta do projeto. Os atalhos ligam a **mesa real** (`npm start`); o simulador continua disponível pela tela Configurações.
 
 A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**, que é um driver de hardware do Windows. Só é necessário para o modo Áudio USB, e só se o Windows não reconhecer a mesa sozinho.
 
@@ -100,7 +100,7 @@ A única coisa que não pode vir dentro do programa é o **driver USB da Ui24R**
      npm run sim
      ```
 2. Abra **http://localhost:8124** e entre com usuário **admin** e senha **admin**. Esse usuário é criado sozinho na primeira vez. **Troque a senha** em *Conta*: o projeto é público e todo mundo conhece a senha padrão. Enquanto ela não for trocada, aparece um aviso vermelho.
-3. Em **Conexão**, confira o IP da mesa (padrão `192.168.0.122`; no hotspot da Ui24R costuma ser `10.10.1.1`). O PC precisa estar na mesma rede da mesa.
+3. Em **Configurações**, confira o IP da mesa (padrão `192.168.0.122`; no hotspot da Ui24R costuma ser `10.10.1.1`). O PC precisa estar na mesma rede da mesa.
 4. Em **Pessoas**, cadastre quem vai operar e marque as saídas de cada um (ex.: "live" só com o AUX 7+8).
 5. Na **Mixagem**, escolha a **Saída** (ex.: AUX 7+8 · LIVE), deixe o **Ajuste automático de volume** em *Só sugerir*, faça a mixagem como sempre e clique em **Volume ideal › Gravar volumes atuais** num momento em que estiver soando bem (ou em **Pelo tipo de som**, com a banda e a voz tocando).
 6. A correção mostrada embaixo de cada fader fez sentido? Passe para **Ajustando**. O modo é por saída.
@@ -115,16 +115,18 @@ npm run diagnostico
 
 ### Mixagem
 
-A tela vai de cima para baixo: barra de cima, **entradas da mesa** (os canais), **controles da saída** e **efeito acompanha**. O botão **⇅ controles em cima** (no rodapé) põe os controles acima dos faders, se você preferir (vale só para aquele navegador).
+A tela vai de cima para baixo: barra de cima, **controles** (o que os faders mexem, ajuste automático, volume ideal, presets), **entradas da mesa** (os canais) e **efeito acompanha**.
+
+**A cor da tela mostra o que os faders estão mexendo** (como na Ui24R): **avermelhado = entrada (ganho)**, **escuro = master (salão)**, **alaranjado = auxiliares** (live, fones), **azulado = efeitos (envios)**. Assim fica claro quando você trocou de controle.
 
 **Barra de cima:**
-- abas Mixagem, Análise, Conexão e Pessoas;
+- abas Mixagem, Análise, Configurações e Pessoas;
 - controles do simulador (só aparecem no simulador);
 - aviso **⚠ senha padrão** (enquanto o admin usar a senha `admin`; clique para trocar);
 - selo da mesa (verde = mesa real com o tempo de resposta; roxo = simulador);
 - **Dicas**, com um contador que fica laranja ou vermelho quando há algo importante;
-- **⛔ BYPASS** (botão de pânico, também nas telas Análise e Conexão): um clique e o Copiloto **para de mexer na mesa** e só monitora. Veja abaixo;
-- **⏻ Desligar o Copiloto** (só o admin; também nas telas Análise e Conexão): fecha o programa para todo mundo depois de confirmar. Os envios da mesa ficam como estão. Para ligar de novo, use o ícone *Abrir Copiloto*;
+- **⛔ BYPASS** (botão de pânico, também nas telas Análise e Configurações): um clique e o Copiloto **para de mexer na mesa** e só monitora. Veja abaixo;
+- **⏻ Desligar o Copiloto** (só o admin; também nas telas Análise e Configurações): fecha o programa para todo mundo depois de confirmar. Os envios da mesa ficam como estão. Para ligar de novo, use o ícone *Abrir Copiloto*;
 - **⚙** com o seu usuário (trocar senha, sair).
 
 **Entradas da mesa:** a linha logo acima dos faders diz qual saída você está mixando (ex.: *ENTRADAS DA MESA • AUX 5+6 · LIVE*). Ao **passar o mouse ou arrastar um fader**, a faixa acende e o quadro ao lado mostra em destaque **qual entrada é** (número, nome, valor e destino, ex.: *20 JAQUE −34,1 dB · voz · envio para AUX 5+6*). Na mesma linha fica **Tela** (modo de visualização; ✎ cria: quantos faders, quais canais).
@@ -141,16 +143,16 @@ A tela vai de cima para baixo: barra de cima, **entradas da mesa** (os canais), 
 
 As faixas rosa são os **retornos dos efeitos** (o botão **ACOMP.** liga o ajuste do retorno do efeito nesta saída). No canto direito fica o **master** da saída.
 
-**Controles da saída** (embaixo dos faders), cada um numa caixa com cor própria; o botão **?** explica cada uma:
+**Controles** (em cima dos faders), cada um numa caixa com cor própria; o botão **?** explica cada uma:
 
 | Seção | O que faz |
 |---|---|
-| **Saída** | Qual saída você vê e mixa: aux da live, um retorno ou o master (salão). Par estéreo aparece junto (ex.: AUX 5+6). Cada pessoa vê a sua. |
+| **Mexendo em** | O que os faders controlam. **Entrada · ganho**: o ganho do pré de cada canal (−6 a +57 dB), com o botão **+48V** no lugar do MUTE (só o admin, com confirmação). **Master**: os faders dos canais no salão. **Auxiliares**: os envios para a live ou um fone (par estéreo aparece junto, ex.: AUX 5+6). **FX1 a FX4**: o envio de cada canal para o efeito, com o retorno do efeito no salão no canto direito. Ganho e FX só aparecem para o admin e quem tem o master (mudam o canal inteiro: salão, live e fones); neles, ajuste automático, volume ideal e presets ficam apagados (são das saídas). Cada pessoa vê o seu. |
 | **Ajuste automático de volume** | O software mantém cada canal perto do volume ideal. *Desligado* (só mostra), *Só sugerir* (mostra quanto mexeria, sem mexer), *Ajustando* (corrige devagar). Ao lado, quantos segundos de som ele analisa. Vale só para esta saída. |
 | **Volume ideal** | A referência do ajuste automático. *Gravar atuais*: o volume de agora de cada canal vira o ideal. *Pelo tipo*: calcula a partir da voz principal (backs ~5 dB abaixo, bumbo/baixo ~6, violão/teclado ~8, pratos ~12). *Desfazer*: volta os envios para antes das correções (pânico). |
 | **Presets** | Um botão para cada mixagem salva desta saída (ex.: Música, Fala, Avisos): clique para carregar com fade suave; o ativo fica verde. *+ novo* salva a mixagem atual, ↻ atualiza o ativo, × apaga o ativo. |
 
-**Efeito acompanha** (na live e no master): uma linha por efeito, com duas perguntas: **de qual saída copiar o fader** de cada canal (a live, o master ou outro aux) e **com quanto** (*não copiar, igual, −2, −4, −8, −10, −15, −20 dB* ou *manter*). Veja "Efeito acompanha" acima.
+**Efeito acompanha** (embaixo dos faders, sempre visível para quem pode mexer nos efeitos; funciona sozinho, não importa o que está na tela): uma linha por efeito, com duas perguntas: **de qual saída copiar o fader** de cada canal (a live, o master ou outro aux) e **com quanto** (*não copiar, igual, −2, −4, −8, −10, −15, −20 dB* ou *manter*). Veja "Efeito acompanha" acima.
 
 **Janela do canal** (clique na engrenagem **⚙** em cima do canal; ✕, Esc ou clique fora fecham):
 - **Todos os volumes do canal em faders grandes:** master (salão), esta saída, efeitos F1–F4 e os outros auxiliares liberados. Os efeitos que tocam no salão ficam bloqueados para quem não tem o master.
@@ -165,8 +167,9 @@ As faixas rosa são os **retornos dos efeitos** (o botão **ACOMP.** liga o ajus
 
 Alertas ao vivo, loudness da live, fala × música (troca automática de preset por saída e papel de cada canal), gravação multipista e OBS. Detalhes em [docs/RECURSOS-USB.md](docs/RECURSOS-USB.md).
 
-### Conexão
+### Configurações
 
+- **Travas de segurança:** lista do que ainda não foi testado com o Copiloto (saídas fora de `safeBuses`, e ganho/+48V/EQ/envios para efeitos) com *Liberar* (10 min, 1 h ou 3 h) e *Travar de novo*. A mixagem não mostra nada sobre isso.
 - **De onde vem o som:** mesa real (IP, com **Testar** e **Conectar**) ou simulador. A troca é na hora.
 - **Senha da mesa (Settings › Access):** marque *A mesa tem senha* e digite a senha. A conexão de controle da Ui24R **não pede senha** (só a página da mesa pede), então nada é enviado: o Copiloto guarda a senha só neste PC (`data/conexao.json`) para **conferir** com a que a mesa informa.
 - **Teste de comando:** roda sozinho ao conectar na mesa real (e pelo botão). Mexe no pan do canal 1 numa quantidade impossível de ouvir, volta, e confere por uma segunda conexão se a mesa aceitou. Mostra ✓ OK ou o motivo da falha.
@@ -201,12 +204,12 @@ Arquivo [config/config.json](config/config.json):
 
 | Campo | Padrão | O que é |
 |---|---|---|
-| `mixer.ip` | `192.168.0.122` | IP da mesa (dá para trocar na tela Conexão) |
+| `mixer.ip` | `192.168.0.122` | IP da mesa (dá para trocar na tela Configurações) |
 | `server.host` | `127.0.0.1` | Use `0.0.0.0` para abrir o painel em celulares e tablets da mesma rede (todos precisam de login) |
 | `server.port` | `8124` | Porta do painel (ou `PORT=8081 npm start`). Se outro programa já usa essa porta (ex.: o AmpSim usa a 8080), o Copiloto usa a próxima livre e o atalho acha sozinho |
 | (variável) `COPILOTO_DATA` | `./data` | Outra pasta de dados, ex.: para rodar uma cópia de teste isolada |
 | `streamAuxes` | `[5, 6]` | Saída da live: já começa em `initialMode` e aparece primeiro (confira com `npm run diagnostico`). Par estéreo: pode escrever os dois números ou só um; o Copiloto mexe nos dois lados juntos |
-| `safeBuses` | `[5, 6, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados com aviso de risco** até alguém clicar em *Liberar (risco)* (vale 10 min, só para quem liberou). Sem esta linha, tudo fica liberado |
+| `safeBuses` | `[5, 6, 9]` | Saídas **já testadas** com o Copiloto (ex.: a live e um fone). As outras, o master e os controles do canal inteiro (ganho, phantom, EQ, efeitos) ficam **travados** até alguém liberar em **Configurações › Travas de segurança** (10 min, 1 h ou 3 h, só para quem liberou). Sem esta linha, tudo fica liberado |
 | `initialMode` | `observar` | Modo inicial dessa saída (`desligado`, `observar` = *Só sugerir*, `automatico` = *Ajustando*); as outras começam desligadas |
 | `leveler.*` | | Limites do automático: tolerância, quanto pode subir/descer, velocidade, pausa depois que o operador mexe, fade dos presets, "efeito acompanha" |
 | `leveler.rescueBelowDB` / `rescueToDB` / `rescueAfterSec` / `rescueMaxBoostDB` | `12` / `8` / `10` / `15` | Voz sumida na live: quantos dB abaixo da voz mais alta disparam, onde fica o novo volume ideal (abaixo da voz mais alta), por quanto tempo precisa ficar baixa e quanto pode subir acima da sua mixagem |
@@ -234,10 +237,10 @@ Clique em **⛔ BYPASS** no topo da tela (qualquer pessoa logada pode). A partir
 **Exceção do bypass (testar numa saída só):** com o bypass ligado, a faixa vermelha tem *mexer só em:* — escolha uma saída (ex.: o fone de um músico) e o Copiloto passa a mexer **só nos envios dela** (faders, mute, ajuste automático, presets). EQ, ganho, phantom, efeitos, o salão e as outras saídas continuam protegidos. Ao desligar e religar o bypass, a exceção some.
 
 **Quero usar o Copiloto só na live e no meu fone, por enquanto.**
-Coloque essas saídas em `safeBuses` no `config/config.json` (ex.: `[5, 9]`). Elas aparecem com ✓ no seletor de Saída; as outras aparecem com ⚠ e ficam travadas com uma faixa amarela explicando o risco. Se precisar mexer numa delas, clique em *Liberar esta saída por 10 min (risco)*. Ganho, phantom, EQ e envios para efeitos (que mudam o canal inteiro) têm a mesma trava na janela do canal. Uma saída fora da lista nunca volta ligada em "Ajustando" depois de reiniciar.
+Coloque essas saídas em `safeBuses` no `config/config.json` (ex.: `[5, 9]`). As outras ficam travadas, sem aviso na mixagem (só não deixam mexer; ao tentar, aparece uma mensagem curta). Para mexer numa delas, vá em **Configurações › Travas de segurança**, escolha por quanto tempo (10 min, 1 h ou 3 h) e clique em *Liberar*; vale só para você, em todas as telas, até o tempo acabar ou você clicar em *Travar de novo*. Ganho, +48V, EQ e envios para efeitos (que mudam o canal inteiro) têm a mesma trava, na mesma lista. Uma saída fora da lista nunca volta ligada em "Ajustando" depois de reiniciar.
 
 **Ele mexe no som do salão?**
-Só se você escolher a saída **MASTER** (fica em vermelho e pede confirmação), mexer no **ganho** ou no **phantom**, ou mexer em **efeitos que tocam no salão**. Nos auxiliares, ele mexe só nos envios daquele aux.
+Só se você escolher a saída **MASTER** (a tela fica escura e pede confirmação), mexer no **ganho** ou no **phantom**, ou mexer em **efeitos que tocam no salão**. Nos auxiliares, ele mexe só nos envios daquele aux.
 
 **Como ele sabe que dois auxes estão em link estéreo?**
 Lê da própria mesa. O par aparece como uma saída só (ex.: AUX 7+8).
@@ -246,7 +249,7 @@ Lê da própria mesa. O par aparece como uma saída só (ex.: AUX 7+8).
 Não. Para processar o áudio da transmissão, use os plugins **gratuitos** dentro do OBS (supressão de ruído RNNoise, compressor, limitador, ReaPlugs, LoudMax…). O Copiloto liga e desliga esses filtros pela tela Análise.
 
 **Minha mesa tem senha (Settings › Access). O Copiloto funciona?**
-Sim. Na Ui24R a senha é conferida pela **página da mesa** (navegador/tablet); a conexão de controle que o Copiloto e outros programas usam não pede senha (verificado pelo autor da biblioteca [soundcraft-ui](https://github.com/bitfocus/companion-module-soundcraft-ui/issues/49)). Na tela Conexão, marque *A mesa tem senha* e digite a senha para o Copiloto conferir; o **teste de comando** confirma, sem mudar o som, que a mesa aceita os comandos. Se um firmware futuro bloquear, o teste mostra FALHOU.
+Sim. Na Ui24R a senha é conferida pela **página da mesa** (navegador/tablet); a conexão de controle que o Copiloto e outros programas usam não pede senha (verificado pelo autor da biblioteca [soundcraft-ui](https://github.com/bitfocus/companion-module-soundcraft-ui/issues/49)). Na tela Configurações, marque *A mesa tem senha* e digite a senha para o Copiloto conferir; o **teste de comando** confirma, sem mudar o som, que a mesa aceita os comandos. Se um firmware futuro bloquear, o teste mostra FALHOU.
 
 **Os valores do equalizador batem com os da mesa?**
 A mesa guarda cada parâmetro do EQ como um número de 0 a 1 e a fórmula exata não é publicada. O Copiloto usa a conversão mais comum (frequência e Q em escala logarítmica, ganho linear de ±20 dB) e mostra "≈". Para conferir, rode `npm run diagnostico`: ele imprime o EQ do canal 1 (bruto e convertido). Compare com a interface web da mesa; se não bater, as constantes ficam todas em `src/mixer/eq.ts`. Contribuições com a calibração são bem-vindas.
@@ -255,7 +258,7 @@ A mesa guarda cada parâmetro do EQ como um número de 0 a 1 e a fórmula exata 
 Você pode marcar na janela do canal (botão **🎤 É voz?**), o que vale mais que tudo. Sem marca: no modo VU, pelo nome do canal (BUMBO, Kick, Cx, OH, Baixo, Violão, Voz Pastor…); nomes de pessoas (ex.: JAQUE) não dizem que é voz, então marque. No modo Áudio USB ele ouve o canal: energia por faixa de frequência, ataques por segundo e a queda logo depois (percussão), pausas e variação de volume (voz). É uma estimativa; a confiança aparece na janela do canal e na tela Análise.
 
 **O PC não está na rede da mesa.**
-A tela Conexão mostra os IPs do PC e avisa "outra rede". Conecte o PC no mesmo Wi-Fi ou cabo da mesa.
+A tela Configurações mostra os IPs do PC e avisa "outra rede". Conecte o PC no mesmo Wi-Fi ou cabo da mesa.
 
 ## Desenvolvimento
 

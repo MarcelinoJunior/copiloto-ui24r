@@ -166,6 +166,7 @@ function connect() {
       // volta para a última saída que esta pessoa usou (se ainda tiver acesso)
       const last = Number(me.prefs.bus);
       if (Number.isInteger(last) && last !== state.bus?.bus && state.buses.some((b) => b.id === last)) send({ type: 'view', bus: last });
+      if (me.prefs.layer && (state.layers ?? []).some((l) => l.id === me.prefs.layer)) send({ type: 'view', layer: me.prefs.layer });
     }
     render();
   };
@@ -199,11 +200,11 @@ const FXL_TEXT = (o) => (o === null ? 'não copiar' : o === 'manter' ? 'mantendo
 const deRef = (l) => l.replace(/^a /, 'da ').replace(/^o /, 'do ');
 const emRef = (l) => l.replace(/^a /, 'na ').replace(/^o /, 'no ');
 
-// Aparece na live (onde se usa) e no master (quem cuida do salão também configura).
+// Independe do que está na tela: aparece sempre para quem pode mexer nos efeitos (e na live para os demais).
 function renderFxLink(s) {
   const fl = s.fxLink;
   const bar = $('#fxlink-bar');
-  const show = Boolean(fl && s.bus && fl.fx.length && (fl.liveBus === s.bus.bus || s.bus.bus === MASTER_BUS));
+  const show = Boolean(fl && fl.fx.length && (fl.allowed || (!s.layer && s.bus && fl.liveBus === s.bus.bus)));
   bar.hidden = !show;
   if (!show) return;
   const sig = JSON.stringify([fl.fx, fl.allowed, fl.refs]);
@@ -280,48 +281,6 @@ $('#avg-select').addEventListener('change', (e) => {
   if (state?.bus) send({ type: 'setAveraging', bus: state.bus.bus, sec: Number(e.target.value) });
 });
 
-/** Liberação de risco ativa para este escopo ("bus:N" ou "canal")? */
-function riskAcked(s, scope) {
-  return (s.safety?.acks ?? []).some((a) => a.scope === scope && a.until > Date.now());
-}
-
-/** Saídas fora das testadas (ex.: só LIVE e o fone) ficam travadas com aviso até liberar. */
-function renderRisk(s) {
-  const safe = s.safety?.safeBuses;
-  const bar = $('#risk-bar');
-  const bus = s.bus;
-  const risky = Boolean(safe && bus && !safe.includes(bus.bus));
-  const acked = risky && riskAcked(s, `bus:${bus.bus}`);
-  bar.hidden = !risky;
-  document.body.classList.toggle('risk-locked', risky && !acked);
-  if (risky) {
-    const tested = s.safety.safeLabels.join(' e ');
-    const until = acked ? s.safety.acks.find((a) => a.scope === `bus:${bus.bus}`).until : 0;
-    $('.risk-text', bar).textContent = acked
-      ? `⚠ ${bus.label} LIBERADA COM RISCO até ${new Date(until).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}: o Copiloto ainda não foi testado nesta saída (só em ${tested}).`
-      : `⚠ ${bus.label} · ${bus.name} ainda não foi testada com o Copiloto (testadas: ${tested}). Mexer aqui tem risco: pode mudar o som de um músico ou do salão durante o culto. Os controles desta saída estão travados.`;
-    $('#risk-ack').hidden = acked;
-    $('#risk-release').hidden = !acked;
-  }
-  const canalLocked = Boolean(safe) && !riskAcked(s, 'canal');
-  document.body.classList.toggle('risk-canal-locked', canalLocked);
-  $('#risk-canal').hidden = !canalLocked;
-}
-
-$('#risk-ack').addEventListener('click', () => {
-  const b = state?.bus;
-  if (!b) return;
-  if (confirm(`Liberar ${b.label} · ${b.name} por 10 minutos?\n\nEsta saída ainda não foi testada com o Copiloto. O que você mexer aqui vai para a mesa de verdade.`)) {
-    send({ type: 'risk.ack', scope: `bus:${b.bus}` });
-  }
-});
-$('#risk-release').addEventListener('click', () => state?.bus && send({ type: 'risk.release', scope: `bus:${state.bus.bus}` }));
-$('#risk-canal-ack').addEventListener('click', () => {
-  if (confirm('Liberar ganho, phantom, EQ e envios para efeitos por 10 minutos?\n\nEsses controles mexem no canal inteiro: salão, live e todos os fones.')) {
-    send({ type: 'risk.ack', scope: 'canal' });
-  }
-});
-
 /** A saída vista está protegida pelo bypass (bypass ligado e ela não está na exceção)? */
 function busBypassed(s) {
   return Boolean(s.bypass?.on && !(s.bus && (s.bypass.allow ?? []).includes(s.bus.bus)));
@@ -344,10 +303,18 @@ function render() {
   }
 
   const mode = s.bus?.mode ?? 'desligado';
+  const layer = s.layer;
+  // cor da tela pelo que os faders mexem: entrada (vermelho), master (escuro), aux (laranja), FX (azul)
+  document.body.dataset.mode = layer ? layer.kind : s.bus ? (s.bus.bus === MASTER_BUS ? 'master' : 'aux') : '';
+  document.body.classList.toggle('layer-mode', Boolean(layer));
   renderFxLink(s);
   if (s.bus && document.activeElement !== $('#avg-select')) $('#avg-select').value = String(s.bus.averagingSec);
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-  $('#mode-help').textContent = !s.bus
+  $('#mode-help').textContent = layer
+    ? layer.kind === 'gain'
+      ? 'ENTRADA: os faders são o GANHO de cada canal (muda salão, live, fones e gravação). Ajuste automático, volume ideal e presets são das saídas.'
+      : `${layer.label}: os faders são o envio de cada canal para o efeito (vale para salão e live).`
+    : !s.bus
     ? ''
     : busBypassed(s)
       ? 'BYPASS ligado: nada é mexido nesta saída; as correções aparecem só como sugestão.'
@@ -359,16 +326,17 @@ function render() {
   if (s.sim) document.querySelectorAll('[data-scene]').forEach((b) => b.classList.toggle('active', b.dataset.scene === s.sim.scene));
 
   renderBusSelect(s);
-  renderRisk(s);
   renderPresets(s);
 
-  if (view && (!s.bus || view.bus !== s.bus.bus)) {
+  const viewId = layer ? `L:${layer.id}` : s.bus ? `B:${s.bus.bus}` : '';
+  if (view && view.id !== viewId) {
     view.node.remove();
     view = undefined;
     showTouch(undefined);
   }
-  if (s.bus) renderBus(s.bus, s);
-  $('#no-bus').hidden = Boolean(s.bus) || !s.mixer;
+  if (layer) renderLayer(layer, s);
+  else if (s.bus) renderBus(s.bus, s);
+  $('#no-bus').hidden = Boolean(s.bus || layer) || !s.mixer;
   renderDetail(s);
   renderTips(s);
 
@@ -381,21 +349,20 @@ function render() {
 
 function renderBusSelect(s) {
   const sel = $('#bus-select');
-  const current = s.bus?.bus;
-  const safe = s.safety?.safeBuses;
-  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.stereo, b.mode]), current, safe]);
+  const current = s.layer ? `l:${s.layer.id}` : s.bus ? `b:${s.bus.bus}` : '';
+  const layers = s.layers ?? [];
+  const sig = JSON.stringify([s.buses.map((b) => [b.id, b.label, b.name, b.stereo, b.mode]), layers, current]);
   if (sel.dataset.sig === sig) return;
   sel.dataset.sig = sig;
   const icon = { automatico: ' ●auto', observar: ' ◐obs', desligado: '' };
-  sel.innerHTML = s.buses
-    .map((b) => {
-      const label = b.id === MASTER_BUS ? 'MASTER · salão' : `${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`;
-      // com saídas testadas configuradas: ✓ = testada, ⚠ = ainda não (travada até liberar)
-      const mark = safe ? (safe.includes(b.id) ? '✓ ' : '⚠ ') : '';
-      return `<option value="${b.id}" ${b.id === current ? 'selected' : ''}>${escapeHtml(mark + label + icon[b.mode])}</option>`;
-    })
-    .join('');
-  sel.classList.toggle('is-master', current === MASTER_BUS);
+  const opt = (value, text) => `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(text)}</option>`;
+  const group = (label, items) => (items.length ? `<optgroup label="${label}">${items.join('')}</optgroup>` : '');
+  const busText = (b) => (b.id === MASTER_BUS ? 'MASTER · salão' : `${b.label} · ${b.name}${b.stereo ? ' (estéreo)' : ''}`) + icon[b.mode];
+  sel.innerHTML =
+    group('Entrada', layers.filter((l) => l.id === 'gain').map((l) => opt(`l:${l.id}`, l.label))) +
+    group('Master', s.buses.filter((b) => b.id === MASTER_BUS).map((b) => opt(`b:${b.id}`, busText(b)))) +
+    group('Auxiliares', s.buses.filter((b) => b.id !== MASTER_BUS).map((b) => opt(`b:${b.id}`, busText(b)))) +
+    group('Efeitos (envios)', layers.filter((l) => l.id !== 'gain').map((l) => opt(`l:${l.id}`, l.label)));
 }
 
 function renderPresets(s) {
@@ -440,8 +407,24 @@ function showTouch(strip) {
   }
   strip.el.classList.add('is-touch');
   box.className = `touch t-${strip.group ?? 'out'}`;
-  const dest = state?.bus ? (state.bus.bus === MASTER_BUS ? 'fader no master (salão)' : `envio para ${state.bus.label}`) : '';
-  const what = strip.kind === 'ch' ? `${TYPE_TEXT[strip.group ?? 'out']} · ${dest}` : strip.kind === 'fx' ? `retorno do efeito em ${state?.bus?.label ?? ''}` : 'volume geral da saída';
+  const layer = state?.layer;
+  const dest = layer
+    ? layer.kind === 'gain'
+      ? 'ganho da entrada'
+      : `envio para ${layer.label}`
+    : state?.bus
+      ? state.bus.bus === MASTER_BUS
+        ? 'fader no master (salão)'
+        : `envio para ${state.bus.label}`
+      : '';
+  const what =
+    strip.kind === 'ch'
+      ? `${TYPE_TEXT[strip.group ?? 'out']} · ${dest}`
+      : strip.kind === 'fx'
+        ? layer
+          ? 'retorno do efeito no salão (master)'
+          : `retorno do efeito em ${state?.bus?.label ?? ''}`
+        : 'volume geral da saída';
   box.innerHTML = `<span class="tn">${escapeHtml(strip.numText ?? '')}</span><span class="tname">${escapeHtml(strip.fullName ?? '')}</span><span class="tdb">${escapeHtml(strip.readout.textContent)} dB</span><span class="tsub">${escapeHtml(what)}</span>`;
 }
 
@@ -468,12 +451,14 @@ function visibleChannels(bus) {
   return bus.channels.filter((c) => c.key.startsWith('i') || cfg?.showLinePlayer);
 }
 
-function renderBus(bus, s) {
-  if (!view) {
+function ensureView(id, bus) {
+  if (view) return;
+  {
     const node = $('#bus-tpl').content.firstElementChild.cloneNode(true);
     $('#mixer').append(node);
     view = {
-      bus: bus.bus,
+      id,
+      bus,
       node,
       body: $('tbody', node),
       scroll: $('.ch-scroll', node),
@@ -487,6 +472,10 @@ function renderBus(bus, s) {
     view.scroll.addEventListener('scroll', () => updateBankLabel());
     new ResizeObserver(() => layoutStrips()).observe(view.scroll);
   }
+}
+
+function renderBus(bus, s) {
+  ensureView(`B:${bus.bus}`, bus.bus);
   const isMaster = bus.bus === MASTER_BUS;
   view.node.classList.toggle('is-master', isMaster);
   document.body.classList.toggle('viewing-master', isMaster);
@@ -531,6 +520,126 @@ function renderBus(bus, s) {
   const master = getStrip('master', () => createMasterStrip(bus), view.masterGroup);
   updateMasterStrip(master, bus);
   if (touched) showTouch(touched); // valor do canal destacado acompanha a mesa
+}
+
+// ---------- camadas: ganho das entradas e envios para um efeito ----------
+
+function renderLayer(layer, s) {
+  ensureView(`L:${layer.id}`);
+  const isGain = layer.kind === 'gain';
+  view.node.classList.remove('is-master');
+  document.body.classList.remove('viewing-master');
+  $('#in-bus').textContent = layer.label;
+  $('#in-bus').title = isGain
+    ? 'faders = ganho do pré de cada entrada: muda salão, live, fones e gravação'
+    : `faders = envio de cada canal para ${layer.label} (o mesmo envio vale para o salão e a live)`;
+  $('#in-master').hidden = true;
+
+  // mesmos canais e ordem do modo de visualização escolhido
+  const cfg = currentView?.config;
+  const byKey = new Map(layer.channels.map((c) => [c.key, c]));
+  const visible = cfg?.channels ? cfg.channels.map((k) => byKey.get(k)).filter(Boolean) : layer.channels.filter((c) => c.key.startsWith('i') || cfg?.showLinePlayer);
+  const keys = new Set(visible.map((c) => c.key));
+  for (const ch of layer.channels) {
+    const strip = getStrip(ch.key, () => createLayerStrip(layer, ch), view.chGroup);
+    setStripGroup(strip, TYPE_GROUP[s.bus?.types?.[ch.key]] ?? 'out');
+    strip.el.hidden = !keys.has(ch.key);
+    updateLayerStrip(strip, ch, layer);
+  }
+  const order = visible.map((c) => c.key).join(',');
+  if (order !== view.order) {
+    view.order = order;
+    for (const c of visible) view.chGroup.append(view.strips.get(c.key).el);
+    view.visibleCount = visible.length;
+    layoutStrips();
+  }
+  view.fxGroup.hidden = true;
+  if (layer.ret) updateReturnStrip(getStrip('ret', () => createReturnStrip(layer), view.masterGroup), layer.ret);
+  if (touched) showTouch(touched);
+}
+
+function createLayerStrip(layer, ch) {
+  const isGain = layer.kind === 'gain';
+  const strip = stripSkeleton({
+    name: ch.name,
+    key: ch.key,
+    num: stripNumber(ch.key),
+    dest: isGain ? 'ganho da entrada (salão, live, fones e gravação)' : `envio do canal para ${layer.label}`,
+    map: isGain ? GAIN_MAP : undefined,
+  });
+  strip.kind = 'ch';
+  strip.toggle.style.visibility = 'hidden'; // sem ajuste automático aqui; mantém os faders alinhados
+  strip.fxl.style.visibility = 'hidden';
+  strip.gear.hidden = false;
+  strip.gear.title = `Abrir ${ch.name}: ganho, volumes (salão, saídas, FX1 a FX4) e equalizador`;
+  strip.gear.addEventListener('click', () => openDetail(ch.key));
+  if (isGain) {
+    strip.mute.textContent = '+48V';
+    strip.mute.classList.add('p48-btn');
+    strip.mute.addEventListener('click', () => {
+      const on = !strip.mute.classList.contains('on');
+      const msg = `${on ? 'LIGAR' : 'Desligar'} o phantom +48V de ${strip.fullName}?\n\nLigar ou desligar com o canal aberto dá estalo no salão, na live e nos fones: abaixe o canal antes.`;
+      if (confirm(msg)) send({ type: 'setPhantom', key: ch.key, on });
+    });
+    bindFader(strip, (db) => send({ type: 'setGain', key: ch.key, db }));
+  } else {
+    strip.mute.style.visibility = 'hidden';
+    bindFader(strip, (db) => send({ type: 'setFxSend', fx: layer.id, key: ch.key, db }));
+  }
+  bindTouch(strip);
+  return strip;
+}
+
+function updateLayerStrip(strip, ch, layer) {
+  if (!strip.el.hidden) setStripName(strip, ch.name);
+  strip.fader.disabled = !layer.allowed;
+  strip.tag.textContent = '';
+  if (layer.kind === 'gain') {
+    strip.mute.classList.toggle('on', Boolean(ch.phantom));
+    strip.mute.disabled = !layer.phantomAllowed;
+    strip.mute.title = layer.phantomAllowed ? `Phantom +48V de ${ch.name} (${ch.phantom ? 'ligado' : 'desligado'})` : 'Phantom +48V: só o admin';
+    strip.status.textContent = 'ganho';
+    strip.status.className = 'status';
+    setMeter(strip, ch.levelDB ?? METER_MIN);
+  } else {
+    strip.status.textContent = ch.db === null ? 'sem envio' : '';
+    strip.status.className = 'status';
+    setMeter(strip, ch.levelDB !== undefined && ch.db !== null ? ch.levelDB + ch.db : METER_MIN);
+  }
+  setFader(strip, ch.db);
+  setDelta(strip.delta, undefined);
+}
+
+/** Retorno do efeito no master (salão), no canto direito da camada FX. */
+function createReturnStrip(layer) {
+  const ret = layer.ret;
+  const strip = stripSkeleton({
+    cls: 'fx',
+    name: ret.name,
+    key: ret.key.toUpperCase(),
+    num: stripNumber(ret.key),
+    toggleLabel: 'SALÃO',
+    dest: 'retorno do efeito no master (salão)',
+  });
+  strip.kind = 'fx';
+  setStripGroup(strip, 'fx');
+  strip.toggle.style.visibility = 'hidden';
+  strip.fxl.style.visibility = 'hidden';
+  strip.mute.title = 'Muta/desmuta o retorno do efeito no salão';
+  strip.mute.addEventListener('click', () => send({ type: 'setMute', bus: MASTER_BUS, key: ret.key, muted: !strip.mute.classList.contains('on') }));
+  bindFader(strip, (db) => send({ type: 'setSend', bus: MASTER_BUS, key: ret.key, db }));
+  bindTouch(strip);
+  return strip;
+}
+
+function updateReturnStrip(strip, ret) {
+  setStripName(strip, ret.name);
+  strip.status.textContent = 'salão';
+  strip.fader.disabled = !ret.allowed;
+  strip.mute.disabled = !ret.allowed;
+  setMuted(strip, ret.muted);
+  setMeter(strip, METER_MIN);
+  setFader(strip, ret.db);
 }
 
 function getStrip(id, create, parent) {
@@ -593,12 +702,12 @@ function bindFader(ctrl, onValue) {
   const push = () => {
     lastSent = Date.now();
     pending = undefined;
-    onValue(posToDb(Number(f.value)));
+    onValue((ctrl.map?.toDb ?? posToDb)(Number(f.value)));
   };
   f.addEventListener('pointerdown', () => (ctrl.dragging = true));
   f.addEventListener('input', () => {
     ctrl.dragging = true;
-    ctrl.readout.textContent = fmtSend(posToDb(Number(f.value)));
+    ctrl.readout.textContent = (ctrl.map?.fmt ?? fmtSend)((ctrl.map?.toDb ?? posToDb)(Number(f.value)));
     const wait = SEND_THROTTLE_MS - (Date.now() - lastSent);
     if (wait <= 0) push();
     else if (!pending) pending = setTimeout(push, wait);
@@ -618,7 +727,7 @@ function bindFader(ctrl, onValue) {
 /** Atualiza a posição do fader a partir da mesa; destaca quando algo (o software) moveu. */
 function setFader(ctrl, db) {
   if (ctrl.dragging) return;
-  const pos = Math.round(dbToPos(db));
+  const pos = Math.round((ctrl.map?.toPos ?? dbToPos)(db));
   if (ctrl.lastValue !== undefined && ctrl.lastValue !== pos) {
     ctrl.fader.classList.add('moving');
     clearTimeout(ctrl.movingTimer);
@@ -626,16 +735,26 @@ function setFader(ctrl, db) {
   }
   ctrl.lastValue = pos;
   ctrl.fader.value = String(pos);
-  ctrl.readout.textContent = fmtSend(db);
+  ctrl.readout.textContent = (ctrl.map?.fmt ?? fmtSend)(db);
 }
 
-function scaleHtml() {
-  return `<div class="scale">${SCALE_MARKS.map((d) => `<span style="bottom: calc(7px + (100% - 14px) * ${dbToPos(d) / 1000})">${d > 0 ? '+' : ''}${d}</span>`).join('')}</div>`;
+/** Escala do ganho do pré (-6 a +57 dB), linear como na Ui24R. */
+const GAIN_MAP = {
+  toPos: (db) => (db === undefined || db === null ? 0 : Math.max(0, Math.min(1000, ((db + 6) / 63) * 1000))),
+  toDb: (pos) => Math.round(((pos / 1000) * 63 - 6) * 2) / 2,
+  fmt: (db) => (db === undefined || db === null ? '—' : db.toFixed(1)),
+  marks: [57, 50, 40, 30, 20, 10, 0, -6],
+};
+
+function scaleHtml(map) {
+  const marks = map?.marks ?? SCALE_MARKS;
+  const toPos = map?.toPos ?? dbToPos;
+  return `<div class="scale">${marks.map((d) => `<span style="bottom: calc(7px + (100% - 14px) * ${toPos(d) / 1000})">${d > 0 ? '+' : ''}${d}</span>`).join('')}</div>`;
 }
 
 // ---------- faixas verticais ----------
 
-function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 'AUTO', toggleTitle = '', dest = '' }) {
+function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 'AUTO', toggleTitle = '', dest = '', map }) {
   const el = document.createElement('div');
   el.className = `strip ${cls}`;
   // linhas de altura fixa: assim os faders de canais, efeitos e master ficam alinhados
@@ -649,7 +768,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     <button class="fxl-btn" type="button" title="Este canal acompanha os efeitos da live (clique para ignorar)">FX</button>
     <div class="strip-body">
       <div class="vmeter"><div class="band"></div><div class="fill"></div><div class="avg"></div><div class="target"></div></div>
-      ${scaleHtml()}
+      ${scaleHtml(map)}
       <input type="range" class="fader" min="0" max="1000" step="1">
     </div>
     <div class="send-db"></div>
@@ -663,6 +782,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
   $('.fader', el).title = dest;
   return {
     el,
+    map,
     name: $('.strip-name', el),
     gear: $('.gear-btn', el),
     nameText: $('.sn-name', el),
@@ -1417,7 +1537,7 @@ function renderEq(d, s) {
     eqAdviceSig = sig;
     const box = $('#d-eq-advice');
     if (!s.advanced?.active) {
-      box.innerHTML = '<li class="muted">As sugestões automáticas de EQ precisam ouvir o canal: ligue o modo Áudio USB (tela Conexão).</li>';
+      box.innerHTML = '<li class="muted">As sugestões automáticas de EQ precisam ouvir o canal: ligue o modo Áudio USB (tela Configurações).</li>';
     } else if (!advice.length) {
       box.innerHTML = '<li class="muted">Nenhuma sugestão: o som deste canal parece equilibrado (ou ainda está ouvindo — leva alguns segundos tocando).</li>';
     } else {
@@ -1642,15 +1762,20 @@ document.querySelectorAll('[data-mode]').forEach((b) =>
 );
 
 $('#bus-select').addEventListener('change', (e) => {
-  const id = Number(e.target.value);
-  if (id === MASTER_BUS && !confirm('Mostrar e controlar o MASTER mexe no som do SALÃO (faders dos canais). Continuar?')) {
+  const [kind, raw] = e.target.value.split(':');
+  if (kind === 'b' && Number(raw) === MASTER_BUS && !confirm('Mostrar e controlar o MASTER mexe no som do SALÃO (faders dos canais). Continuar?')) {
     e.target.dataset.sig = ''; // volta a seleção anterior no próximo render
     return;
   }
   $('#detail').hidden = true;
   $('#detail-backdrop').hidden = true;
-  send({ type: 'view', bus: id, detail: null });
-  savePrefs({ bus: id });
+  if (kind === 'l') {
+    send({ type: 'view', layer: raw, detail: null });
+    savePrefs({ layer: raw });
+  } else {
+    send({ type: 'view', bus: Number(raw), detail: null });
+    savePrefs({ bus: Number(raw), layer: null });
+  }
 });
 
 document.querySelectorAll('[data-scene]').forEach((b) =>
@@ -1718,19 +1843,6 @@ $('#help-btn').addEventListener('click', () => {
   localPref('help', panel.hidden ? '0' : '1');
   layoutStrips();
 });
-// controles da saída embaixo (padrão) ou em cima dos faders: preferência deste navegador
-function applyCtlTop(top) {
-  document.body.classList.toggle('ctl-top', top);
-  $('#ctl-swap').textContent = top ? '⇅ controles embaixo' : '⇅ controles em cima';
-  layoutStrips();
-}
-applyCtlTop(localPref('ctlTop') === '1');
-$('#ctl-swap').addEventListener('click', () => {
-  const top = !document.body.classList.contains('ctl-top');
-  localPref('ctlTop', top ? '1' : '0');
-  applyCtlTop(top);
-});
-
 if (localPref('help') === '1') {
   $('#toolbar-help').hidden = false;
   $('#help-btn').setAttribute('aria-expanded', 'true');

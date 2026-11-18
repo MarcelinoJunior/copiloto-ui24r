@@ -106,25 +106,48 @@ describe('saídas testadas (safeBuses): o resto fica travado com aviso de risco'
     rmSync(dir2, { recursive: true, force: true });
   });
 
-  it('live e fone liberados; outro aux, master, EQ e ganho pedem "Liberar (risco)" (10 min, por pessoa)', () => {
+  it('live e fone liberados; outro aux, master, EQ e ganho travados até liberar em Configurações (por pessoa)', () => {
     const a = ctx();
     app2.handle({ type: 'setSend', bus: 7, key: 'i1', db: -5 }, a); // live: ok
     app2.handle({ type: 'setMute', bus: 9, key: 'i1', muted: false }, a); // fone: ok
-    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a)).toThrow(/Liberar \(risco\)/);
-    expect(() => app2.handle({ type: 'setSend', bus: 0, key: 'i1', db: -5 }, a)).toThrow(/Liberar \(risco\)/);
-    expect(() => app2.handle({ type: 'setMode', bus: 1, mode: 'automatico' }, a)).toThrow(/Liberar/);
+    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a)).toThrow(/Travas de segurança/);
+    expect(() => app2.handle({ type: 'setSend', bus: 0, key: 'i1', db: -5 }, a)).toThrow(/Travas de segurança/);
+    expect(() => app2.handle({ type: 'setMode', bus: 1, mode: 'automatico' }, a)).toThrow(/Travas de segurança/);
     app2.handle({ type: 'setMode', bus: 1, mode: 'observar' }, a); // só sugerir não mexe: liberado
     expect(() => app2.handle({ type: 'setGain', key: 'i1', db: 30 }, a)).toThrow(/canal inteiro/);
     expect(app2.snapshotFor(a).safety.safeLabels).toEqual(['AUX 7+8', 'AUX 9']);
     expect(app2.snapshotFor(a).safety.safeBuses).toEqual([7, 9]);
 
-    app2.handle({ type: 'risk.ack', scope: 'bus:1' }, a);
-    app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a); // liberado com aviso
-    expect(app2.snapshotFor(a).safety.acks.map((x) => x.scope)).toEqual(['bus:1']);
-    const b = ctx(); // outra pessoa: continua travado para ela
-    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, b)).toThrow(/Liberar/);
+    // liberou na tela Configurações (outra conexão da MESMA pessoa): vale também na mixagem
+    const config = ctx();
+    app2.handle({ type: 'risk.ack', scope: 'bus:1', minutes: 60 }, config);
+    app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a);
+    const ack = app2.snapshotFor(a).safety.acks;
+    expect(ack.map((x) => x.scope)).toEqual(['bus:1']);
+    expect(ack[0].until - Date.now()).toBeGreaterThan(59 * 60_000); // 1 hora
+    const b: ClientCtx = { user: { ...user('admin', []), id: 2, username: 'outra' }, view: { bus: 7 } };
+    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, b)).toThrow(/Travas de segurança/); // outra pessoa
     app2.handle({ type: 'risk.release' }, a);
-    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a)).toThrow(/Liberar/);
+    expect(() => app2.handle({ type: 'setSend', bus: 1, key: 'i1', db: -5 }, a)).toThrow(/Travas de segurança/);
+  });
+
+  it('camadas: ganho das entradas e envios para um efeito (só admin/master)', async () => {
+    const a = ctx();
+    expect(app2.snapshotFor(a).layers.map((l) => l.id)).toEqual(['gain', 'f1', 'f2', 'f3', 'f4']);
+    app2.handle({ type: 'view', layer: 'gain' }, a);
+    await until(() => (app2.snapshotFor(a).layer?.channels.length ?? 0) > 0);
+    const gain = app2.snapshotFor(a).layer!;
+    expect(gain.kind).toBe('gain');
+    expect(gain.channels.every((c) => c.key.startsWith('i') && typeof c.db === 'number')).toBe(true);
+    app2.handle({ type: 'view', layer: 'f2' }, a);
+    const fx = app2.snapshotFor(a).layer!;
+    expect(fx.kind).toBe('fx');
+    expect(fx.ret?.key).toBe('f2');
+    app2.handle({ type: 'view', bus: 7 }, a); // voltar para uma saída tira a camada
+    expect(app2.snapshotFor(a).layer).toBeUndefined();
+    const op: ClientCtx = { user: { ...user('operador', [7]), id: 3, username: 'op' }, view: { bus: 7 } };
+    expect(app2.snapshotFor(op).layers).toEqual([]);
+    expect(() => app2.handle({ type: 'view', layer: 'gain' }, op)).toThrow(/só o admin/);
   });
 });
 

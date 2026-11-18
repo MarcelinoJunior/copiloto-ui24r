@@ -1,4 +1,4 @@
-// Botão de pânico (BYPASS) no topo das telas Mixagem, Análise e Conexão.
+// Botão de pânico (BYPASS) no topo das telas Mixagem, Análise e Configurações.
 // Ligado: o Copiloto não manda NADA para a mesa (faders, mute, EQ, ganho, presets), só monitora.
 // Ligar é um clique (pânico); desligar pede confirmação.
 

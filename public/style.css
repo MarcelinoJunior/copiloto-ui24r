@@ -727,20 +727,16 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 .bypass-allow { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .bypass-allow select { background: #fff; color: #7a1010; border-color: #fff; font-weight: 700; }
 
-/* ================= saídas não testadas: travadas com aviso de risco ================= */
+/* ================= travas de segurança (tela Configurações) ================= */
 
-.risk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 12px; border: 2px solid var(--warn); border-radius: 8px; background: rgba(245, 182, 66, 0.12); color: var(--text); font-weight: 600; }
-.risk-bar[hidden] { display: none; }
-.risk-bar.small { font-size: 12px; font-weight: 500; }
-.risk-bar .small-btn { border-color: var(--warn); color: var(--warn); font-weight: 700; }
-.risk-locked .strip .fader, .risk-locked .mute-btn, .risk-locked #restore, .risk-locked #preset-select, .risk-locked [data-mode="automatico"],
-.risk-locked .dfader[data-kind="bus"] .fader, .risk-locked #d-mute,
-.risk-canal-locked #d-gain, .risk-canal-locked #d-gminus, .risk-canal-locked #d-gplus, .risk-canal-locked #d-phantom,
-.risk-canal-locked #d-eq-bands input, .risk-canal-locked #d-eq-on, .risk-canal-locked #d-eq-advice button, .risk-canal-locked .dfader[data-kind="fx"] .fader {
-  pointer-events: none;
-  opacity: 0.45;
-}
-.risk-locked .bus { outline: 2px dashed var(--warn); outline-offset: -2px; }
+.risk-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.risk-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; background: var(--strip); }
+.risk-list li.open { border-left-color: var(--warn); background: rgba(245, 182, 66, 0.08); }
+.risk-list .rl-name { display: flex; flex-direction: column; gap: 1px; flex: 1 1 260px; }
+.risk-list .rl-state { font-weight: 700; color: var(--muted); min-width: 140px; }
+.risk-list li.open .rl-state { color: var(--warn); }
+.risk-list .small-btn.warn { border-color: var(--warn); color: var(--warn); font-weight: 700; }
+#risk-card[hidden] { display: none; }
 
 /* ⏻ desligar o Copiloto (só admin) */
 .shutdown-btn { border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px 10px; border-radius: 8px; }
@@ -794,18 +790,16 @@ table.users input, .new-user input, .new-user select, table.users select { backg
 
 :root { --t-voz: #3fa7ff; --t-ins: #3ecf8e; --t-bat: #ff9f43; --t-out: #8b96a5; }
 
-/* ordem: barra, avisos, entradas, faders, controles, efeito acompanha, rodapé ("⇅" põe os controles em cima) */
+/* ordem: barra, avisos, controles, entradas, faders, efeito acompanha, rodapé */
 body.mix-page > .statusline { order: 3; }
-body.ctl-top .toolbar, body.ctl-top .toolbar-help, body.ctl-top .fxlink-bar { order: -1; }
-body.ctl-top .appbar, body.ctl-top #bypass-banner, body.ctl-top .update-banner, body.ctl-top .conn-banner, body.ctl-top .risk-bar, body.ctl-top .frozen { order: -2; }
 
 /* barra de cima */
-.appbar { gap: 8px; padding: 2px 2px 8px; flex-wrap: wrap; row-gap: 6px; }
+.appbar { gap: 6px; padding: 2px 2px 8px; flex-wrap: wrap; row-gap: 6px; }
 .simgroup { flex-wrap: nowrap; white-space: nowrap; }
 @media (max-width: 1600px) { .sim-link { display: none; } }
 .appbar .logo { display: inline-flex; align-items: center; gap: 7px; font-size: 17px; white-space: nowrap; }
 .logo-mark { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, #3fa7ff, #a77bff); color: #fff; font-size: 11px; }
-.appbar .nav a { padding: 4px 11px; }
+.appbar .nav a { padding: 4px 9px; }
 .appbar .nav a.active { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 700; }
 .pass-chip { border: 1px solid var(--bad); color: var(--bad); background: rgba(255, 93, 93, 0.08); border-radius: 8px; padding: 4px 10px; font-weight: 700; font-size: 13px; text-decoration: none; white-space: nowrap; }
 .pass-chip:hover { background: rgba(255, 93, 93, 0.2); }
@@ -914,4 +908,33 @@ body.viewing-master .in-bus { color: var(--bad); }
 
 /* rodapé */
 .statusline .legend { margin-left: 0; white-space: nowrap; }
-.swap-btn { padding: 1px 8px; font-size: 11px; color: var(--muted); background: transparent; white-space: nowrap; }
+
+
+/* ================= cor da tela pelo que os faders mexem (padrão da Ui24R) ================= */
+/* entrada/ganho = avermelhado · master = escuro · auxiliares = alaranjado · efeitos = azulado.
+   A etiqueta do topo de cada canal continua com a cor do tipo de som (voz, instrumento, bateria). */
+
+body.mix-page { --mode: #ff9f43; }
+body[data-mode="gain"] { --mode: #e5484d; }
+body[data-mode="master"] { --mode: #5b6470; }
+body[data-mode="aux"] { --mode: #ff9f43; }
+body[data-mode="fx"] { --mode: #3f8cff; }
+
+.mixer { border-radius: 10px; padding: 4px; background: color-mix(in srgb, var(--mode) 9%, transparent); transition: background 0.25s; }
+.strip { background: linear-gradient(180deg, color-mix(in srgb, var(--mode) 20%, var(--strip)), color-mix(in srgb, var(--mode) 8%, var(--strip))); }
+body[data-mode="master"] .mixer { background: rgba(0, 0, 0, 0.28); }
+body[data-mode="master"] .strip { background: linear-gradient(180deg, #20252c, #161a1f); }
+.strip .fader::-webkit-slider-runnable-track { background: color-mix(in srgb, var(--mode) 30%, #070a0d); border-color: color-mix(in srgb, var(--mode) 45%, #39424e); }
+
+.g-saida { --tint: var(--mode); }
+#bus-select { border: 2px solid var(--mode); background: color-mix(in srgb, var(--mode) 22%, var(--panel-2)); color: var(--text); }
+#bus-select optgroup { background: var(--panel); color: var(--muted); font-style: normal; }
+#bus-select option { background: var(--panel-2); color: var(--text); }
+.in-bus, body.viewing-master .in-bus { color: color-mix(in srgb, var(--mode) 70%, #fff); }
+
+/* ganho e efeitos: ajuste automático, volume ideal e presets são das saídas */
+.layer-mode .g-auto, .layer-mode .g-alvo, .layer-mode .g-preset { opacity: 0.35; pointer-events: none; }
+
+/* +48V no lugar do MUTE (camada de ganho) */
+.p48-btn { color: var(--muted); }
+.p48-btn.on { background: var(--bad); border-color: var(--bad); color: #fff; }

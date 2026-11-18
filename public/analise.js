@@ -95,7 +95,7 @@ function render(s) {
     const list = [...new Set([set.loudness.device, ...devices].filter(Boolean))];
     devSel.innerHTML = list.length
       ? list.map((d) => `<option ${d === set.loudness.device ? 'selected' : ''}>${escapeHtml(d)}</option>`).join('')
-      : '<option value="">(procure os dispositivos em Conexão)</option>';
+      : '<option value="">(procure os dispositivos em Configurações)</option>';
   }
   $('#l-device-wrap').hidden = $('#l-source').value !== 'device';
   $('#l-usb-wrap').hidden = $('#l-source').value !== 'usb';

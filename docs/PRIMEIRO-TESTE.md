@@ -39,7 +39,7 @@ Para a primeira vez, deixe o **⛔ BYPASS ligado antes de conectar**: assim o Co
 
 - Dê dois cliques em **Copiloto Ui24R** (área de trabalho): ele abre na própria janela (fechar a janela desliga o Copiloto). Ou rode `npm start` e abra `http://localhost:8124`.
 - Entre com o seu usuário. Na primeira vez é `admin` / `admin`: troque a senha.
-- Vá em **Conexão**:
+- Vá em **Configurações**:
   - **IP da mesa** `192.168.0.122` e **Salvar e reconectar** se precisar;
   - **Saúde**: tempo de resposta baixo (poucos ms) e "VU recebido" com leituras por segundo;
   - **Senha da mesa**: marque **A mesa tem senha**, digite a senha da mesa e **Salvar**. Deve aparecer *Senha confere* (ou *a mesa não mostra a senha*, que também é normal). **Nada é enviado para a mesa**: a conexão de controle da Ui24R não pede senha; o Copiloto só guarda para conferir;
@@ -71,5 +71,5 @@ Com o bypass ligado, na faixa vermelha escolha **mexer só em: AUX 9 · F. SAMUE
 
 - **⛔ BYPASS** no topo da tela: na hora, o Copiloto para de mexer na mesa e só monitora (continua ligado até alguém desligar, mesmo se o programa reiniciar).
 - Fechar a janela do Copiloto (ou o botão **⏻** no topo) desliga o programa; no terminal, Ctrl+C. Os envios ficam como estão; nada continua mexendo.
-- Não conecta: confira se o PC está na mesma rede (a tela Conexão mostra os IPs do PC e avisa "outra rede").
+- Não conecta: confira se o PC está na mesma rede (a tela Configurações mostra os IPs do PC e avisa "outra rede").
 - **Teste de comando FALHOU**: a mesa recebeu mas não repassou a mudança. Pode ser bloqueio por senha num firmware diferente. Mande o resultado do diagnóstico.

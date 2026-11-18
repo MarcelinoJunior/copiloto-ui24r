@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Conexão · Copiloto</title>
+  <title>Configurações · Copiloto</title>
   <link rel="icon" href="favicon.ico">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -11,7 +11,7 @@
   <header class="top">
     <div class="brand">
       <h1>Copiloto Ui24R</h1>
-      <nav class="nav"><a href="/">Mixagem</a><a href="analise.html">Análise</a><a href="conexao.html" class="active" aria-current="page">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
+      <nav class="nav"><a href="/">Mixagem</a><a href="analise.html">Análise</a><a href="conexao.html" class="active" aria-current="page">Configurações</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
     </div>
     <button type="button" id="bypass-btn" class="bypass-btn" aria-pressed="false">⛔ BYPASS</button>
     <button type="button" id="shutdown-btn" class="shutdown-btn" title="Desligar o Copiloto (só o admin). Os envios da mesa ficam como estão." aria-label="Desligar o Copiloto" hidden>⏻</button>
@@ -25,6 +25,21 @@
     </label>
     <button type="button" id="bypass-off" class="small-btn">Desligar bypass</button>
   </div>
+
+  <section class="card" id="risk-card" hidden>
+    <div class="card-head">
+      <h2>Travas de segurança</h2>
+      <label class="small muted">liberar por
+        <select id="risk-minutes">
+          <option value="10">10 min</option>
+          <option value="60">1 hora</option>
+          <option value="180">3 horas</option>
+        </select>
+      </label>
+    </div>
+    <p class="muted small" id="risk-intro"></p>
+    <ul id="risk-list" class="risk-list"></ul>
+  </section>
 
   <section class="card">
     <h2>De onde vem o som</h2>

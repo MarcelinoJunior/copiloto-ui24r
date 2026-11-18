@@ -2,12 +2,12 @@
 
 No modo Áudio USB, o Copiloto recebe o **áudio de cada canal** pelo cabo USB da Ui24R. Ele captura com o ffmpeg (DirectShow no Windows), em PCM 16 bits a 48 kHz, e analisa tudo no próprio PC. O som **não passa** pelo Copiloto: é só análise. O controle da mesa continua pela rede.
 
-Para testar sem a mesa: rode `npm run sim` e, em **Conexão › Medição de nível**, clique em **Usar USB simulado**. O simulador gera áudio de verdade (fala com sílabas, canto com vibrato, acordes, batidas). No painel do canal dá para **injetar microfonia ou zumbido**.
+Para testar sem a mesa: rode `npm run sim` e, em **Configurações › Medição de nível**, clique em **Usar USB simulado**. O simulador gera áudio de verdade (fala com sílabas, canto com vibrato, acordes, batidas). No painel do canal dá para **injetar microfonia ou zumbido**.
 
 ## Como ligar na mesa real
 
 1. Ligue o cabo USB da Ui24R no PC. Se o Windows não reconhecer a mesa, instale o driver USB da Soundcraft (uma vez).
-2. **Conexão › Procurar a Ui24R no USB**. A tela mostra se achou a mesa, a versão do ffmpeg embutido e os dispositivos de áudio.
+2. **Configurações › Procurar a Ui24R no USB**. A tela mostra se achou a mesa, a versão do ffmpeg embutido e os dispositivos de áudio.
 3. Escolha o dispositivo da mesa e o número de canais e clique em **Usar este áudio USB**.
 4. Os recursos aparecem na tela **Análise** e nas **Dicas**.
 

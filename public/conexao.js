@@ -1,4 +1,4 @@
-// Tela "Conexão": de onde vem o som (mesa real ou simulador), IP da mesa e saúde da conexão.
+// Tela "Configurações": travas de segurança, de onde vem o som (mesa real ou simulador), IP da mesa e saúde da conexão.
 
 const QUALITY = {
   boa: ['Mesa real · conexão boa', 'q-good'],
@@ -61,6 +61,53 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 }
 
+// ---------- travas de segurança (saídas ainda não testadas e controles do canal inteiro) ----------
+
+const hhmm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+function renderRisk(s) {
+  const safe = s.safety?.safeBuses;
+  const card = $('#risk-card');
+  card.hidden = !safe;
+  if (!safe) return;
+  const now = Date.now();
+  const until = (scope) => s.safety.acks.find((a) => a.scope === scope && a.until > now)?.until;
+  const canChannel = s.user.role === 'admin' || s.buses.some((b) => b.id === 0);
+  const items = [
+    ...(canChannel ? [{ scope: 'canal', label: 'Ganho, +48V, EQ e envios para os efeitos', note: 'mexem no canal inteiro: salão, live e todos os fones' }] : []),
+    ...s.buses
+      .filter((b) => !safe.includes(b.id))
+      .map((b) => ({ scope: `bus:${b.id}`, label: b.id === 0 ? 'MASTER · salão' : `${b.label} · ${b.name}`, note: 'envios, mute, presets e "Ajustando"' })),
+  ];
+  $('#risk-intro').textContent = `Testadas com o Copiloto (sempre liberadas): ${s.safety.safeLabels.join(' e ')}. O resto fica travado: na mixagem não aparece aviso, só não deixa mexer. Libere aqui quando precisar; a liberação vale só para você, em todas as telas.`;
+  const sig = JSON.stringify([items, s.safety.acks.map((a) => [a.scope, a.until > now ? a.until : 0])]);
+  const list = $('#risk-list');
+  if (list.dataset.sig === sig) return;
+  list.dataset.sig = sig;
+  list.innerHTML = items
+    .map((it) => {
+      const t = until(it.scope);
+      return `<li class="${t ? 'open' : ''}">
+        <span class="rl-name"><strong>${escapeHtml(it.label)}</strong><span class="muted small">${escapeHtml(it.note)}</span></span>
+        <span class="rl-state">${t ? `liberado até ${hhmm(t)}` : 'travado'}</span>
+        ${t ? `<button type="button" class="small-btn" data-lock="${it.scope}">Travar de novo</button>` : `<button type="button" class="small-btn warn" data-ack="${it.scope}" data-label="${escapeHtml(it.label)}">Liberar</button>`}
+      </li>`;
+    })
+    .join('');
+}
+
+$('#risk-list').addEventListener('click', (e) => {
+  const ack = e.target.closest('button[data-ack]');
+  const lock = e.target.closest('button[data-lock]');
+  if (lock) send({ type: 'risk.release', scope: lock.dataset.lock });
+  if (!ack) return;
+  const minutes = Number($('#risk-minutes').value);
+  const time = minutes >= 60 ? `${minutes / 60} hora${minutes > 60 ? 's' : ''}` : `${minutes} minutos`;
+  if (confirm(`Liberar "${ack.dataset.label}" por ${time}?\n\nAinda não foi testado com o Copiloto: o que você mexer vai para a mesa de verdade.`)) {
+    send({ type: 'risk.ack', scope: ack.dataset.ack, minutes });
+  }
+});
+
 function render(s) {
   const h = s.health;
   const isSim = s.source.kind === 'simulador';
@@ -71,6 +118,7 @@ function render(s) {
     if (!isAdmin) el.disabled = true;
   });
   renderBypass(s, send);
+  renderRisk(s);
   renderLevels(s, isAdmin);
   renderAccess(s, isAdmin);
   renderVersion(s, isAdmin);

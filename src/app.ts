@@ -56,10 +56,24 @@ export interface MixerTarget {
 /** O que cada pessoa conectada está olhando (cada uma vê a sua saída). */
 export interface ClientView {
   bus?: number;
+  /** camada vista no lugar de uma saída: "gain" (ganho das entradas) ou "f1".."f4" (envios para o efeito) */
+  layer?: string;
   /** canal aberto no painel do canal */
   detail?: string;
-  /** liberações de risco desta pessoa: escopo ("bus:N" ou "canal") → até quando (ms) */
-  riskAcks?: Record<string, number>;
+}
+
+/** Faders que não são de uma saída: ganho das entradas ou envios para um efeito. */
+export interface LayerView {
+  id: string;
+  kind: 'gain' | 'fx';
+  label: string;
+  /** pode mexer (admin ou quem tem o master; nos efeitos, canEditFx) */
+  allowed: boolean;
+  /** pode ligar/desligar o phantom (só admin) */
+  phantomAllowed: boolean;
+  channels: { key: string; name: string; levelDB?: number; db: number | null; phantom?: boolean }[];
+  /** retorno do efeito no master (salão), no canto direito */
+  ret?: { key: string; name: string; db: number | null; muted: boolean; allowed: boolean };
 }
 
 export interface ClientCtx {
@@ -198,6 +212,10 @@ export interface AppSnapshot {
   deadbandDB: number;
   buses: BusChoice[];
   bus?: ViewedBus;
+  /** camada vista no lugar da saída (ganho ou envios para um efeito) */
+  layer?: LayerView;
+  /** camadas que esta pessoa pode ver (ganho e FX1..FX4: admin ou quem tem o master) */
+  layers: { id: string; label: string }[];
   detail?: ChannelDetail;
   presets: { id: string; name: string; savedAt: number }[];
   activePresetId?: string;
@@ -227,7 +245,7 @@ export interface AppSnapshot {
 type WireDB = number | null;
 
 export type Command =
-  | { type: 'view'; bus?: number; detail?: string | null }
+  | { type: 'view'; bus?: number; layer?: string | null; detail?: string | null }
   | { type: 'setMode'; bus: number; mode: Mode }
   | { type: 'capture'; bus: number }
   | { type: 'restore'; bus: number }
@@ -256,7 +274,7 @@ export type Command =
   | { type: 'conn.writeTest' }
   | { type: 'bypass'; on: boolean }
   | { type: 'bypass.allow'; bus: number | null }
-  | { type: 'risk.ack'; scope: string }
+  | { type: 'risk.ack'; scope: string; minutes?: number }
   | { type: 'fxlink.set'; fx: string; offset: FxOffset | null; align?: boolean }
   | { type: 'fxlink.ignore'; key: string; ignored: boolean }
   | { type: 'fxlink.ref'; fx: string; bus: number; align?: boolean }
@@ -357,6 +375,8 @@ export class App {
   onRestart?: () => void;
   /** último fader de cada canal em cada saída (bus → canal → envio): referência do "efeito acompanha" */
   private readonly busSends = new Map<number, Map<string, LiveSend>>();
+  /** liberações de risco por pessoa (nome de usuário): escopo ("bus:N" ou "canal") → até quando (ms) */
+  private readonly riskAcks = new Map<string, Record<string, number>>();
   /** EQ de cada entrada, como a mesa guarda (0..1) */
   private readonly eqRaw = new Map<string, Record<string, number>>();
   /** senha da mesa (só para conferência) e último teste de comando */
@@ -1065,8 +1085,16 @@ export class App {
       case 'view': {
         if (cmd.bus !== undefined) {
           if (!this.controllers.has(cmd.bus) || !canUseBus(ctx.user, cmd.bus)) throw new CommandError('Saída indisponível para você.');
-          if (ctx.view.bus !== cmd.bus) ctx.view.detail = undefined;
+          if (ctx.view.bus !== cmd.bus || ctx.view.layer) ctx.view.detail = undefined;
           ctx.view.bus = cmd.bus;
+          ctx.view.layer = undefined;
+        }
+        if (cmd.layer !== undefined) {
+          if (cmd.layer !== null && !this.layerChoices(ctx.user).some((l) => l.id === cmd.layer)) {
+            throw new CommandError('Ganho e envios para efeitos: só o admin ou quem tem o master.');
+          }
+          if (ctx.view.layer !== (cmd.layer ?? undefined)) ctx.view.detail = undefined;
+          ctx.view.layer = cmd.layer ?? undefined;
         }
         if (cmd.detail !== undefined) ctx.view.detail = cmd.detail && /^[ilp]\d{1,2}$/.test(cmd.detail) ? cmd.detail : undefined;
         return;
@@ -1274,10 +1302,11 @@ export class App {
         const m = /^bus:(\d{1,2})$/.exec(scope);
         if (m) this.requireBus(ctx, Number(m[1]));
         else if (scope !== 'canal') throw new CommandError('Liberação inválida.');
-        (ctx.view.riskAcks ??= {})[scope] = now + RISK_ACK_MS;
+        const minutes = RISK_ACK_MINUTES.includes(Number(cmd.minutes)) ? Number(cmd.minutes) : RISK_ACK_MINUTES[0];
+        this.acksOf(ctx.user)[scope] = now + minutes * 60_000;
         const what = m ? this.labelOf(Number(m[1])) : 'ganho, phantom, EQ e efeitos (canal inteiro)';
-        this.event(`⚠ ${who}: liberou ${what} por 10 min (fora do que já foi testado)`);
-        this.log.write('risco', { scope, quem: who });
+        this.event(`⚠ ${who}: liberou ${what} por ${minutes >= 60 ? `${minutes / 60} h` : `${minutes} min`} (fora do que já foi testado)`);
+        this.log.write('risco', { scope, minutos: minutes, quem: who });
         return;
       }
       case 'fxlink.set': {
@@ -1385,8 +1414,8 @@ export class App {
         return;
       }
       case 'risk.release':
-        if (cmd.scope) delete ctx.view.riskAcks?.[cmd.scope];
-        else ctx.view.riskAcks = {};
+        if (cmd.scope) delete this.acksOf(ctx.user)[cmd.scope];
+        else this.riskAcks.delete(ctx.user.username);
         return;
       case 'bypass.allow': {
         // exceção do bypass: liberar UMA saída (aux) para o Copiloto mexer nos envios dela
@@ -1580,9 +1609,16 @@ export class App {
   /** Fora das saídas testadas: só passa se a pessoa liberou (com aviso) nos últimos 10 min. */
   private checkRisk(cmd: Command, ctx: ClientCtx, now: number): void {
     const scope = this.riskScope(cmd);
-    if (!scope || (ctx.view.riskAcks?.[scope] ?? 0) > now) return;
+    if (!scope || (this.acksOf(ctx.user)[scope] ?? 0) > now) return;
     const what = scope === 'canal' ? 'mexe no canal inteiro (salão, live e todos os fones)' : `mexe em ${this.labelOf(Number(scope.slice(4)))}`;
-    throw new CommandError(`⚠ Travado por segurança: este comando ${what}, que ainda não foi testado com o Copiloto. Para usar mesmo assim, clique em "Liberar (risco)".`);
+    throw new CommandError(`⚠ Travado: este comando ${what}, que ainda não foi testado com o Copiloto. Para liberar: Configurações › Travas de segurança.`);
+  }
+
+  /** Liberações de risco desta pessoa (valem em todas as telas dela). */
+  private acksOf(user: User): Record<string, number> {
+    let acks = this.riskAcks.get(user.username);
+    if (!acks) this.riskAcks.set(user.username, (acks = {}));
+    return acks;
   }
 
   /** Grava o "espelho" da mesa real (nomes, saídas, envios) para o simulador ficar igual. */
@@ -1731,6 +1767,56 @@ export class App {
     return allowed.find((b) => b !== MASTER_BUS && this.inList(this.cfg.streamAuxes, b)) ?? allowed.find((b) => b !== MASTER_BUS) ?? allowed[0];
   }
 
+  /** Camadas além das saídas: ganho das entradas e envios para cada efeito (mexem no canal inteiro). */
+  private layerChoices(user: User): { id: string; label: string }[] {
+    if (user.role !== 'admin' && !canUseBus(user, MASTER_BUS)) return [];
+    return [
+      { id: 'gain', label: 'ENTRADA · ganho' },
+      ...this.adapter.listFxReturns().map((fx) => ({ id: fx.key, label: `FX${fx.number} · ${fx.name}` })),
+    ];
+  }
+
+  private layerView(user: User, id: string): LayerView | undefined {
+    const choice = this.layerChoices(user).find((l) => l.id === id);
+    if (!choice) return undefined;
+    const now = Date.now();
+    // nível de cada canal (o mesmo em qualquer saída): o do nivelador do master
+    const levels = new Map((this.controllers.get(MASTER_BUS)?.leveler.snapshot(now) ?? []).map((c) => [c.key, c.rawDB]));
+    const dbOrNull = (db: number | undefined) => (db === undefined || !Number.isFinite(db) ? null : round1(db));
+    if (id === 'gain') {
+      return {
+        id,
+        kind: 'gain',
+        label: choice.label,
+        allowed: true,
+        phantomAllowed: user.role === 'admin',
+        channels: this.adapter
+          .listChannels()
+          .filter((ch) => ch.kind === 'i' && this.preamps.has(ch.key))
+          .map((ch) => {
+            const p = this.preamps.get(ch.key)!;
+            return { key: ch.key, name: this.channelName(ch.key), levelDB: levels.get(ch.key), db: p.gainDB, phantom: p.phantom };
+          }),
+      };
+    }
+    const fx = this.adapter.listFxReturns().find((f) => f.key === id)!;
+    const ret = this.controllers.get(MASTER_BUS)?.follower.snapshot().find((f) => f.key === fx.key);
+    return {
+      id,
+      kind: 'fx',
+      label: choice.label,
+      allowed: this.canEditFx(user, fx.key),
+      phantomAllowed: false,
+      channels: this.adapter.listChannels().map((ch) => ({
+        key: ch.key,
+        name: this.channelName(ch.key),
+        levelDB: levels.get(ch.key),
+        db: dbOrNull(this.fxSends.get(`${fx.key}:${ch.key}`)),
+      })),
+      ret: { key: fx.key, name: fx.name, db: dbOrNull(ret?.sendDB), muted: Boolean(ret?.muted), allowed: canUseBus(user, MASTER_BUS) },
+    };
+  }
+
   snapshotFor(ctx: ClientCtx): AppSnapshot {
     const now = Date.now();
     const user = ctx.user;
@@ -1771,6 +1857,8 @@ export class App {
       deadbandDB: this.cfg.leveler.deadbandDB,
       buses,
       bus,
+      layer: ctx.view.layer ? this.layerView(user, ctx.view.layer) : undefined,
+      layers: this.layerChoices(user),
       detail: c && ctx.view.detail ? this.channelDetail(ctx, c, ctx.view.detail, now) : undefined,
       presets,
       activePresetId: c ? this.persisted.activePresets?.[String(c.bus)] : undefined,
@@ -1793,7 +1881,7 @@ export class App {
       safety: {
         safeBuses: this.safeOutputs(),
         safeLabels: (this.safeOutputs() ?? []).map((b) => this.labelOf(b)),
-        acks: Object.entries(ctx.view.riskAcks ?? {})
+        acks: Object.entries(this.acksOf(user))
           .filter(([, until]) => until > now)
           .map(([scope, until]) => ({ scope, until })),
       },
@@ -1986,7 +2074,8 @@ const MIXER_WRITES = new Set(['setSendDB', 'setSendMute', 'setEqRaw', 'setFxSend
 const AVERAGING_OPTIONS = [5, 10, 20, 30, 60];
 
 /** Liberação de risco vale por 10 minutos. */
-const RISK_ACK_MS = 10 * 60_000;
+/** Por quanto tempo uma liberação de risco vale (minutos; o 1º é o padrão). */
+const RISK_ACK_MINUTES = [10, 60, 180];
 
 /** Comandos que mexem no canal inteiro (salão, live e fones juntos). */
 const CHANNEL_WIDE_COMMANDS = new Set<Command['type']>(['setEq', 'eq.apply', 'setGain', 'setPhantom', 'setFxSend']);

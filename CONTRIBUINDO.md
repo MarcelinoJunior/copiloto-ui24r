@@ -6,7 +6,7 @@ Obrigado por querer ajudar! O Copiloto Ui24R nasceu para ajudar equipes de som p
 
 Abra uma *issue* contando:
 - o que você fez, o que esperava e o que aconteceu;
-- modelo e firmware da mesa (aparece na tela Conexão) e se estava em modo VU ou Áudio USB;
+- modelo e firmware da mesa (aparece na tela Configurações) e se estava em modo VU ou Áudio USB;
 - se possível, o log do culto em `data/sessoes/` (remova o que for pessoal).
 
 ## Preparar o ambiente
@@ -21,7 +21,7 @@ npm install
 npm run sim
 ```
 
-O comando acima abre o simulador em http://localhost:8124 (usuário `admin`, senha `admin`). Em Conexão, "Usar USB simulado" liga os recursos do modo USB sem precisar da mesa.
+O comando acima abre o simulador em http://localhost:8124 (usuário `admin`, senha `admin`). Em Configurações, "Usar USB simulado" liga os recursos do modo USB sem precisar da mesa.
 
 Para rodar uma segunda cópia, isolada, sem misturar dados:
 
