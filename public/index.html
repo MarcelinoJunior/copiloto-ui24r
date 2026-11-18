@@ -55,36 +55,18 @@
     <span class="frozen-hint">Tentando reconectar… Se não voltar em alguns segundos, feche esta janela e abra de novo pelo ícone <b>Copiloto Ui24R</b>.</span>
   </div>
 
-  <!-- entradas da mesa: qual saída, qual canal está sendo mexido, tela -->
+  <!-- linha única em cima dos faders: qual entrada é, ajuste automático, volume ideal, presets, tela -->
   <div class="inbar">
-    <span class="in-title"><span class="in-icon" aria-hidden="true">▤</span>Entradas da mesa <span class="in-dot">•</span> <span id="in-bus" class="in-bus"></span></span>
-    <span id="in-master" class="in-master" title="Aqui os faders são os FADERS dos canais no master: mexer muda o som do SALÃO" hidden>⚠ muda o SALÃO</span>
+    <span id="in-bus" class="in-bus" hidden></span>
+    <span id="in-master" class="in-master" title="Aqui os faders são os FADERS dos canais no master: mexer muda o som do SALÃO" hidden>⚠ SALÃO</span>
     <div id="touch" class="touch idle" aria-live="polite">Passe o mouse ou arraste um fader para ver qual entrada é</div>
     <span id="bank" class="bank" hidden>
       <button class="icon-btn" id="bank-prev" title="Canais anteriores">◀</button>
       <span id="bank-label" class="bank-label"></span>
       <button class="icon-btn" id="bank-next" title="Próximos canais">▶</button>
     </span>
-    <span class="spacer"></span>
-    <label class="in-field" for="view-select" title="TELA: como os faders aparecem (quantos por tela, quais canais). ✎ cria seus modos.">Tela:</label>
-    <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
-    <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
-    <span class="type-legend" title="Cor da etiqueta de cada canal: pelo nome, pelo áudio (modo USB) ou pelo botão 🎤 É voz? na janela do canal">
-      <span><i class="t-voz"></i>voz</span><span><i class="t-ins"></i>instrumento</span><span><i class="t-bat"></i>bateria</span><span><i class="t-out"></i>outros</span>
-    </span>
-  </div>
-
-  <!-- abas (como as de uma planilha): o que os faders mexem -->
-  <nav id="out-tabs" class="out-tabs" role="tablist" aria-label="O que os faders mexem"></nav>
-  <main id="mixer" class="mixer"></main>
-  <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>
-
-  <!-- embaixo dos faders: duas metades -->
-  <div class="bottom">
-  <!-- metade esquerda: ajuste automático, volume ideal, presets -->
-  <div class="toolbar" role="toolbar" aria-label="Controles da saída">
     <div class="tgroup g-auto" title="AJUSTE AUTOMÁTICO DE VOLUME: o software mantém o volume de cada canal perto do volume ideal NESTA saída. Desligado = não faz nada. Só sugerir = mostra quanto mexeria, sem mexer. Ajustando = corrige os envios devagar, dentro dos limites.">
-      <span class="tlabel">Ajuste automático de volume <span class="ti">ⓘ</span></span>
+      <span class="tlabel">Ajuste automático <span class="ti">ⓘ</span></span>
       <div class="seg modes" role="radiogroup" aria-label="Ajuste automático de volume nesta saída">
         <button data-mode="desligado" title="O software não mexe em nada: só mostra os níveis">Desligado</button>
         <button data-mode="observar" title="Mostra embaixo de cada fader quanto mexeria, mas NÃO mexe na mesa">Só sugerir</button>
@@ -97,7 +79,7 @@
 
     <div class="tgroup g-alvo" title="VOLUME IDEAL: o volume de cada canal que o ajuste automático vai manter. Gravar = a mixagem de agora vira a ideal. Pelo tipo de som = calcula a partir da voz principal. Desfazer = volta os envios para como estavam antes das correções.">
       <span class="tlabel">Volume ideal <span class="ti">ⓘ</span></span>
-      <button id="capture" class="primary" title="Com a mixagem soando bem, grava o volume de cada canal como o ideal">💾 Gravar atuais</button>
+      <button id="capture" class="primary" title="Com a mixagem soando bem, grava o volume de cada canal como o ideal">💾 Gravar</button>
       <button id="suggest-targets" title="Calcula o volume ideal de cada canal pelo tipo de som (voz, bumbo, baixo, violão…), usando a voz principal como referência. Use com todos tocando.">Pelo tipo</button>
       <button id="restore" class="danger" title="Volta os envios para como estavam antes das correções (ou para o preset carregado)">↺ Desfazer</button>
     </div>
@@ -106,15 +88,26 @@
       <span class="tlabel" id="preset-title">Presets <span class="ti">ⓘ</span></span>
       <div id="preset-list" class="preset-list"></div>
       <span class="spacer"></span>
-      <button id="preset-new" title="Salvar a mixagem atual desta saída como novo preset">+ novo</button>
+      <button id="preset-new" title="Salvar a mixagem atual desta saída como novo preset">＋ novo</button>
       <button id="preset-update" class="icon-btn" title="Atualizar o preset ativo com a mixagem atual">↻</button>
       <button id="preset-delete" class="icon-btn" title="Apagar o preset ativo">×</button>
     </div>
 
-    <button id="help-btn" class="help-btn" aria-expanded="false" aria-controls="toolbar-help" title="Explica cada seção da barra">?</button>
+    <div class="tgroup g-tela" title="TELA: como os faders aparecem (quantos por tela, quais canais). ✎ cria seus modos.">
+      <label class="tlabel" for="view-select">Tela</label>
+      <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
+      <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
+    </div>
+    <button id="help-btn" class="help-btn" aria-expanded="false" aria-controls="toolbar-help" title="Explica cada seção">?</button>
   </div>
 
-  <!-- metade direita: efeito acompanha -->
+  <!-- abas (como as de uma planilha): o que os faders mexem -->
+  <nav id="out-tabs" class="out-tabs" role="tablist" aria-label="O que os faders mexem"></nav>
+  <main id="mixer" class="mixer"></main>
+  <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>
+
+  <!-- embaixo dos faders: efeito acompanha (2 efeitos por linha) -->
+  <div class="bottom">
   <div id="fxlink-bar" class="fxlink-bar" hidden>
     <span class="fxlink-title" title="EFEITO ACOMPANHA: o envio de cada canal para o efeito segue o fader do mesmo canal na saída escolhida, com a diferença escolhida. Mexeu o fader do canal nessa saída (na mesa, aqui ou pelo ajuste automático), o efeito daquele canal vai junto. O botão FX em cima de cada canal (na live) liga/desliga isso só para ele.">✣ Efeito acompanha: qual fader cada efeito copia, e com quanto? <span class="ti">ⓘ</span></span>
     <div id="fxlink-rows" class="fxlink-rows"></div>
@@ -131,6 +124,9 @@
 
   <footer class="statusline">
     <span class="legend" title="Medidor de cada faixa"><i class="lg lg-fill"></i>agora <i class="lg lg-avg"></i>média <i class="lg lg-target"></i>ideal</span>
+    <span class="type-legend" title="Cor da etiqueta de cada canal: pelo nome, pelo áudio (modo USB) ou pelo botão 🎤 É voz? na janela do canal">
+      <span><i class="t-voz"></i>voz</span><span><i class="t-ins"></i>instrumento</span><span><i class="t-bat"></i>bateria</span><span><i class="t-out"></i>outros</span>
+    </span>
     <span id="mode-help" class="muted"></span>
     <span id="toast" class="toast" role="alert" hidden></span>
     <details class="history">

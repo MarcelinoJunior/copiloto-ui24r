@@ -185,7 +185,7 @@ function setPill(cls, text) {
 
 // ---------- efeito acompanha a live ----------
 
-const FXL_OPTION = (o) => (o === null ? 'não copiar' : o === 'manter' ? 'manter' : o === 0 ? 'igual' : `${o} dB`);
+const FXL_LABEL = (o) => (o === null ? 'não copiar' : o === 'manter' ? 'manter' : o === 0 ? 'igual' : `${o}`);
 const FXL_TEXT = (o) => (o === null ? 'não copiar' : o === 'manter' ? 'mantendo a diferença de cada canal' : o === 0 ? 'o mesmo nível' : `${o} dB`);
 // "a live" → "da live" / "na live"; "o master" → "do master" / "no master"
 const deRef = (l) => l.replace(/^a /, 'da ').replace(/^o /, 'do ');
@@ -206,39 +206,46 @@ function renderFxLink(s) {
   $('#fxlink-rows').innerHTML = fl.fx
     .map((f) => {
       const ref = escapeHtml(f.refLabel);
-      const refOpts = fl.refs
+      const btns = choices
+        .map((o) => {
+          const active = o === f.offset;
+          const title =
+            o === null
+              ? 'Este efeito não acompanha: o envio para ele fica como está'
+              : o === 'manter'
+                ? `Cada canal mantém a diferença que tem agora e só acompanha as mudanças do fader ${emRef(ref)}`
+                : `Envio para o efeito = fader do canal ${emRef(ref)} ${o === 0 ? '(mesmo nível)' : `${o} dB`}`;
+          return `<button type="button" data-fx="${f.key}" data-off="${o === null ? '' : o}" class="${active ? 'active' : ''}${o === null ? ' off' : ''}" ${dis} title="${escapeHtml(title)}">${FXL_LABEL(o)}</button>`;
+        })
+        .join('');
+      const opts = fl.refs
         .map((r) => `<option value="${r.bus}" ${r.bus === f.ref ? 'selected' : ''}>${escapeHtml(r.label)}${r.bus === fl.liveBus && !/live/i.test(r.label) ? ' (live)' : ''}</option>`)
         .join('');
-      const offOpts = choices
-        .map((o) => `<option value="${o === null ? '' : o}" ${o === f.offset ? 'selected' : ''}>${FXL_OPTION(o)}</option>`)
-        .join('');
-      const on = f.offset !== null;
-      return `<div class="fxlink-row${on ? ' is-on' : ' is-off'}">
-        <span class="fxl-name" title="FX${f.key.slice(1)} · ${escapeHtml(f.name)}"><b>FX${f.key.slice(1)}</b> ${escapeHtml(f.name)}</span>
-        <select class="fxl-ref" data-fxref="${f.key}" ${dis} title="Qual fader o FX${f.key.slice(1)} copia: o de cada canal ${emRef(ref)}">${refOpts}</select>
-        <select class="fxl-off${on ? ' on' : ''}" data-fxoff="${f.key}" ${dis} title="Com quanto? Envio para o efeito = fader copiado + esta diferença (não copiar = o efeito fica como está; manter = cada canal guarda a diferença que tem agora)">${offOpts}</select>
+      return `<div class="fxlink-row${f.offset === null ? ' is-off' : ''}">
+        <span class="fxl-name"><b>FX${f.key.slice(1)}</b> ${escapeHtml(f.name)}</span>
+        <label class="fxl-ref" title="De qual saída o efeito copia o fader de cada canal">copia
+          <select data-fxref="${f.key}" ${dis}>${opts}</select> com</label>
+        <div class="seg small">${btns}</div>
       </div>`;
     })
     .join('');
 }
 
-$('#fxlink-rows').addEventListener('change', (e) => {
-  const sel = e.target.closest('select[data-fxoff]');
-  if (!sel || !state?.fxLink) return;
-  const fx = sel.dataset.fxoff;
-  const raw = sel.value;
+$('#fxlink-rows').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-fx]');
+  if (!b || b.classList.contains('active') || !state?.fxLink) return;
+  const fx = b.dataset.fx;
+  const raw = b.dataset.off;
   const offset = raw === '' ? null : raw === 'manter' ? 'manter' : Number(raw);
   const f = state.fxLink.fx.find((x) => x.key === fx);
   const ref = f?.refLabel ?? 'a live';
   const where = f?.inRoom ? '\n\nAtenção: este efeito toca no SALÃO; o reverb do salão também muda.' : '';
-  $('#fxlink-bar').dataset.sig = ''; // redesenha com o que o servidor confirmar (ou volta, se cancelar)
   let align = false;
   if (typeof offset === 'number') {
     align = confirm(
       `FX${fx.slice(1)} (${f?.name ?? ''}) vai copiar o fader ${deRef(ref)} com ${FXL_TEXT(offset)}.\n\nAlinhar TODOS os canais agora? (OK = alinhar já; Cancelar = só acompanhar as próximas mexidas)${where}`,
     );
   } else if (offset === 'manter' && where && !confirm(`FX${fx.slice(1)} vai copiar o fader ${deRef(ref)} mantendo a diferença de cada canal.${where}`)) {
-    if (state) render();
     return;
   }
   send({ type: 'fxlink.set', fx, offset, align });
@@ -369,7 +376,7 @@ function renderPresets(s) {
             return `<button type="button" class="preset-btn${on ? ' on' : ''}" data-preset="${p.id}" title="${escapeHtml(on ? `Preset ativo: ${p.name}. Clique de novo para recarregar (fade suave).` : `Carregar "${p.name}" com fade suave`)}">${escapeHtml(p.name)}</button>`;
           })
           .join('')
-      : '<span class="muted small">nenhum preset salvo: use + novo</span>';
+      : '<span class="muted small">nenhum preset: use ＋ novo</span>';
   }
   const hasActive = s.presets.some((p) => p.id === s.activePresetId);
   $('#preset-update').disabled = !hasActive;
