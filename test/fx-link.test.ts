@@ -60,3 +60,46 @@ describe('efeito acompanha a live (envio do canal para o FX segue o envio para a
     expect(link.onLiveSend('i1', { db: -5, muted: false }, new Map(), 0)).toEqual([]);
   });
 });
+
+describe('efeito acompanha: saída de referência escolhida por efeito', () => {
+  const LIVE = 5;
+  const MASTER = 0;
+
+  it('padrão é a live; cada efeito só segue a saída que copia', () => {
+    const link = new FxLink();
+    link.setDefaultRef(LIVE);
+    link.setOffset('f1', -4, live([]), new Map(), false, 0);
+    link.setOffset('f2', -8, live([]), new Map(), false, 0);
+    link.setRef('f2', MASTER);
+    expect(link.ref('f1')).toBe(LIVE);
+    expect(link.ref('f2')).toBe(MASTER);
+    // mexeu na live: só o FX1 acompanha
+    expect(link.onSend(LIVE, 'i3', { db: -10, muted: false }, new Map(), 0)).toEqual([{ fx: 'f1', key: 'i3', db: -14 }]);
+    // mexeu no fader do canal no master: só o FX2 acompanha
+    expect(link.onSend(MASTER, 'i3', { db: -2, muted: false }, new Map(), 0)).toEqual([{ fx: 'f2', key: 'i3', db: -10 }]);
+    // um aux que ninguém copia: nada
+    expect(link.onSend(1, 'i3', { db: 0, muted: false }, new Map(), 0)).toEqual([]);
+  });
+
+  it('a referência fica salva; voltar para a live apaga a escolha', () => {
+    const link = new FxLink();
+    link.setDefaultRef(LIVE);
+    link.setRef('f3', 9);
+    const saved = new FxLink(link.export());
+    saved.setDefaultRef(LIVE);
+    expect(saved.ref('f3')).toBe(9);
+    saved.setRef('f3', LIVE);
+    expect(saved.export().refs).toEqual({});
+    expect(saved.ref('f3')).toBe(LIVE);
+  });
+
+  it('"manter" usa a diferença em relação à saída de referência', () => {
+    const link = new FxLink();
+    link.setDefaultRef(LIVE);
+    link.setRef('f1', MASTER);
+    // master do canal em -5, envio ao FX1 em -15: diferença -10
+    link.setOffset('f1', 'manter', live([['i6', -5]]), new Map([['f1:i6', -15]]), false, 0);
+    expect(link.onSend(MASTER, 'i6', { db: -2, muted: false }, new Map([['f1:i6', -15]]), 0)).toEqual([{ fx: 'f1', key: 'i6', db: -12 }]);
+    expect(link.onSend(LIVE, 'i6', { db: -30, muted: false }, new Map([['f1:i6', -12]]), 0)).toEqual([]);
+  });
+});

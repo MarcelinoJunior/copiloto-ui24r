@@ -31,7 +31,7 @@ Dois cliques e pronto: instala sem pedir administrador, já traz tudo o que prec
 
 **Sempre (pela rede, sem cabo extra):**
 - **Equilíbrio automático de auxiliares** (ex.: o aux da live). Lê o nível de cada canal e corrige devagar o envio quando alguém fica alto ou baixo demais, dentro de limites em torno da sua mixagem. Canal em silêncio nunca é mexido, para não virar ruído.
-- **Efeito acompanha a live:** o envio de cada canal para o efeito (FX1, FX2…) segue o fader dele na live, com a diferença escolhida na tela (**mesma, −2, −4, −8, −10, −15, −20 dB** ou **manter como está**). Mexeu o canal na live, na mesa ou pelo ajuste automático, o efeito daquele canal vai junto. Um botão **FX** em cima de cada canal deixa ignorar canais (ex.: bumbo, baixo). O envio para o efeito é um só por canal: se o retorno do efeito também está no salão, o reverb do salão muda junto (normalmente imperceptível lá).
+- **Efeito acompanha:** o envio de cada canal para o efeito (FX1, FX2…) copia o fader dele numa **saída escolhida para cada efeito** (padrão: a live; pode ser o master ou outro aux), com a diferença escolhida na tela (**igual, −2, −4, −8, −10, −15, −20 dB** ou **manter**). Mexeu o canal nessa saída, na mesa ou pelo ajuste automático, o efeito daquele canal vai junto. Ex.: o reverb da voz copia a live com −4 dB, e o delay copia o master. Um botão **FX** em cima de cada canal deixa ignorar canais (ex.: bumbo, baixo). O envio para o efeito é um só por canal: se o retorno do efeito também está no salão, o reverb do salão muda junto (normalmente imperceptível lá).
 - **Voz sumida na live:** uma voz que fica muito abaixo da voz mais alta na live (mais de 12 dB, por 10 s; ex.: o envio de uma cantora esquecido lá embaixo) ganha um volume ideal novo, 8 dB abaixo da voz mais alta, e sobe devagar (até 15 dB acima da sua mixagem). Em *Só sugerir* aparece a sugestão e um aviso. Se você mexer no fader dessa voz na live, o Copiloto respeita por 10 min. Vale para os canais que são voz: pelo nome (pastor, ministro, vocal, back…) ou marcados no botão **🎤 É voz?** da janela do canal (ex.: canais com o nome da cantora).
 - **Tela parada:** se o painel perder a ligação com o Copiloto, a mixagem escurece e aparece "⚠ TELA PARADA", para ninguém confiar em medidores congelados.
 - **Tempo de análise** do ajuste automático na tela: 5, 10, 20, 30 ou 60 s por saída (mais tempo = ignora picos).
@@ -115,36 +115,41 @@ npm run diagnostico
 
 ### Mixagem
 
-**Barra de cima (1º andar):**
+A tela vai de cima para baixo: barra de cima, **entradas da mesa** (os canais), **controles da saída** e **efeito acompanha**. O botão **⇅ controles em cima** (no rodapé) põe os controles acima dos faders, se você preferir (vale só para aquele navegador).
+
+**Barra de cima:**
 - abas Mixagem, Análise, Conexão e Pessoas;
 - controles do simulador (só aparecem no simulador);
+- aviso **⚠ senha padrão** (enquanto o admin usar a senha `admin`; clique para trocar);
+- selo da mesa (verde = mesa real com o tempo de resposta; roxo = simulador);
+- **Dicas**, com um contador que fica laranja ou vermelho quando há algo importante;
 - **⛔ BYPASS** (botão de pânico, também nas telas Análise e Conexão): um clique e o Copiloto **para de mexer na mesa** e só monitora. Veja abaixo;
 - **⏻ Desligar o Copiloto** (só o admin; também nas telas Análise e Conexão): fecha o programa para todo mundo depois de confirmar. Os envios da mesa ficam como estão. Para ligar de novo, use o ícone *Abrir Copiloto*;
-- **Dicas**, com um contador que fica laranja ou vermelho quando há algo importante;
-- selo da mesa (verde = mesa real com o tempo de resposta; roxo = simulador);
-- seu usuário.
+- **⚙** com o seu usuário (trocar senha, sair).
 
-**2º andar: cinco seções**, cada uma numa caixa com cor própria. O botão **? Como funciona** explica cada uma.
-
-| Seção | O que faz |
-|---|---|
-| **Saída** | Qual saída você vê e mixa: aux da live, um retorno ou o master (salão). Par estéreo aparece junto (ex.: AUX 7+8). Cada pessoa vê a sua. |
-| **Ajuste automático de volume** | O software mantém cada canal perto do volume ideal. *Desligado* (só mostra), *Só sugerir* (mostra quanto mexeria, sem mexer), *Ajustando* (corrige devagar). Vale só para esta saída. |
-| **Volume ideal** | A referência do ajuste automático. *Gravar volumes atuais*: o volume de agora de cada canal vira o ideal. *Pelo tipo de som*: calcula a partir da voz principal (backs ~5 dB abaixo, bumbo/baixo ~6, violão/teclado ~8, pratos ~12). *Desfazer ajustes*: volta os envios para antes das correções (pânico). |
-| **Preset** | Carrega com fade (lista), salva (+), atualiza (↻), apaga (×) as mixagens desta saída. |
-| **Tela** | Modo de visualização (✎ cria: quantos faders, quais canais) e **Expandir canal** (clique no nome abre a janela do canal). |
+**Entradas da mesa:** a linha logo acima dos faders diz qual saída você está mixando (ex.: *ENTRADAS DA MESA • AUX 5+6 · LIVE*). Ao **passar o mouse ou arrastar um fader**, a faixa acende e o quadro ao lado mostra em destaque **qual entrada é** (número, nome, valor e destino, ex.: *20 JAQUE −34,1 dB · voz · envio para AUX 5+6*). Na mesma linha ficam **Tela** (modo de visualização; ✎ cria: quantos faders, quais canais) e **Expandir canal** (clique no nome abre a janela do canal).
 
 **Cada faixa de canal mostra:**
-- **nome**;
+- uma **etiqueta no topo com o número grande e o nome**, colorida pelo tipo de som: **azul = voz, verde = instrumento, laranja = bateria, cinza = outros**. O tipo vem do nome do canal, do áudio (modo USB) ou do botão **🎤 É voz?** na janela do canal. Nomes longos que não cabem são separados por sílaba (GUI-TARRA);
 - **estado** (ok, corrige, silêncio, operador…; passe o mouse para a explicação);
 - etiqueta **48V** quando o phantom está ligado;
 - **AUTO** (ajuste automático só deste canal) e **MUTE** (vermelho = mutado nesta saída);
 - **medidor**: verde = agora, azul = média, branco = volume ideal;
 - **fader**, que é o envio para a saída e fica laranja quando o software mexe;
-- valor e correção;
-- **número do canal** embaixo.
+- valor e correção.
 
-As faixas rosa são os **retornos dos efeitos**: o botão **ACOMP.** liga o "efeito acompanha", e o selo diz se o efeito toca no salão. No canto direito fica o **master** da saída.
+As faixas rosa são os **retornos dos efeitos** (o botão **ACOMP.** liga o ajuste do retorno do efeito nesta saída). No canto direito fica o **master** da saída.
+
+**Controles da saída** (embaixo dos faders), cada um numa caixa com cor própria; o botão **?** explica cada uma:
+
+| Seção | O que faz |
+|---|---|
+| **Saída** | Qual saída você vê e mixa: aux da live, um retorno ou o master (salão). Par estéreo aparece junto (ex.: AUX 5+6). Cada pessoa vê a sua. |
+| **Ajuste automático de volume** | O software mantém cada canal perto do volume ideal. *Desligado* (só mostra), *Só sugerir* (mostra quanto mexeria, sem mexer), *Ajustando* (corrige devagar). Ao lado, quantos segundos de som ele analisa. Vale só para esta saída. |
+| **Volume ideal** | A referência do ajuste automático. *Gravar atuais*: o volume de agora de cada canal vira o ideal. *Pelo tipo*: calcula a partir da voz principal (backs ~5 dB abaixo, bumbo/baixo ~6, violão/teclado ~8, pratos ~12). *Desfazer*: volta os envios para antes das correções (pânico). |
+| **Presets** | Um botão para cada mixagem salva desta saída (ex.: Música, Fala, Avisos): clique para carregar com fade suave; o ativo fica verde. *+ novo* salva a mixagem atual, ↻ atualiza o ativo, × apaga o ativo. |
+
+**Efeito acompanha** (na live e no master): uma linha por efeito, com duas perguntas: **de qual saída copiar o fader** de cada canal (a live, o master ou outro aux) e **com quanto** (*não copiar, igual, −2, −4, −8, −10, −15, −20 dB* ou *manter*). Veja "Efeito acompanha" acima.
 
 **Janela do canal** (com *Expandir canal* ligado, clique no nome; ✕, Esc ou clique fora fecham):
 - **Todos os volumes do canal em faders grandes:** master (salão), esta saída, efeitos F1–F4 e os outros auxiliares liberados. Os efeitos que tocam no salão ficam bloqueados para quem não tem o master.

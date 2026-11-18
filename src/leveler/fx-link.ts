@@ -1,6 +1,7 @@
 /**
- * "Efeito acompanha a live": o envio de cada canal para um efeito (FX1, FX2…) segue o envio
- * do MESMO canal para a live, com uma diferença escolhida na tela.
+ * "Efeito acompanha": o envio de cada canal para um efeito (FX1, FX2…) segue o fader do MESMO
+ * canal numa saída de referência (padrão: a live; pode ser o master ou outro aux), com uma
+ * diferença escolhida na tela.
  *
  *   diferença fixa (0, −2, −4, −8, −10, −15, −20 dB): envio FX = envio live + diferença
  *   "manter": cada canal guarda a diferença que tinha quando a opção foi ligada
@@ -23,6 +24,8 @@ export interface FxLinkState {
   ignore: string[];
   /** modo "manter": diferença de cada canal ("f1:i3" → dB) */
   rel: Record<string, number>;
+  /** saída de referência de cada efeito ("f1" → bus); ausente = a live */
+  refs: Record<string, number>;
 }
 
 export interface FxSendAction {
@@ -46,13 +49,36 @@ export class FxLink {
   private state: FxLinkState;
   /** o que mandamos por último, para o eco da mesa não parecer o operador */
   private readonly sent = new Map<string, { db: number; t: number }>();
+  /** referência de quem não escolheu outra (a live) */
+  private defaultRef?: number;
 
   constructor(state?: Partial<FxLinkState>) {
-    this.state = { offsets: { ...state?.offsets }, ignore: [...(state?.ignore ?? [])], rel: { ...state?.rel } };
+    this.state = {
+      offsets: { ...state?.offsets },
+      ignore: [...(state?.ignore ?? [])],
+      rel: { ...state?.rel },
+      refs: { ...state?.refs },
+    };
   }
 
   export(): FxLinkState {
-    return { offsets: { ...this.state.offsets }, ignore: [...this.state.ignore], rel: { ...this.state.rel } };
+    return { offsets: { ...this.state.offsets }, ignore: [...this.state.ignore], rel: { ...this.state.rel }, refs: { ...this.state.refs } };
+  }
+
+  /** Saída usada por quem não escolheu outra (a live). */
+  setDefaultRef(bus: number | undefined): void {
+    this.defaultRef = bus;
+  }
+
+  /** Saída cujo fader o efeito copia. */
+  ref(fx: string): number | undefined {
+    return this.state.refs[fx] ?? this.defaultRef;
+  }
+
+  /** Troca a saída de referência (null = volta para a live). O "manter" é recalculado por quem chama (setOffset). */
+  setRef(fx: string, bus: number | null): void {
+    if (bus === null || bus === this.defaultRef) delete this.state.refs[fx];
+    else this.state.refs[fx] = bus;
   }
 
   offset(fx: string): FxOffset | undefined {
@@ -111,11 +137,17 @@ export class FxLink {
     return out;
   }
 
-  /** O envio do canal para a live mudou: ajusta os efeitos ligados. */
+  /** O envio do canal para a live (referência padrão) mudou: ajusta os efeitos que seguem a live. */
   onLiveSend(key: string, send: LiveSend, fxSends: Map<string, number>, now: number): FxSendAction[] {
+    return this.onSend(this.defaultRef, key, send, fxSends, now);
+  }
+
+  /** O fader do canal numa saída mudou: ajusta os efeitos ligados que usam essa saída como referência. */
+  onSend(bus: number | undefined, key: string, send: LiveSend, fxSends: Map<string, number>, now: number): FxSendAction[] {
     if (this.isIgnored(key)) return [];
     const out: FxSendAction[] = [];
     for (const fx of Object.keys(this.state.offsets)) {
+      if (this.ref(fx) !== bus) continue;
       const action = this.actionFor(fx, key, send, fxSends.get(`${fx}:${key}`), now);
       if (action) out.push(action);
     }

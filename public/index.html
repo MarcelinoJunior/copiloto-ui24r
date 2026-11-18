@@ -8,14 +8,13 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="mix-page">
-  <!-- 1º andar: navegação, simulador, conexão e conta -->
+  <!-- barra de cima: navegação, simulador, senha, mesa, dicas, bypass e conta -->
   <header class="appbar">
-    <strong class="logo">Copiloto</strong>
+    <strong class="logo"><span class="logo-mark" aria-hidden="true">▶</span>Copiloto</strong>
     <nav class="nav" id="nav"><a href="/" class="active" aria-current="page">Mixagem</a><a href="analise.html">Análise</a><a href="conexao.html">Conexão</a><a href="admin.html" id="nav-admin">Pessoas</a></nav>
 
     <div id="sim" class="simgroup" hidden title="Mesa falsa para testes: nada é enviado para a Ui24R">
       <span class="sim-chip">SIMULADOR</span>
-      <span class="muted">momento</span>
       <div class="seg scenes">
         <button data-scene="louvor">Música</button>
         <button data-scene="pregacao">Fala</button>
@@ -26,14 +25,15 @@
     </div>
 
     <span class="spacer"></span>
-    <button type="button" id="bypass-btn" class="bypass-btn" aria-pressed="false">⛔ BYPASS</button>
-    <button type="button" id="shutdown-btn" class="shutdown-btn" title="Desligar o Copiloto (só o admin). Os envios da mesa ficam como estão." aria-label="Desligar o Copiloto" hidden>⏻</button>
+    <a id="default-pass" class="pass-chip" href="admin.html" title="Você está usando a senha padrão admin, que todo mundo conhece (o projeto é público). Clique para trocar." hidden>⚠ senha padrão</a>
+    <a id="conn" class="pill" href="conexao.html" title="Abrir a tela de conexão">…</a>
     <button id="tips-btn" class="tips-btn" title="Dicas a partir do que o software está lendo (clip, volume baixo, ruído, microfonia…)">
       Dicas <span id="tips-count" class="tips-count">0</span>
     </button>
-    <a id="conn" class="pill" href="conexao.html" title="Abrir a tela de conexão">…</a>
+    <button type="button" id="bypass-btn" class="bypass-btn" aria-pressed="false">⛔ BYPASS</button>
+    <button type="button" id="shutdown-btn" class="shutdown-btn" title="Desligar o Copiloto (só o admin). Os envios da mesa ficam como estão." aria-label="Desligar o Copiloto" hidden>⏻</button>
     <details class="menu user-menu">
-      <summary id="user-name">…</summary>
+      <summary id="user-name" title="Conta">⚙</summary>
       <div class="menu-body right">
         <a href="admin.html" id="menu-account">Minha senha / pessoas</a>
         <button id="logout" class="ghost">Sair</button>
@@ -49,8 +49,45 @@
     <button type="button" id="bypass-off" class="small-btn">Desligar bypass</button>
   </div>
 
-  <!-- 2º andar: controles da mixagem, em grupos -->
-  <div class="toolbar" role="toolbar" aria-label="Controles da mixagem">
+  <div id="risk-bar" class="risk-bar" role="alert" hidden>
+    <span class="risk-text"></span>
+    <button type="button" id="risk-ack" class="small-btn">Liberar esta saída por 10 min (risco)</button>
+    <button type="button" id="risk-release" class="small-btn" hidden>Travar de novo</button>
+  </div>
+
+  <div id="frozen" class="frozen" role="alert" hidden>
+    <strong>⚠ TELA PARADA</strong>
+    <span>O painel perdeu a ligação com o Copiloto: os medidores e faders abaixo NÃO estão atualizando.</span>
+    <span class="frozen-hint">Tentando reconectar… Se não voltar em alguns segundos, feche esta janela e abra de novo pelo ícone <b>Copiloto Ui24R</b>.</span>
+  </div>
+
+  <!-- entradas da mesa: qual saída, qual canal está sendo mexido, tela -->
+  <div class="inbar">
+    <span class="in-title"><span class="in-icon" aria-hidden="true">▤</span>Entradas da mesa <span class="in-dot">•</span> <span id="in-bus" class="in-bus"></span></span>
+    <span id="in-master" class="in-master" title="Aqui os faders são os FADERS dos canais no master: mexer muda o som do SALÃO" hidden>⚠ muda o SALÃO</span>
+    <div id="touch" class="touch idle" aria-live="polite">Passe o mouse ou arraste um fader para ver qual entrada é</div>
+    <span id="bank" class="bank" hidden>
+      <button class="icon-btn" id="bank-prev" title="Canais anteriores">◀</button>
+      <span id="bank-label" class="bank-label"></span>
+      <button class="icon-btn" id="bank-next" title="Próximos canais">▶</button>
+    </span>
+    <span class="spacer"></span>
+    <label class="in-field" for="view-select" title="TELA: como os faders aparecem (quantos por tela, quais canais). ✎ cria seus modos.">Tela:</label>
+    <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
+    <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
+    <label class="toggle-btn" title="Clicar no nome do canal abre todos os volumes dele: master, esta saída e efeitos 1 a 4">
+      <input type="checkbox" id="expand"> Expandir canal
+    </label>
+    <span class="type-legend" title="Cor da etiqueta de cada canal: pelo nome, pelo áudio (modo USB) ou pelo botão 🎤 É voz? na janela do canal">
+      <span><i class="t-voz"></i>voz</span><span><i class="t-ins"></i>instrumento</span><span><i class="t-bat"></i>bateria</span><span><i class="t-out"></i>outros</span>
+    </span>
+  </div>
+
+  <main id="mixer" class="mixer"></main>
+  <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>
+
+  <!-- controles da saída, em grupos -->
+  <div class="toolbar" role="toolbar" aria-label="Controles da saída">
     <div class="tgroup g-saida" title="SAÍDA: qual saída da mesa você está vendo e mixando (aux da live, retornos ou master). Cada pessoa vê a sua.">
       <label class="tlabel" for="bus-select">Saída <span class="ti">ⓘ</span></label>
       <select id="bus-select"></select>
@@ -63,77 +100,46 @@
         <button data-mode="observar" title="Mostra embaixo de cada fader quanto mexeria, mas NÃO mexe na mesa">Só sugerir</button>
         <button data-mode="automatico" title="Corrige os envios devagar para cada canal ficar no volume ideal">Ajustando</button>
       </div>
-      <label class="avg-pick" title="Quanto tempo de som o ajuste automático usa para decidir. Mais tempo = reage mais devagar e ignora picos (bumbo, uma frase mais forte). Menos tempo = reage rápido.">
-        analisar os últimos
-        <select id="avg-select" aria-label="Tempo de análise do ajuste automático">
-          <option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="30">30 s</option><option value="60">60 s</option>
-        </select>
-      </label>
+      <select id="avg-select" aria-label="Tempo de análise do ajuste automático" title="Quanto tempo de som o ajuste automático usa para decidir. Mais tempo = reage mais devagar e ignora picos. Menos tempo = reage rápido.">
+        <option value="5">5 s</option><option value="10">10 s</option><option value="20">20 s</option><option value="30">30 s</option><option value="60">60 s</option>
+      </select>
     </div>
 
-    <div class="tgroup g-alvo" title="VOLUME IDEAL: o volume de cada canal que o ajuste automático vai manter. Gravar = a mixagem de agora vira a ideal. Pelo tipo de som = calcula a partir da voz principal. Desfazer ajustes = volta os envios para como estavam antes das correções.">
+    <div class="tgroup g-alvo" title="VOLUME IDEAL: o volume de cada canal que o ajuste automático vai manter. Gravar = a mixagem de agora vira a ideal. Pelo tipo de som = calcula a partir da voz principal. Desfazer = volta os envios para como estavam antes das correções.">
       <span class="tlabel">Volume ideal <span class="ti">ⓘ</span></span>
-      <button id="capture" class="primary" title="Com a mixagem soando bem, grava o volume de cada canal como o ideal">Gravar volumes atuais</button>
-      <button id="suggest-targets" title="Calcula o volume ideal de cada canal pelo tipo de som (voz, bumbo, baixo, violão…), usando a voz principal como referência. Use com todos tocando.">Pelo tipo de som</button>
-      <button id="restore" class="danger" title="Volta os envios para como estavam antes das correções (ou para o preset carregado)">Desfazer ajustes</button>
+      <button id="capture" class="primary" title="Com a mixagem soando bem, grava o volume de cada canal como o ideal">💾 Gravar atuais</button>
+      <button id="suggest-targets" title="Calcula o volume ideal de cada canal pelo tipo de som (voz, bumbo, baixo, violão…), usando a voz principal como referência. Use com todos tocando.">Pelo tipo</button>
+      <button id="restore" class="danger" title="Volta os envios para como estavam antes das correções (ou para o preset carregado)">↺ Desfazer</button>
     </div>
 
-    <div class="tgroup g-preset" title="PRESET: mixagens salvas desta saída (ex.: Música, Fala), carregadas com fade suave. + salva nova, ↻ atualiza a ativa, × apaga.">
-      <label class="tlabel" for="preset-select">Preset <span class="ti">ⓘ</span></label>
-      <select id="preset-select" title="Carregar preset desta saída (com fade suave)"></select>
-      <div class="btn-row">
-        <button id="preset-new" class="icon-btn" title="Salvar a mixagem atual desta saída como novo preset">+</button>
-        <button id="preset-update" class="icon-btn" title="Atualizar o preset ativo com a mixagem atual">↻</button>
-        <button id="preset-delete" class="icon-btn" title="Apagar o preset ativo">×</button>
-      </div>
+    <div class="tgroup g-preset" title="PRESETS: mixagens salvas desta saída (ex.: Música, Fala). Clique para carregar com fade suave. + novo salva a mixagem atual, ↻ atualiza o preset ativo, × apaga o ativo.">
+      <span class="tlabel" id="preset-title">Presets <span class="ti">ⓘ</span></span>
+      <div id="preset-list" class="preset-list"></div>
+      <span class="spacer"></span>
+      <button id="preset-new" title="Salvar a mixagem atual desta saída como novo preset">+ novo</button>
+      <button id="preset-update" class="icon-btn" title="Atualizar o preset ativo com a mixagem atual">↻</button>
+      <button id="preset-delete" class="icon-btn" title="Apagar o preset ativo">×</button>
     </div>
 
-    <div class="tgroup g-tela" title="TELA: como os faders aparecem (quantos por tela, quais canais). ✎ cria seus modos. Expandir canal = clicar no nome abre ganho, EQ, master, efeitos e espectro.">
-      <label class="tlabel" for="view-select">Tela <span class="ti">ⓘ</span></label>
-      <select id="view-select" title="Modo de visualização (quantos faders, quais canais)"></select>
-      <button id="view-edit" class="icon-btn" title="Criar ou editar modos de visualização">✎</button>
-      <label class="toggle-btn" title="Clicar no nome do canal abre todos os volumes dele: master, esta saída e efeitos 1 a 4">
-        <input type="checkbox" id="expand"> Expandir canal
-      </label>
-    </div>
-
-    <button id="help-btn" class="help-btn" aria-expanded="false" aria-controls="toolbar-help" title="Explica cada seção da barra">? Como funciona</button>
+    <button id="help-btn" class="help-btn" aria-expanded="false" aria-controls="toolbar-help" title="Explica cada seção da barra">?</button>
   </div>
 
   <div id="toolbar-help" class="toolbar-help" hidden>
-    <div class="h g-saida"><strong>Saída</strong> Qual saída da mesa você vê e mixa: o aux da live (ex.: AUX 7+8), um retorno ou o master do salão. Cada pessoa vê a sua; o admin escolhe quem pode usar qual.</div>
+    <div class="h g-saida"><strong>Saída</strong> Qual saída da mesa você vê e mixa: o aux da live (ex.: AUX 5+6), um retorno ou o master do salão. Cada pessoa vê a sua; o admin escolhe quem pode usar qual.</div>
     <div class="h g-auto"><strong>Ajuste automático de volume</strong> O software mantém cada canal perto do volume ideal nesta saída (ex.: o pastor empolgou → o envio dele desce um pouco). <em>Desligado</em>: não faz nada. <em>Só sugerir</em>: mostra embaixo do fader quanto mexeria. <em>Ajustando</em>: corrige devagar.</div>
-    <div class="h g-alvo"><strong>Volume ideal</strong> É a referência do ajuste automático. <em>Gravar volumes atuais</em>: com a mixagem soando bem, o volume de cada canal vira o ideal. <em>Pelo tipo de som</em>: a voz principal vira referência e cada tipo (backs, bumbo, baixo, violão…) fica alguns dB abaixo dela. <em>Desfazer ajustes</em>: volta os envios para antes das correções (botão de pânico).</div>
-    <div class="h g-preset"><strong>Preset</strong> Mixagens salvas desta saída (ex.: "Música – mais batera", "Fala"). Escolher na lista carrega com fade suave. <em>+</em> salva nova, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
-    <div class="h g-tela"><strong>Tela</strong> Como os faders aparecem: quantos cabem na tela e quais canais (✎ cria seus modos). <em>Expandir canal</em>: clicar no nome do canal abre ganho, phantom, mute, equalizador, master, efeitos e espectro.</div>
+    <div class="h g-alvo"><strong>Volume ideal</strong> É a referência do ajuste automático. <em>Gravar atuais</em>: com a mixagem soando bem, o volume de cada canal vira o ideal. <em>Pelo tipo</em>: a voz principal vira referência e cada tipo (backs, bumbo, baixo, violão…) fica alguns dB abaixo dela. <em>Desfazer</em>: volta os envios para antes das correções (botão de pânico).</div>
+    <div class="h g-preset"><strong>Presets</strong> Mixagens salvas desta saída (ex.: "Música – mais batera", "Fala"). Clicar carrega com fade suave. <em>+ novo</em> salva a mixagem atual, <em>↻</em> atualiza a ativa, <em>×</em> apaga.</div>
+    <div class="h g-fx"><strong>Efeito acompanha</strong> O envio de cada canal para o efeito copia o fader do mesmo canal na saída escolhida (a live, o master ou um aux), com a diferença escolhida. <em>não copiar</em>: o efeito fica como está. <em>manter</em>: cada canal guarda a diferença que tem agora.</div>
   </div>
 
   <div id="fxlink-bar" class="fxlink-bar" hidden>
-    <span class="fxlink-title" title="EFEITO ACOMPANHA A LIVE: o envio de cada canal para o efeito segue o envio dele para a live, com a diferença escolhida. Mexeu o fader do canal na live (na mesa, aqui ou pelo ajuste automático), o efeito daquele canal vai junto. O botão FX em cima de cada canal liga/desliga isso só para ele.">Efeito acompanha a live <span class="ti">ⓘ</span></span>
+    <span class="fxlink-title" title="EFEITO ACOMPANHA: o envio de cada canal para o efeito segue o fader do mesmo canal na saída escolhida, com a diferença escolhida. Mexeu o fader do canal nessa saída (na mesa, aqui ou pelo ajuste automático), o efeito daquele canal vai junto. O botão FX em cima de cada canal (na live) liga/desliga isso só para ele.">✣ Efeito acompanha: qual fader cada efeito copia, e com quanto? <span class="ti">ⓘ</span></span>
     <div id="fxlink-rows" class="fxlink-rows"></div>
   </div>
 
-  <div id="risk-bar" class="risk-bar" role="alert" hidden>
-    <span class="risk-text"></span>
-    <button type="button" id="risk-ack" class="small-btn">Liberar esta saída por 10 min (risco)</button>
-    <button type="button" id="risk-release" class="small-btn" hidden>Travar de novo</button>
-  </div>
-
-  <p id="default-pass" class="warnbar" hidden>
-    ⚠ Você está usando a senha padrão <strong>admin</strong>, que todo mundo conhece (o projeto é público).
-    <a href="admin.html">Troque a senha agora →</a>
-  </p>
-
-  <div id="frozen" class="frozen" role="alert" hidden>
-    <strong>⚠ TELA PARADA</strong>
-    <span>O painel perdeu a ligação com o Copiloto: os medidores e faders abaixo NÃO estão atualizando.</span>
-    <span class="frozen-hint">Tentando reconectar… Se não voltar em alguns segundos, feche esta janela e abra de novo pelo ícone <b>Copiloto Ui24R</b>.</span>
-  </div>
-
-  <main id="mixer" class="mixer"></main>
-  <p id="no-bus" class="empty-state" hidden>Você ainda não tem nenhuma saída liberada. Peça ao admin (tela Pessoas).</p>
-
   <footer class="statusline">
+    <span class="legend" title="Medidor de cada faixa"><i class="lg lg-fill"></i>agora <i class="lg lg-avg"></i>média <i class="lg lg-target"></i>ideal</span>
+    <button type="button" id="ctl-swap" class="small-btn swap-btn" title="Põe os controles da saída em cima ou embaixo dos faders (só neste navegador)">⇅ controles em cima</button>
     <span id="mode-help" class="muted"></span>
     <span id="toast" class="toast" role="alert" hidden></span>
     <details class="history">
@@ -293,16 +299,6 @@
 
   <template id="bus-tpl">
     <section class="bus">
-      <div class="bus-head">
-        <strong class="bus-title"></strong>
-        <span class="bus-help"></span>
-        <span class="bank" hidden>
-          <button class="icon-btn bank-prev" title="Canais anteriores">◀</button>
-          <span class="bank-label"></span>
-          <button class="icon-btn bank-next" title="Próximos canais">▶</button>
-        </span>
-        <span class="legend"><i class="lg lg-fill"></i>agora <i class="lg lg-avg"></i>média <i class="lg lg-target"></i>ideal</span>
-      </div>
       <div class="strips mixer-view">
         <div class="ch-scroll"><div class="group ch-group"></div></div>
         <div class="group fx-group"></div>

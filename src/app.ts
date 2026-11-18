@@ -94,6 +94,8 @@ export interface ViewedBus {
   masterDB?: number;
   channels: ChannelSnapshot[];
   fx: FxSnapshot[];
+  /** tipo de som de cada canal (voz, bumbo…): cor da etiqueta na tela */
+  types: Record<string, SourceType>;
 }
 
 /** Painel do canal: todos os volumes daquele canal. */
@@ -142,9 +144,11 @@ export interface FxLinkInfo {
   liveLabel?: string;
   /** pode mudar as diferenças (mexe no envio para os efeitos: salão e live) */
   allowed: boolean;
-  fx: { key: string; name: string; inRoom: boolean; offset: FxOffset | null }[];
+  fx: { key: string; name: string; inRoom: boolean; offset: FxOffset | null; ref: number | null; refLabel: string }[];
   ignore: string[];
   offsets: readonly number[];
+  /** saídas que podem servir de referência (master + auxes; matrizes ficam de fora) */
+  refs: { bus: number; label: string }[];
 }
 
 /** Recursos avançados (modo Áudio USB): configuração visível no painel (sem a senha do OBS). */
@@ -255,6 +259,7 @@ export type Command =
   | { type: 'risk.ack'; scope: string }
   | { type: 'fxlink.set'; fx: string; offset: FxOffset | null; align?: boolean }
   | { type: 'fxlink.ignore'; key: string; ignored: boolean }
+  | { type: 'fxlink.ref'; fx: string; bus: number; align?: boolean }
   | { type: 'channel.voice'; key: string; voice: boolean | null }
   | { type: 'setAveraging'; bus: number; sec: number }
   | { type: 'update.check' }
@@ -350,7 +355,8 @@ export class App {
   /** atualização pelo GitHub (main.ts liga) e o que fazer depois de atualizar (reiniciar) */
   private updater?: Updater;
   onRestart?: () => void;
-  private readonly liveSends = new Map<string, LiveSend>();
+  /** último fader de cada canal em cada saída (bus → canal → envio): referência do "efeito acompanha" */
+  private readonly busSends = new Map<number, Map<string, LiveSend>>();
   /** EQ de cada entrada, como a mesa guarda (0..1) */
   private readonly eqRaw = new Map<string, Record<string, number>>();
   /** senha da mesa (só para conferência) e último teste de comando */
@@ -542,7 +548,8 @@ export class App {
     this.wired = true;
     this.persisted = this.store.load();
     this.fxLink = new FxLink(this.persisted.fxLink);
-    this.liveSends.clear();
+    this.fxLink.setDefaultRef(this.liveBus());
+    this.busSends.clear();
     const channels = this.adapter.listChannels();
 
     for (const fx of this.adapter.listFxReturns()) {
@@ -550,7 +557,7 @@ export class App {
         this.adapter.watchFxSend(fx.number, ch.key, (db) => {
           this.fxSends.set(`${fx.key}:${ch.key}`, db);
           for (const c of this.controllers.values()) c.follower.onFxSend(fx.key, ch.key, db);
-          this.fxLink.onFxSend(fx.key, ch.key, db, this.liveSends.get(ch.key), Date.now());
+          this.fxLink.onFxSend(fx.key, ch.key, db, this.sendsOf(this.fxLink.ref(fx.key)).get(ch.key), Date.now());
         });
       }
       this.adapter.watchSend(MASTER_BUS, fx.key, (info) =>
@@ -640,7 +647,7 @@ export class App {
         this.adapter.watchSend(bus, ch.key, (info) => {
           const change = leveler.onSend(ch.key, info, Date.now());
           if (change) this.operatorMoved(bus, ch.key, leveler.channelName(ch.key), change);
-          if (bus === this.liveBus()) this.onLiveSend(ch.key, info);
+          this.onBusSend(bus, ch.key, info);
         }),
       );
     }
@@ -669,23 +676,51 @@ export class App {
     return this.allBuses().find((b) => b.id !== MASTER_BUS && this.inList(this.cfg.streamAuxes, b.id))?.id;
   }
 
-  /** O envio de um canal para a live mudou (mesa, painel ou ajuste automático): o efeito acompanha. */
-  private onLiveSend(key: string, info: { db: number; muted: boolean }): void {
-    const prev = this.liveSends.get(key);
+  /** Faders dos canais numa saída (no master: o fader do canal). */
+  private sendsOf(bus: number | undefined): Map<string, LiveSend> {
+    if (bus === undefined) return new Map();
+    let m = this.busSends.get(bus);
+    if (!m) this.busSends.set(bus, (m = new Map()));
+    return m;
+  }
+
+  /** O fader de um canal numa saída mudou (mesa, painel ou ajuste automático): os efeitos que copiam essa saída acompanham. */
+  private onBusSend(bus: number, key: string, info: { db: number; muted: boolean }): void {
+    const sends = this.sendsOf(bus);
+    const prev = sends.get(key);
     const now: LiveSend = { db: info.db, muted: info.muted };
-    this.liveSends.set(key, now);
+    sends.set(key, now);
     // a 1ª leitura (ao conectar) só registra; e repetições do mesmo valor não contam
     if (!prev || (prev.muted === now.muted && (prev.db === now.db || Math.abs(prev.db - now.db) < 0.05))) return;
     if (!this.fxLink.active()) return;
-    this.applyFx(this.fxLink.onLiveSend(key, now, this.fxSends, Date.now()));
+    this.applyFx(this.fxLink.onSend(bus, key, now, this.fxSends, Date.now()));
+  }
+
+  /** Nome curto da saída de referência ("a live", "o master", "o AUX 1"). */
+  private refLabel(bus: number | undefined): string {
+    if (bus === undefined || bus === this.liveBus()) return 'a live';
+    return bus === MASTER_BUS ? 'o master' : `o ${this.labelOf(bus)}`;
+  }
+
+  /** "da live", "do master", "do AUX 1". */
+  private refFrom(bus: number | undefined): string {
+    return this.refLabel(bus).replace(/^a /, 'da ').replace(/^o /, 'do ');
   }
 
   private applyFx(actions: FxSendAction[]): void {
     for (const a of actions) {
       this.adapter.setFxSendDB(Number(a.fx.slice(1)), a.key, a.db);
-      this.log.write('efeito-acompanha', { fx: a.fx, key: a.key, db: Number.isFinite(a.db) ? a.db : null, live: this.liveSends.get(a.key)?.db ?? null });
+      const ref = this.fxLink.ref(a.fx);
+      const refDb = this.sendsOf(ref).get(a.key)?.db;
+      this.log.write('efeito-acompanha', {
+        fx: a.fx,
+        key: a.key,
+        db: Number.isFinite(a.db) ? a.db : null,
+        ref: ref ?? null,
+        refDb: refDb !== undefined && Number.isFinite(refDb) ? refDb : null,
+      });
       const fxName = this.adapter.listFxReturns().find((f) => f.key === a.fx)?.name ?? a.fx.toUpperCase();
-      this.event(`FX acompanha a live: ${this.channelName(a.key)} → FX${a.fx.slice(1)} (${fxName}) ${fmt(a.db)} dB`, `fxlink:${a.fx}:${a.key}`);
+      this.event(`FX acompanha ${this.refLabel(ref)}: ${this.channelName(a.key)} → FX${a.fx.slice(1)} (${fxName}) ${fmt(a.db)} dB`, `fxlink:${a.fx}:${a.key}`);
     }
   }
 
@@ -700,9 +735,15 @@ export class App {
         name: fx.name,
         inRoom: this.fxInRoom.get(fx.key) ?? false,
         offset: this.fxLink.offset(fx.key) ?? null,
+        ref: this.fxLink.ref(fx.key) ?? null,
+        refLabel: this.refLabel(this.fxLink.ref(fx.key)),
       })),
       ignore: this.fxLink.export().ignore,
       offsets: FX_OFFSETS,
+      refs: this.allBuses().map((b) => ({
+        bus: b.id,
+        label: b.id === MASTER_BUS ? 'MASTER · salão' : `${busLabel(b, b.id)} · ${this.adapter.busName(b.id)}`,
+      })),
     };
   }
 
@@ -1248,8 +1289,9 @@ export class App {
           throw new CommandError(`${fx.name} toca no salão: só o admin ou quem tem o master pode ligar o "efeito acompanha".`);
         }
         const live = this.liveBus();
-        if (live === undefined) throw new CommandError('Não achei a saída da live (streamAuxes no config).');
-        const actions = this.fxLink.setOffset(fx.key, offset, this.liveSends, this.fxSends, Boolean(cmd.align), now);
+        const ref = this.fxLink.ref(fx.key);
+        if (ref === undefined || live === undefined) throw new CommandError('Não achei a saída da live (streamAuxes no config).');
+        const actions = this.fxLink.setOffset(fx.key, offset, this.sendsOf(ref), this.fxSends, Boolean(cmd.align), now);
         if (offset !== null) {
           // o "ACOMP." antigo (ajuste do retorno do efeito) brigaria com este: desliga na live
           const c = this.controllers.get(live);
@@ -1258,9 +1300,28 @@ export class App {
         }
         this.persisted.fxLink = this.fxLink.export();
         this.dirty = true;
-        const what = offset === null ? 'desligado' : offset === 'manter' ? 'mantendo a diferença de cada canal' : offset === 0 ? 'mesmo volume da live' : `${offset} dB da live`;
-        this.event(`${who}: FX${fx.number} (${fx.name}) acompanha a live: ${what}${actions.length ? ` (${actions.length} canais alinhados)` : ''}`);
-        this.log.write('fx-acompanha', { fx: fx.key, offset, alinhar: Boolean(cmd.align), canais: actions.length, quem: who });
+        const what = offset === null ? 'desligado' : offset === 'manter' ? 'mantendo a diferença de cada canal' : offset === 0 ? `mesmo volume ${this.refFrom(ref)}` : `${offset} dB ${this.refFrom(ref)}`;
+        this.event(`${who}: FX${fx.number} (${fx.name}) acompanha ${this.refLabel(ref)}: ${what}${actions.length ? ` (${actions.length} canais alinhados)` : ''}`);
+        this.log.write('fx-acompanha', { fx: fx.key, offset, ref, alinhar: Boolean(cmd.align), canais: actions.length, quem: who });
+        this.applyFx(actions);
+        return;
+      }
+      case 'fxlink.ref': {
+        const fx = this.adapter.listFxReturns().find((f) => f.key === cmd.fx);
+        if (!fx) throw new CommandError('Efeito inválido.');
+        if (!this.canEditFx(ctx.user, fx.key)) {
+          throw new CommandError(`${fx.name} toca no salão: só o admin ou quem tem o master pode escolher o fader que ele copia.`);
+        }
+        const bus = Number(cmd.bus);
+        if (!this.allBuses().some((b) => b.id === bus)) throw new CommandError('Saída inválida para referência.');
+        this.fxLink.setRef(fx.key, bus);
+        const offset = this.fxLink.offset(fx.key);
+        // ligado: recalcula o "manter" pela nova referência e, se pedido, alinha os canais já
+        const actions = offset === undefined ? [] : this.fxLink.setOffset(fx.key, offset, this.sendsOf(bus), this.fxSends, Boolean(cmd.align), now);
+        this.persisted.fxLink = this.fxLink.export();
+        this.dirty = true;
+        this.event(`${who}: FX${fx.number} (${fx.name}) agora copia o fader ${this.refFrom(bus)}${actions.length ? ` (${actions.length} canais alinhados)` : ''}`);
+        this.log.write('fx-referencia', { fx: fx.key, ref: bus, alinhar: Boolean(cmd.align), canais: actions.length, quem: who });
         this.applyFx(actions);
         return;
       }
@@ -1692,6 +1753,7 @@ export class App {
         masterDB: c.masterDB === undefined || !Number.isFinite(c.masterDB) ? undefined : round1(c.masterDB),
         channels: c.leveler.snapshot(now),
         fx: c.follower.snapshot().map((f) => ({ ...f, inRoom: this.fxInRoom.get(f.key) ?? false })),
+        types: this.soundInfo(now).types ?? {},
       };
     }
 

@@ -193,27 +193,48 @@ function setPill(cls, text) {
 
 // ---------- efeito acompanha a live ----------
 
-const FXL_LABEL = (o) => (o === null ? 'desligado' : o === 'manter' ? 'manter como está' : o === 0 ? 'mesma' : `${o} dB`);
+const FXL_LABEL = (o) => (o === null ? 'não copiar' : o === 'manter' ? 'manter' : o === 0 ? 'igual' : `${o}`);
+const FXL_TEXT = (o) => (o === null ? 'não copiar' : o === 'manter' ? 'mantendo a diferença de cada canal' : o === 0 ? 'o mesmo nível' : `${o} dB`);
+// "a live" → "da live" / "na live"; "o master" → "do master" / "no master"
+const deRef = (l) => l.replace(/^a /, 'da ').replace(/^o /, 'do ');
+const emRef = (l) => l.replace(/^a /, 'na ').replace(/^o /, 'no ');
 
+// Aparece na live (onde se usa) e no master (quem cuida do salão também configura).
 function renderFxLink(s) {
   const fl = s.fxLink;
   const bar = $('#fxlink-bar');
-  const show = Boolean(fl && s.bus && fl.liveBus === s.bus.bus && fl.fx.length);
+  const show = Boolean(fl && s.bus && fl.fx.length && (fl.liveBus === s.bus.bus || s.bus.bus === MASTER_BUS));
   bar.hidden = !show;
   if (!show) return;
-  const sig = JSON.stringify([fl.fx, fl.allowed]);
+  const sig = JSON.stringify([fl.fx, fl.allowed, fl.refs]);
   if (bar.dataset.sig === sig) return;
   bar.dataset.sig = sig;
   const choices = [null, ...fl.offsets, 'manter'];
+  const dis = fl.allowed ? '' : 'disabled';
   $('#fxlink-rows').innerHTML = fl.fx
     .map((f) => {
+      const ref = escapeHtml(f.refLabel);
       const btns = choices
         .map((o) => {
           const active = o === f.offset;
-          return `<button type="button" data-fx="${f.key}" data-off="${o === null ? '' : o}" class="${active ? 'active' : ''}" ${fl.allowed ? '' : 'disabled'} title="${escapeHtml(o === null ? 'Este efeito não acompanha a live' : o === 'manter' ? 'Cada canal mantém a diferença que tem agora e só acompanha as mudanças' : `Envio para o efeito = envio para a live ${o === 0 ? '(mesmo volume)' : `${o} dB`}`)}">${FXL_LABEL(o)}</button>`;
+          const title =
+            o === null
+              ? 'Este efeito não acompanha: o envio para ele fica como está'
+              : o === 'manter'
+                ? `Cada canal mantém a diferença que tem agora e só acompanha as mudanças do fader ${emRef(ref)}`
+                : `Envio para o efeito = fader do canal ${emRef(ref)} ${o === 0 ? '(mesmo nível)' : `${o} dB`}`;
+          return `<button type="button" data-fx="${f.key}" data-off="${o === null ? '' : o}" class="${active ? 'active' : ''}${o === null ? ' off' : ''}" ${dis} title="${escapeHtml(title)}">${FXL_LABEL(o)}</button>`;
         })
         .join('');
-      return `<div class="fxlink-row"><span class="fxl-name">FX${f.key.slice(1)} · ${escapeHtml(f.name)}</span><div class="seg small">${btns}</div></div>`;
+      const opts = fl.refs
+        .map((r) => `<option value="${r.bus}" ${r.bus === f.ref ? 'selected' : ''}>${escapeHtml(r.label)}${r.bus === fl.liveBus ? ' (live)' : ''}</option>`)
+        .join('');
+      return `<div class="fxlink-row${f.offset === null ? ' is-off' : ''}">
+        <span class="fxl-name"><b>FX${f.key.slice(1)}</b> ${escapeHtml(f.name)}</span>
+        <label class="fxl-ref" title="De qual saída o efeito copia o fader de cada canal">copia
+          <select data-fxref="${f.key}" ${dis}>${opts}</select> com</label>
+        <div class="seg small">${btns}</div>
+      </div>`;
     })
     .join('');
 }
@@ -225,16 +246,34 @@ $('#fxlink-rows').addEventListener('click', (e) => {
   const raw = b.dataset.off;
   const offset = raw === '' ? null : raw === 'manter' ? 'manter' : Number(raw);
   const f = state.fxLink.fx.find((x) => x.key === fx);
+  const ref = f?.refLabel ?? 'a live';
   const where = f?.inRoom ? '\n\nAtenção: este efeito toca no SALÃO; o reverb do salão também muda.' : '';
   let align = false;
   if (typeof offset === 'number') {
     align = confirm(
-      `FX${fx.slice(1)} (${f?.name ?? ''}) vai acompanhar a live com ${FXL_LABEL(offset)}.\n\nAlinhar TODOS os canais agora? (OK = alinhar já; Cancelar = só acompanhar as próximas mexidas)${where}`,
+      `FX${fx.slice(1)} (${f?.name ?? ''}) vai copiar o fader ${deRef(ref)} com ${FXL_TEXT(offset)}.\n\nAlinhar TODOS os canais agora? (OK = alinhar já; Cancelar = só acompanhar as próximas mexidas)${where}`,
     );
-  } else if (offset === 'manter' && where && !confirm(`FX${fx.slice(1)} vai acompanhar a live mantendo a diferença de cada canal.${where}`)) {
+  } else if (offset === 'manter' && where && !confirm(`FX${fx.slice(1)} vai copiar o fader ${deRef(ref)} mantendo a diferença de cada canal.${where}`)) {
     return;
   }
   send({ type: 'fxlink.set', fx, offset, align });
+});
+
+$('#fxlink-rows').addEventListener('change', (e) => {
+  const sel = e.target.closest('select[data-fxref]');
+  if (!sel || !state?.fxLink) return;
+  const fx = sel.dataset.fxref;
+  const bus = Number(sel.value);
+  const f = state.fxLink.fx.find((x) => x.key === fx);
+  const label = sel.selectedOptions[0]?.textContent ?? '';
+  let align = false;
+  if (typeof f?.offset === 'number') {
+    align = confirm(
+      `FX${fx.slice(1)} (${f.name}) vai copiar o fader da saída ${label} com ${FXL_TEXT(f.offset)}.\n\nAlinhar TODOS os canais agora? (OK = alinhar já; Cancelar = só acompanhar as próximas mexidas)${f.inRoom ? '\n\nAtenção: este efeito toca no SALÃO; o reverb do salão também muda.' : ''}`,
+    );
+  }
+  $('#fxlink-bar').dataset.sig = ''; // redesenha com o que o servidor confirmar
+  send({ type: 'fxlink.ref', fx, bus, align });
 });
 
 $('#avg-select').addEventListener('change', (e) => {
@@ -295,7 +334,7 @@ function render() {
   renderBypass(s, send);
 
   if (isSim) {
-    setPill('simulador', 'SIMULADOR (mesa falsa)');
+    setPill('simulador', 'mesa falsa');
   } else {
     const h = s.health;
     const ping = h?.ping.lastMs === undefined ? '' : h.ping.lastMs === null ? ' · sem resposta' : ` · ${Math.round(h.ping.lastMs)} ms`;
@@ -326,6 +365,7 @@ function render() {
   if (view && (!s.bus || view.bus !== s.bus.bus)) {
     view.node.remove();
     view = undefined;
+    showTouch(undefined);
   }
   if (s.bus) renderBus(s.bus, s);
   $('#no-bus').hidden = Boolean(s.bus) || !s.mixer;
@@ -359,16 +399,19 @@ function renderBusSelect(s) {
 }
 
 function renderPresets(s) {
-  const sel = $('#preset-select');
+  const list = $('#preset-list');
   const sig = JSON.stringify([s.presets, s.activePresetId, s.bus?.bus]);
-  if (sel.dataset.sig !== sig) {
-    sel.dataset.sig = sig;
-    const active = s.presets.some((p) => p.id === s.activePresetId);
-    sel.innerHTML =
-      `<option value="" ${active ? '' : 'selected'} disabled>${s.presets.length ? '— carregar —' : 'nenhum'}</option>` +
-      s.presets
-        .map((p) => `<option value="${p.id}" ${p.id === s.activePresetId ? 'selected' : ''}>${escapeHtml(p.name)}</option>`)
-        .join('');
+  if (list.dataset.sig !== sig) {
+    list.dataset.sig = sig;
+    $('#preset-title').firstChild.textContent = s.bus ? `Presets de ${s.bus.bus === MASTER_BUS ? 'MASTER' : s.bus.label} ` : 'Presets ';
+    list.innerHTML = s.presets.length
+      ? s.presets
+          .map((p) => {
+            const on = p.id === s.activePresetId;
+            return `<button type="button" class="preset-btn${on ? ' on' : ''}" data-preset="${p.id}" title="${escapeHtml(on ? `Preset ativo: ${p.name}. Clique de novo para recarregar (fade suave).` : `Carregar "${p.name}" com fade suave`)}">${escapeHtml(p.name)}</button>`;
+          })
+          .join('')
+      : '<span class="muted small">nenhum preset salvo: use + novo</span>';
   }
   const hasActive = s.presets.some((p) => p.id === s.activePresetId);
   $('#preset-update').disabled = !hasActive;
@@ -376,8 +419,45 @@ function renderPresets(s) {
 }
 
 function busHelp(bus) {
-  if (bus.bus === MASTER_BUS) return '<span class="warn">⚠ faders = FADERS dos canais no master: muda o som do SALÃO</span>';
-  return `faders = <strong>envios de cada canal para ${escapeHtml(bus.label)}</strong>${bus.stereo ? ' (os dois lados juntos)' : ''} · o salão não muda`;
+  if (bus.bus === MASTER_BUS) return 'faders = FADERS dos canais no master: muda o som do SALÃO';
+  return `faders = envios de cada canal para ${bus.label}${bus.stereo ? ' (os dois lados juntos)' : ''} · o salão não muda`;
+}
+
+// ---------- cor de cada canal pelo tipo de som + "qual entrada estou mexendo" ----------
+
+const TYPE_GROUP = { voz: 'voz', bumbo: 'bat', caixa: 'bat', pratos: 'bat', baixo: 'ins', harmonico: 'ins' };
+const TYPE_TEXT = { voz: 'voz', bat: 'bateria', ins: 'instrumento', out: 'outros' };
+let touched; // faixa sob o mouse ou sendo arrastada
+
+function showTouch(strip) {
+  if (touched && touched !== strip) touched.el.classList.remove('touch');
+  touched = strip;
+  const box = $('#touch');
+  if (!strip) {
+    box.className = 'touch idle';
+    box.textContent = 'Passe o mouse ou arraste um fader para ver qual entrada é';
+    return;
+  }
+  strip.el.classList.add('touch');
+  box.className = `touch t-${strip.group ?? 'out'}`;
+  const dest = state?.bus ? (state.bus.bus === MASTER_BUS ? 'fader no master (salão)' : `envio para ${state.bus.label}`) : '';
+  const what = strip.kind === 'ch' ? `${TYPE_TEXT[strip.group ?? 'out']} · ${dest}` : strip.kind === 'fx' ? `retorno do efeito em ${state?.bus?.label ?? ''}` : 'volume geral da saída';
+  box.innerHTML = `<span class="tn">${escapeHtml(strip.numText ?? '')}</span><span class="tname">${escapeHtml(strip.fullName ?? '')}</span><span class="tdb">${escapeHtml(strip.readout.textContent)} dB</span><span class="tsub">${escapeHtml(what)}</span>`;
+}
+
+/** Liga o destaque: passar o mouse mostra, arrastar atualiza o valor, sair da mixagem limpa. */
+function bindTouch(strip) {
+  strip.el.addEventListener('pointerenter', () => showTouch(strip));
+  strip.fader.addEventListener('input', () => showTouch(strip));
+}
+$('#mixer').addEventListener('pointerleave', () => {
+  if (!touched?.dragging) showTouch(undefined);
+});
+
+function setStripGroup(strip, group) {
+  if (strip.group === group) return;
+  strip.group = group;
+  strip.el.dataset.type = group;
 }
 
 /** Canais que este modo de visualização mostra, na ordem do modo. */
@@ -404,20 +484,21 @@ function renderBus(bus, s) {
       rows: new Map(),
       order: '',
     };
-    $('.bank-prev', node).addEventListener('click', () => bankStep(-1));
-    $('.bank-next', node).addEventListener('click', () => bankStep(1));
     view.scroll.addEventListener('scroll', () => updateBankLabel());
     new ResizeObserver(() => layoutStrips()).observe(view.scroll);
   }
   const isMaster = bus.bus === MASTER_BUS;
   view.node.classList.toggle('is-master', isMaster);
-  $('.bus-title', view.node).textContent = isMaster ? 'MASTER — salão' : `${bus.label} — ${bus.name}${bus.stereo ? ' (estéreo)' : ''}`;
-  $('.bus-help', view.node).innerHTML = busHelp(bus);
+  document.body.classList.toggle('viewing-master', isMaster);
+  $('#in-bus').textContent = isMaster ? 'MASTER · salão' : `${bus.label} · ${bus.name}`;
+  $('#in-bus').title = busHelp(bus);
+  $('#in-master').hidden = !isMaster;
 
   const visible = visibleChannels(bus);
   const visibleKeys = new Set(visible.map((c) => c.key));
   for (const ch of bus.channels) {
     const strip = getStrip(ch.key, () => createChannelStrip(bus, ch), view.chGroup);
+    setStripGroup(strip, TYPE_GROUP[bus.types?.[ch.key]] ?? 'out');
     updateChannelStrip(strip, ch, s);
     strip.el.hidden = !visibleKeys.has(ch.key);
     strip.el.classList.toggle('selected', s.detail?.key === ch.key);
@@ -449,6 +530,7 @@ function renderBus(bus, s) {
 
   const master = getStrip('master', () => createMasterStrip(bus), view.masterGroup);
   updateMasterStrip(master, bus);
+  if (touched) showTouch(touched); // valor do canal destacado acompanha a mesa
 }
 
 function getStrip(id, create, parent) {
@@ -477,9 +559,12 @@ function layoutStrips() {
     view.scroll.style.removeProperty('--strip-w');
     view.chGroup.style.minWidth = `${count * 48}px`; // em tela estreita, rola em vez de espremer
   }
-  $('.bank', view.node).hidden = !(banked && count > n);
+  $('#bank').hidden = !(banked && count > n);
   updateBankLabel();
 }
+
+$('#bank-prev').addEventListener('click', () => bankStep(-1));
+$('#bank-next').addEventListener('click', () => bankStep(1));
 
 function bankStep(dir) {
   const n = currentView?.config.faders ?? 0;
@@ -495,7 +580,7 @@ function updateBankLabel() {
   if (!n || count <= n) return;
   const w = parseFloat(view.scroll.style.getPropertyValue('--strip-w')) + STRIP_GAP;
   const first = Math.round(view.scroll.scrollLeft / w) + 1;
-  $('.bank-label', view.node).textContent = `canais ${first}–${Math.min(count, first + n - 1)} de ${count}`;
+  $('#bank-label').textContent = `canais ${first}–${Math.min(count, first + n - 1)} de ${count}`;
 }
 
 // ---------- faders ----------
@@ -555,7 +640,7 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
   el.className = `strip ${cls}`;
   // linhas de altura fixa: assim os faders de canais, efeitos e master ficam alinhados
   el.innerHTML = `
-    <button class="strip-name" type="button"></button>
+    <button class="strip-name" type="button"><span class="sn-num"></span><span class="sn-name"></span></button>
     <div class="strip-sub"><span class="status"></span></div>
     <div class="strip-tag"><span class="tag-text"></span></div>
     <button class="auto-btn" title="${escapeHtml(toggleTitle)}">${toggleLabel}</button>
@@ -569,7 +654,8 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
     <div class="send-db"></div>
     <div class="delta"></div>
     <div class="strip-num" title="${escapeHtml(key)}"></div>`;
-  $('.strip-name', el).textContent = name;
+  $('.sn-name', el).textContent = name;
+  $('.sn-num', el).textContent = num;
   $('.strip-name', el).title = `${name} — ${dest}`;
   $('.strip-num', el).textContent = num;
   $('.fader', el).setAttribute('aria-label', `${name}: ${dest}`);
@@ -577,6 +663,9 @@ function stripSkeleton({ cls = '', name = '', key = '', num = '', toggleLabel = 
   return {
     el,
     name: $('.strip-name', el),
+    nameText: $('.sn-name', el),
+    numText: num,
+    fullName: name,
     status: $('.status', el),
     toggle: $('.auto-btn', el),
     mute: $('.mute-btn', el),
@@ -651,14 +740,50 @@ function createChannelStrip(bus, ch) {
   bindMute(strip, bus, ch.key);
   strip.fxl.addEventListener('click', () => send({ type: 'fxlink.ignore', key: ch.key, ignored: strip.fxl.classList.contains('on') }));
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: ch.key, db }));
+  strip.kind = 'ch';
+  bindTouch(strip);
   return strip;
 }
 
-/** Diminui a fonte do nome até caber em 2 linhas sem quebrar palavras (11px → 7px). */
-function fitName(el) {
+const VOGAL = /[AEIOUÃÕÁÉÍÓÚÂÊÔÀ]/i;
+const GRUPO_CONS = /^(BR|CR|DR|FR|GR|PR|TR|VR|BL|CL|FL|GL|PL|CH|LH|NH)$/i;
+
+/** Separa uma palavra longa perto do meio, numa divisão de sílaba aproximada (GUI-TARRA, MINIS-TRO, TE-CLADO). */
+function hyphenate(word) {
+  const cand = [];
+  for (let k = 2; k < word.length - 2; k++) {
+    const a = word[k - 1];
+    const b = word[k];
+    const c = word[k + 1];
+    if (VOGAL.test(a) && !VOGAL.test(b) && VOGAL.test(c)) cand.push(k);
+    else if (VOGAL.test(a) && GRUPO_CONS.test(b + c) && VOGAL.test(word[k + 2] ?? '')) cand.push(k);
+    else if (!VOGAL.test(a) && !VOGAL.test(b) && !GRUPO_CONS.test(a + b) && VOGAL.test(word[k - 2])) cand.push(k);
+  }
+  if (!cand.length) return escapeHtml(word);
+  const mid = word.length / 2;
+  const k = cand.sort((x, y) => Math.abs(x - mid) - Math.abs(y - mid))[0];
+  return `${escapeHtml(word.slice(0, k))}-<br>${escapeHtml(word.slice(k))}`;
+}
+
+/** Nome inteiro na etiqueta: diminui a letra (até 8 px); se ainda não couber, separa as palavras longas por sílaba. */
+function fitName(el, text) {
+  const fits = () => el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1;
+  el.textContent = text;
   let size = 11;
   el.style.fontSize = `${size}px`;
-  while (size > 7 && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)) {
+  while (size > 8 && !fits()) {
+    size -= 0.5;
+    el.style.fontSize = `${size}px`;
+  }
+  if (fits()) return;
+  el.innerHTML = text
+    .split(' ')
+    .map((w) => {
+      el.textContent = w;
+      return el.scrollWidth > el.clientWidth + 1 ? hyphenate(w) : escapeHtml(w);
+    })
+    .join(' ');
+  while (size > 7 && !fits()) {
     size -= 0.5;
     el.style.fontSize = `${size}px`;
   }
@@ -666,11 +791,13 @@ function fitName(el) {
 
 /** Atualiza o nome e reajusta a fonte quando o texto ou a largura mudam. */
 function setStripName(strip, text) {
-  if (strip.name.textContent === text && strip.fitW === strip.name.clientWidth) return;
-  strip.name.textContent = text;
+  const el = strip.nameText;
+  if (strip.fullName === text && strip.fitW === el.clientWidth) return;
+  strip.fullName = text;
   strip.name.title = text;
-  strip.fitW = strip.name.clientWidth;
-  if (strip.fitW > 0) fitName(strip.name);
+  strip.fitW = el.clientWidth;
+  if (strip.fitW > 0) fitName(el, text);
+  else el.textContent = text;
 }
 
 function updateChannelStrip(strip, ch, s) {
@@ -729,6 +856,9 @@ function createFxStrip(bus, fx) {
   bindMute(strip, bus, fx.key);
   strip.fxl.style.visibility = 'hidden'; // o botão FX é só dos canais
   bindFader(strip, (db) => send({ type: 'setSend', bus: bus.bus, key: fx.key, db }));
+  strip.kind = 'fx';
+  setStripGroup(strip, 'fx');
+  bindTouch(strip);
   return strip;
 }
 
@@ -739,7 +869,10 @@ function updateFxStrip(strip, fx, s) {
   setMuted(strip, fx.muted);
   let label = FX_STATUS_LABEL[fx.status] ?? fx.status;
   const link = s.fxLink && s.bus.bus === s.fxLink.liveBus ? s.fxLink.fx.find((f) => f.key === fx.key) : undefined;
-  if (link && link.offset !== null) label = link.offset === 'manter' ? 'segue live' : link.offset === 0 ? 'live =' : `live ${link.offset}`;
+  if (link && link.offset !== null) {
+    const ref = link.ref === s.fxLink.liveBus ? 'live' : link.ref === MASTER_BUS ? 'mst' : (s.fxLink.refs.find((r) => r.bus === link.ref)?.label.split(' · ')[0] ?? '').replace('AUX ', 'A');
+    label = link.offset === 'manter' ? `segue ${ref}` : link.offset === 0 ? `${ref} =` : `${ref} ${link.offset}`;
+  }
   if (fx.status === 'acompanhando' && s.bus.mode !== 'automatico') label = 'acomp.?';
   strip.status.textContent = label;
   strip.status.className = `status ${fx.status}`;
@@ -755,7 +888,7 @@ function createMasterStrip(bus) {
     cls: `master ${isMaster ? 'is-master' : ''}`,
     name: isMaster ? 'MASTER' : bus.label,
     key: isMaster ? 'salão' : 'master',
-    num: isMaster ? 'MST' : bus.label.replace('AUX ', 'A'),
+    num: isMaster ? 'MST' : bus.label.replace('AUX ', ''),
     toggleLabel: 'GERAL',
     dest: isMaster ? 'volume geral do salão' : `volume geral de ${bus.label}`,
   });
@@ -765,6 +898,9 @@ function createMasterStrip(bus) {
   strip.mute.style.visibility = 'hidden'; // mantém o fader alinhado com os canais
   strip.fxl.style.visibility = 'hidden';
   bindFader(strip, (db) => send({ type: 'setBusMaster', bus: bus.bus, db }));
+  strip.kind = 'master';
+  setStripGroup(strip, isMaster ? 'mst' : 'bus');
+  bindTouch(strip);
   return strip;
 }
 
@@ -1538,8 +1674,9 @@ $('#restore').addEventListener('click', () => {
     send({ type: 'restore', bus: state.bus.bus });
   }
 });
-$('#preset-select').addEventListener('change', (e) => {
-  if (e.target.value && state?.bus) send({ type: 'preset.load', bus: state.bus.bus, id: e.target.value });
+$('#preset-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-preset]');
+  if (b && state?.bus) send({ type: 'preset.load', bus: state.bus.bus, id: b.dataset.preset });
 });
 $('#preset-new').addEventListener('click', () => {
   if (!state?.bus) return;
@@ -1583,6 +1720,19 @@ $('#help-btn').addEventListener('click', () => {
   localPref('help', panel.hidden ? '0' : '1');
   layoutStrips();
 });
+// controles da saída embaixo (padrão) ou em cima dos faders: preferência deste navegador
+function applyCtlTop(top) {
+  document.body.classList.toggle('ctl-top', top);
+  $('#ctl-swap').textContent = top ? '⇅ controles embaixo' : '⇅ controles em cima';
+  layoutStrips();
+}
+applyCtlTop(localPref('ctlTop') === '1');
+$('#ctl-swap').addEventListener('click', () => {
+  const top = !document.body.classList.contains('ctl-top');
+  localPref('ctlTop', top ? '1' : '0');
+  applyCtlTop(top);
+});
+
 if (localPref('help') === '1') {
   $('#toolbar-help').hidden = false;
   $('#help-btn').setAttribute('aria-expanded', 'true');
@@ -1604,7 +1754,8 @@ document.addEventListener('click', (e) => {
     location.href = '/login.html';
     return;
   }
-  $('#user-name').textContent = `${me.username}${me.role === 'admin' ? ' (admin)' : ''}`;
+  $('#user-name').textContent = `⚙ ${me.username}`;
+  $('#user-name').title = `Conta: ${me.username}${me.role === 'admin' ? ' (admin)' : ''}`;
   $('#default-pass').hidden = !data.defaultPassword;
   $('#nav-admin').textContent = me.role === 'admin' ? 'Pessoas' : 'Conta';
   $('#expand').checked = me.prefs.expand !== false;
